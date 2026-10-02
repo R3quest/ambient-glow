@@ -193,7 +193,7 @@ object GlowLauncher {
                 .setGroup(null)
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_ALL)
                 .setShortcutId(null)
-                .setBubbleMetadata(null)
+                .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setBubbleMetadata(null) }
                 .setOnlyAlertOnce(false)
                 .setLocalOnly(true)
                 .setTimeoutAfter(MESSAGE_TIMEOUT_MS)

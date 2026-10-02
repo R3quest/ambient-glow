@@ -84,13 +84,11 @@
     <string name="tab_access">ACCESS</string>
     <string name="tab_style">GLOW STYLE</string>
 
-
     <string name="test_preview">LED PREVIEW</string>
-        <string name="test_locked">LOCKED TEST · 5 s</string>
+    <string name="test_locked">LOCKED TEST · 5 s</string>
     <string name="test_locked_countdown">LOCK YOUR PHONE · %1$d</string>
     <string name="test_locked_hint">Lock the screen now. The test message arrives when the count reaches zero.</string>
     <string name="test_locked_blocked">Allow alerts on the Access tab first.</string>
-
 
     <string name="message_channel_name">New message pop-up</string>
     <string name="message_channel_description">Shows the new message again as a pop-up when the black screen comes on. Silent; removed after a few seconds.</string>

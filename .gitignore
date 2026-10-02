@@ -11,3 +11,16 @@
 .cxx/
 *.apk
 *.aab
+/app/release/
+/app/debug/
+*.hprof
+*.log
+
+# Signing keys and secrets
+*.jks
+*.keystore
+keystore.properties
+
+# Editors
+.vscode/
+.claude/settings.local.json

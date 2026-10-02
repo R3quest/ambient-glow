@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.Display
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -277,7 +278,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         start(intent)
     }
 
-    @SuppressLint("WakelockTimeout") // released in onPause; lifecycle-bound, not time-bound
     override fun onResume() {
         super.onResume()
         GlowLog.d("act onResume face=${face.value} interactive=${power.isInteractive} locked=${keyguard.isKeyguardLocked}")
@@ -288,7 +288,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
         if (face.value == Face.LED) {
             hideSystemBars()
-            if (!keepPanelOn.isHeld) keepPanelOn.acquire()
+            acquireKeepOn()
         }
     }
 
@@ -401,12 +401,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         val mode = runCatching { WakeMode.valueOf(intent?.getStringExtra(GlowLauncher.EXTRA_MODE).orEmpty()) }
             .getOrDefault(WakeMode.LED)
         when (mode) {
-            WakeMode.WAKE -> if (settings.value.arrival == ArrivalMode.LOCK_SCREEN) {
-                showLockScreen(auto = true)
-                announce()
-            } else {
-                // The user is already looking at the lock screen: the effect over it, no cover.
-                showLockScreen()
+            // With a black arrival the user is already looking at the lock screen: the effect
+            // over it, no automatic cover.
+            WakeMode.WAKE -> {
+                showLockScreen(auto = settings.value.arrival == ArrivalMode.LOCK_SCREEN)
                 announce()
             }
             WakeMode.LED -> showLed()
@@ -664,7 +662,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /** Loop guard: at most [RELIGHT_BUDGET] lock-screen → LED relights per [RELIGHT_WINDOW_MS]. */
     private fun overRelightBudget(): Boolean {
-        val now = android.os.SystemClock.elapsedRealtime()
+        val now = SystemClock.elapsedRealtime()
         while (relightTimes.isNotEmpty() && now - relightTimes.first() > RELIGHT_WINDOW_MS) relightTimes.removeFirst()
         if (relightTimes.size >= RELIGHT_BUDGET) return true
         relightTimes.addLast(now)
