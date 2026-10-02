@@ -137,11 +137,10 @@ class NotificationWakerService : NotificationListenerService() {
 
         val arrival = GlowPrefs.load(this).arrival
         if (arrival == ArrivalMode.MESSAGE) {
-            // The system pops a message up by itself only while the screen is on, for a channel
-            // that peeks, and not for an alert-once update; otherwise the glow screen re-posts it.
-            val systemPopsUp = power.isInteractive &&
-                ranked && ranking.importance >= NotificationManager.IMPORTANCE_HIGH &&
-                !(sbn.notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 && previous != null)
+            // The system pops a message up by itself for a channel that peeks; only otherwise does
+            // the glow screen re-post it. One UI shows that heads-up even when the screen was off
+            // (once our wake lights the panel) and for alert-once chat updates, so a copy doubles it.
+            val systemPopsUp = ranked && ranking.importance >= NotificationManager.IMPORTANCE_HIGH
             GlowPending.message = PendingMessage(sbn, systemPopsUp)
         }
 

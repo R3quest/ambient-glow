@@ -239,8 +239,9 @@ object GlowPrefs {
 data class PendingGlow(val key: String, val color: Int, val newestAt: Long = 0L)
 
 /**
- * The newest message for [ArrivalMode.MESSAGE]. [systemPopsUp]: the system already shows it as a
- * heads-up (the screen was on); otherwise the glow screen re-posts it once the black panel is up.
+ * The newest message for [ArrivalMode.MESSAGE]. [systemPopsUp]: the system shows it as a heads-up
+ * itself (its channel peeks, even if the screen was off); otherwise the glow screen re-posts it
+ * once the black panel is up.
  */
 class PendingMessage(val sbn: StatusBarNotification, val systemPopsUp: Boolean)
 

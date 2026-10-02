@@ -173,11 +173,11 @@ object GlowLauncher {
     }
 
     /**
-     * [ArrivalMode.MESSAGE] when [original] arrived with the screen off: the system never pops a
-     * message up then, so once the black panel is up it is re-posted as it is on a heads-up
-     * channel, and the system draws its own pop-up: the sender's layout, avatar and actions, and
-     * the lock-screen privacy (redacted while content is hidden). Cancelled when the dot takes
-     * over, and it times out on its own, so it never stays in the shade.
+     * [ArrivalMode.MESSAGE] when the system will not pop [original] up itself (its channel does
+     * not peek), so once the black panel is up it is re-posted
+     * as it is on a heads-up channel, and the system draws its own pop-up: the sender's layout,
+     * avatar and actions, and the lock-screen privacy (redacted while content is hidden).
+     * Cancelled when the dot takes over, and it times out on its own, so it never stays in the shade.
      */
     fun showMessage(context: Context, original: StatusBarNotification) {
         ensureChannel(context)

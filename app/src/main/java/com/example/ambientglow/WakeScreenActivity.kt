@@ -588,7 +588,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /**
      * [ArrivalMode.MESSAGE], once the black panel is up and focused: let the system pop up only
-     * the new message. If it did not already (the screen was off when it arrived), re-post it.
+     * the new message. If it will not by itself (its channel does not peek), re-post it.
      */
     private fun showMessage() {
         val message = GlowPending.message ?: return
