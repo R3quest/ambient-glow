@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dashboard window: true black from the very first frame (no light flash before Compose draws). -->
+    <style name="Theme.AmbientGlow" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/glow_void</item>
+        <item name="android:colorBackground">@color/glow_void</item>
+        <item name="android:colorAccent">@color/glow_cyan</item>
+        <item name="android:colorPrimary">@color/glow_surface</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- Wake layer: a fully transparent, untitled, non-animated window. -->
+    <style name="Base.Theme.AmbientGlow.Wake" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.AmbientGlow.Wake" parent="Base.Theme.AmbientGlow.Wake" />
+</resources>

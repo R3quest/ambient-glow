@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ambient Glow</string>
+    <string name="listener_label">Ambient Glow message reader</string>
+
+    <string name="channel_name">Wake bridge</string>
+    <string name="channel_description">Briefly used to light the screen when a message arrives. Dismissed automatically.</string>
+    <string name="bridge_title">New message</string>
+    <string name="bridge_text">Ambient Glow is lighting your screen</string>
+
+    <string name="header_tagline">Event-driven · 0% idle CPU</string>
+    <string name="status_armed">ARMED</string>
+    <string name="status_setup">SETUP %1$d/%2$d</string>
+    <string name="state_active">ACTIVE</string>
+    <string name="state_pending">PENDING</string>
+
+    <string name="section_access">ACCESS</string>
+    <string name="section_style">GLOW STYLE</string>
+    <string name="section_dot">DOT POSITION</string>
+
+    <string name="access_listener_title">Notification access</string>
+    <string name="access_listener_body">Lets Ambient Glow see that a message arrived. It reads only the sender app and never stores content.</string>
+    <string name="access_listener_grant">Grant permission</string>
+    <string name="access_listener_manage">Manage access</string>
+
+    <string name="access_post_title">Wake bridge</string>
+    <string name="access_post_body">A silent, self-dismissing alert is how Android lets an app light the screen from the background. It needs high importance.</string>
+    <string name="access_post_grant">Allow alerts</string>
+    <string name="access_post_manage">Channel settings</string>
+
+    <string name="access_fsi_title">Full-screen wake</string>
+    <string name="access_fsi_body">Android 14+ asks you to confirm that Ambient Glow may turn the display on.</string>
+    <string name="access_fsi_grant">Allow wake</string>
+    <string name="access_fsi_manage">Review setting</string>
+
+    <string name="style_edge_title">Edge Frame</string>
+    <string name="style_edge_caption">Border on every edge</string>
+    <string name="style_ring_title">Camera Ring</string>
+    <string name="style_ring_caption">Halo around the lens</string>
+    <string name="style_dot_title">Custom Dot</string>
+    <string name="style_dot_caption">A dot you place</string>
+
+    <string name="dot_body">Drag to place the dot. It is saved when you let go.</string>
+    <string name="dot_horizontal">HORIZONTAL</string>
+    <string name="dot_vertical">VERTICAL</string>
+    <string name="dot_readout_x">X %1$d%%</string>
+    <string name="dot_readout_y">Y %1$d%%</string>
+
+    <string name="test_preview">TEST PREVIEW</string>
+    <string name="test_preview_hint">Shows the wake screen for 3.5 s, just as a real message would</string>
+    <string name="footer_privacy">OFFLINE · NO OVERLAY · NO TRACKING</string>
+</resources>
