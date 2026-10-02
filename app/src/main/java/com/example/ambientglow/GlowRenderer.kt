@@ -2,18 +2,10 @@ package com.example.ambientglow
 
 import android.os.Build
 import android.view.RoundedCorner
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -25,8 +17,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlin.math.min
 
 /** Physical sizes of every glow element. Full-screen values follow TODO.md (4dp frame). */
@@ -193,46 +183,6 @@ fun GlowGraphic(
             }
         }
     }
-}
-
-// Arrival effect: two quick pulses, short enough to finish before the LED takes over the lock
-// screen (2.5 s).
-private const val ARRIVAL_PULSES = 2
-private const val ARRIVAL_FADE_IN_MS = 250
-private const val ARRIVAL_HOLD_MS = 550L
-private const val ARRIVAL_FADE_OUT_MS = 400
-private const val ARRIVAL_GAP_MS = 50L
-
-/**
- * The new-message effect: the user's chosen style pulsed [ARRIVAL_PULSES] times in [color], then
- * [onDone]. Drawn over the lock screen by [GlowShield], or on the black panel by the glow screen.
- */
-@Composable
-fun ArrivalEffect(settings: GlowSettings, color: Int, geometry: ScreenGeometry, onDone: () -> Unit) {
-    val glow = remember { Animatable(0f) }
-    val done by rememberUpdatedState(onDone)
-    // A signal, not decoration: keep its timing even with animations scaled down or off.
-    LaunchedEffect(Unit) {
-        withContext(RealTimeMotion) {
-            repeat(ARRIVAL_PULSES) {
-                glow.animateTo(1f, tween(ARRIVAL_FADE_IN_MS, easing = FastOutSlowInEasing))
-                delay(ARRIVAL_HOLD_MS)
-                glow.animateTo(0f, tween(ARRIVAL_FADE_OUT_MS, easing = LinearOutSlowInEasing))
-                delay(ARRIVAL_GAP_MS)
-            }
-        }
-        done()
-    }
-    GlowGraphic(
-        style = settings.style,
-        color = Color(color),
-        alpha = { glow.value },
-        dotX = settings.dotX,
-        dotY = settings.dotY,
-        modifier = Modifier.fillMaxSize(),
-        geometry = geometry,
-        dotRadius = settings.dotSize.radius,
-    )
 }
 
 /** Maps 0..1 slider fractions to a dot centre that always stays fully on screen. */

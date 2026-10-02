@@ -19,10 +19,10 @@ const val WAKE_DEBOUNCE_MS = 3_500L
 /** Brand accent used when an app icon yields no usable colour, and for the Test Preview. */
 const val DEFAULT_GLOW_COLOR = 0xFF00E5FF.toInt()
 
-enum class GlowStyle(@param:StringRes val title: Int, @param:StringRes val caption: Int) {
-    EDGE_FRAME(R.string.style_edge_title, R.string.style_edge_caption),
-    CAMERA_RING(R.string.style_ring_title, R.string.style_ring_caption),
-    CUSTOM_DOT(R.string.style_dot_title, R.string.style_dot_caption);
+enum class GlowStyle(@param:StringRes val title: Int) {
+    EDGE_FRAME(R.string.style_edge_title),
+    CAMERA_RING(R.string.style_ring_title),
+    CUSTOM_DOT(R.string.style_dot_title);
 
     companion object {
         fun fromName(name: String?): GlowStyle = entries.firstOrNull { it.name == name } ?: CUSTOM_DOT
@@ -52,6 +52,66 @@ enum class LedBrightness(val level: Float, @param:StringRes val label: Int) {
 
     companion object {
         fun fromName(name: String?): LedBrightness = entries.firstOrNull { it.name == name } ?: MAX
+    }
+}
+
+/** Edge Frame line thickness at full screen. */
+enum class EdgeWidth(val stroke: Dp, @param:StringRes val label: Int) {
+    HAIRLINE(2.dp, R.string.edge_width_hair),
+    THIN(4.dp, R.string.edge_width_thin),
+    BOLD(7.dp, R.string.edge_width_bold),
+    HEAVY(11.dp, R.string.edge_width_heavy);
+
+    companion object {
+        fun fromName(name: String?): EdgeWidth = entries.firstOrNull { it.name == name } ?: THIN
+    }
+}
+
+/**
+ * Soft light spilling inward from the Edge Frame: stacked wider strokes at falling alpha, as
+ * (extra width beyond the line, alpha) pairs. No blur, so it costs a few strokes per frame.
+ * Fixed widths rather than multiples of the line: a wide line with a strong glow would
+ * otherwise light a band over half the screen, and every effect pass paints that whole band.
+ */
+enum class EdgeGlow(val layers: List<Pair<Dp, Float>>, @param:StringRes val label: Int) {
+    OFF(emptyList(), R.string.edge_glow_off),
+    SOFT(listOf(8.dp to 0.28f), R.string.edge_glow_soft),
+    STRONG(listOf(6.dp to 0.32f, 14.dp to 0.16f, 26.dp to 0.07f), R.string.edge_glow_strong);
+
+    companion object {
+        fun fromName(name: String?): EdgeGlow = entries.firstOrNull { it.name == name } ?: SOFT
+    }
+}
+
+/**
+ * How the Edge Frame moves during the new-message effect.
+ * - PULSE: the whole frame breathes twice.
+ * - COMET: one bright head with a fading tail runs around the screen.
+ * - TWIN: two heads chase each other from opposite sides.
+ */
+enum class EdgeMotion(@param:StringRes val label: Int) {
+    PULSE(R.string.edge_motion_pulse),
+    COMET(R.string.edge_motion_comet),
+    TWIN(R.string.edge_motion_twin);
+
+    companion object {
+        fun fromName(name: String?): EdgeMotion = entries.firstOrNull { it.name == name } ?: COMET
+    }
+}
+
+/**
+ * Edge Frame colouring.
+ * - APP: the message's brand colour.
+ * - DUO: the brand colour flowing into a neighbouring hue and back.
+ * - SPECTRUM: a turning rainbow that starts at the brand colour.
+ */
+enum class EdgeColor(@param:StringRes val label: Int) {
+    APP(R.string.edge_color_app),
+    DUO(R.string.edge_color_duo),
+    SPECTRUM(R.string.edge_color_spectrum);
+
+    companion object {
+        fun fromName(name: String?): EdgeColor = entries.firstOrNull { it.name == name } ?: APP
     }
 }
 
@@ -88,6 +148,12 @@ data class GlowSettings(
     val dotSize: DotSize = DotSize.LED,
     val ledBrightness: LedBrightness = LedBrightness.MAX,
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
+    /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
+    val spawn: Boolean = true,
+    val edgeWidth: EdgeWidth = EdgeWidth.THIN,
+    val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
+    val edgeMotion: EdgeMotion = EdgeMotion.COMET,
+    val edgeColor: EdgeColor = EdgeColor.APP,
 ) {
     companion object {
         const val DEFAULT_DOT_X = 0.06f
@@ -104,6 +170,11 @@ object GlowPrefs {
     private const val KEY_DOT_SIZE = "dot_size"
     private const val KEY_LED_BRIGHTNESS = "led_brightness"
     private const val KEY_ARRIVAL = "arrival"
+    private const val KEY_SPAWN = "spawn"
+    private const val KEY_EDGE_WIDTH = "edge_width"
+    private const val KEY_EDGE_GLOW = "edge_glow"
+    private const val KEY_EDGE_MOTION = "edge_motion"
+    private const val KEY_EDGE_COLOR = "edge_color"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -117,7 +188,23 @@ object GlowPrefs {
             dotSize = DotSize.fromName(prefs.getString(KEY_DOT_SIZE, null)),
             ledBrightness = LedBrightness.fromName(prefs.getString(KEY_LED_BRIGHTNESS, null)),
             arrival = ArrivalMode.fromName(prefs.getString(KEY_ARRIVAL, null)),
+            spawn = prefs.getBoolean(KEY_SPAWN, true),
+            edgeWidth = EdgeWidth.fromName(prefs.getString(KEY_EDGE_WIDTH, null)),
+            edgeGlow = EdgeGlow.fromName(prefs.getString(KEY_EDGE_GLOW, null)),
+            edgeMotion = EdgeMotion.fromName(prefs.getString(KEY_EDGE_MOTION, null)),
+            edgeColor = EdgeColor.fromName(prefs.getString(KEY_EDGE_COLOR, null)),
         )
+    }
+
+    /** Saves the new-message effect choices: the spawn intro and every Edge Frame option. */
+    fun saveEffect(context: Context, settings: GlowSettings) {
+        prefs(context).edit {
+            putBoolean(KEY_SPAWN, settings.spawn)
+            putString(KEY_EDGE_WIDTH, settings.edgeWidth.name)
+            putString(KEY_EDGE_GLOW, settings.edgeGlow.name)
+            putString(KEY_EDGE_MOTION, settings.edgeMotion.name)
+            putString(KEY_EDGE_COLOR, settings.edgeColor.name)
+        }
     }
 
     fun saveStyle(context: Context, style: GlowStyle) {

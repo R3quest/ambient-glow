@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -53,18 +54,23 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderColors
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,11 +84,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -304,7 +312,7 @@ private fun DashboardContent() {
                 ) {
                     AccessSummary(access, actions)
                 }
-                StylePage(settings, onChange = { settings = it })
+                StylePage(settings, access.shield, actions.shield, onChange = { settings = it })
             }
         } else {
             Box(Modifier.padding(horizontal = PageGutter)) {
@@ -322,7 +330,7 @@ private fun DashboardContent() {
                 PageColumn(Modifier.fillMaxSize()) {
                     when (DashboardTab.entries[page]) {
                         DashboardTab.ACCESS -> AccessPage(access, actions)
-                        DashboardTab.STYLE -> StylePage(settings, onChange = { settings = it })
+                        DashboardTab.STYLE -> StylePage(settings, access.shield, actions.shield, onChange = { settings = it })
                     }
                 }
             }
@@ -484,93 +492,219 @@ private fun AccessRow(title: String, active: Boolean, onManage: () -> Unit) {
     }
 }
 
+/**
+ * Two groups, in the order things happen: what plays when a message arrives, then the LED that
+ * waits until it is read. Each change is saved the moment it is made.
+ */
 @Composable
-private fun StylePage(settings: GlowSettings, onChange: (GlowSettings) -> Unit) {
+private fun StylePage(
+    settings: GlowSettings,
+    shieldOn: Boolean,
+    onShield: () -> Unit,
+    onChange: (GlowSettings) -> Unit,
+) {
     val context = LocalContext.current
     // Latest value for slider commit callbacks, which fire after several onMove updates.
     var latest by remember { mutableStateOf(settings) }
     latest = settings
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionLabel(stringResource(R.string.section_led_style))
-        Text(
-            text = stringResource(R.string.led_style_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = GlowPalette.TextMuted,
-        )
-        Spacer(Modifier.height(2.dp))
-        StyleSelector(
+    SettingsGroup(index = "01", title = R.string.group_arrival_title, body = R.string.group_arrival_body) {
+        EffectCard(
             settings = settings,
-            onSelect = { style ->
+            onStyle = { style ->
                 onChange(settings.copy(style = style))
                 GlowPrefs.saveStyle(context, style)
+            },
+            onEffect = { next ->
+                onChange(next)
+                GlowPrefs.saveEffect(context, next)
+            },
+        )
+        ArrivalModeCard(
+            selected = settings.arrival,
+            shieldOn = shieldOn,
+            onShield = onShield,
+            onSelect = { mode ->
+                onChange(settings.copy(arrival = mode))
+                GlowPrefs.saveArrival(context, mode)
             },
         )
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionLabel(stringResource(R.string.arrival_mode))
-        Row(
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            ArrivalMode.entries.forEach { mode ->
-                BladeChip(
-                    label = stringResource(mode.label),
-                    selected = settings.arrival == mode,
-                    onClick = {
-                        onChange(settings.copy(arrival = mode))
-                        GlowPrefs.saveArrival(context, mode)
-                    },
-                    modifier = Modifier.weight(1f),
-                    compact = true,
+    // The waiting LED is always the dot, whatever arrival style is chosen.
+    SettingsGroup(index = "02", title = R.string.group_led_title, body = R.string.group_led_body) {
+        LedCard(
+            settings = settings,
+            onMove = { x, y ->
+                latest = latest.copy(dotX = x, dotY = y)
+                onChange(latest)
+            },
+            onCommit = { GlowPrefs.saveDot(context, latest.dotX, latest.dotY) },
+            onSize = { size ->
+                latest = latest.copy(dotSize = size)
+                onChange(latest)
+                GlowPrefs.saveDotSize(context, size)
+            },
+            onBrightness = { level ->
+                latest = latest.copy(ledBrightness = level)
+                onChange(latest)
+                GlowPrefs.saveLedBrightness(context, level)
+            },
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings building blocks: group heading, card, divider, labelled option, toggle, radio
+// ---------------------------------------------------------------------------------------------
+
+/** A numbered heading with one line of context, then its cards. */
+@Composable
+private fun SettingsGroup(
+    index: String,
+    @StringRes title: Int,
+    @StringRes body: Int,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row {
+            Text(
+                text = index,
+                style = MaterialTheme.typography.labelMedium,
+                color = GlowPalette.TextFaint,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = GlowPalette.TextPrimary,
+                )
+                Text(
+                    text = stringResource(body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlowPalette.TextMuted,
                 )
             }
         }
-        Text(
-            text = stringResource(settings.arrival.body),
-            style = MaterialTheme.typography.bodySmall,
-            color = GlowPalette.TextMuted,
+        content()
+    }
+}
+
+private fun Modifier.glowCard(): Modifier = this
+    .fillMaxWidth()
+    .clip(GlowShapes.Card)
+    .background(GlowPalette.Surface)
+    .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Card)
+    .padding(20.dp)
+
+@Composable
+private fun CardDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .height(1.dp)
+            .background(GlowPalette.OutlineSoft),
+    )
+}
+
+/** A small caps label with its control right under it. */
+@Composable
+private fun OptionGroup(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel(label)
+        content()
+    }
+}
+
+/** The whole row toggles; the switch only shows the state. */
+@Composable
+private fun ToggleRow(title: String, body: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GlowShapes.Tile)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = GlowPalette.TextPrimary,
+            )
+            Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
+        }
+        Spacer(Modifier.width(16.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = GlowPalette.Void,
+                checkedTrackColor = GlowPalette.Cyan,
+                checkedBorderColor = GlowPalette.Cyan,
+                uncheckedThumbColor = GlowPalette.TextMuted,
+                uncheckedTrackColor = GlowPalette.SurfaceHigh,
+                uncheckedBorderColor = GlowPalette.Outline,
+            ),
         )
     }
+}
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionLabel(stringResource(R.string.led_brightness))
-        Row(
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            LedBrightness.entries.forEach { level ->
-                BladeChip(
-                    label = stringResource(level.label),
-                    selected = settings.ledBrightness == level,
-                    onClick = {
-                        onChange(settings.copy(ledBrightness = level))
-                        GlowPrefs.saveLedBrightness(context, level)
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Canvas(Modifier.size(8.dp)) { drawCircle(GlowPalette.Cyan.copy(alpha = level.level)) }
-                    Spacer(Modifier.width(8.dp))
-                }
-            }
+/** One choice of a list, with a line saying what it does. */
+@Composable
+private fun RadioRow(title: String, body: String, selected: Boolean, onClick: () -> Unit) {
+    val ring by animateColorAsState(if (selected) GlowPalette.Cyan else GlowPalette.Outline, label = "radio")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GlowShapes.Tile)
+            .background(if (selected) GlowPalette.SurfaceRaised else Color.Transparent)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+    ) {
+        Canvas(Modifier.padding(top = 2.dp).size(16.dp)) {
+            val stroke = 1.5.dp.toPx()
+            drawCircle(ring, radius = size.minDimension / 2f - stroke / 2f, style = Stroke(stroke))
+            if (selected) drawCircle(GlowPalette.Cyan, radius = size.minDimension / 4f)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = if (selected) GlowPalette.TextPrimary else GlowPalette.TextMuted,
+            )
+            Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
         }
     }
+}
 
-    // The waiting LED is always the dot, whatever arrival style is chosen.
-    DotPositionPanel(
-        settings = settings,
-        onMove = { x, y ->
-            latest = latest.copy(dotX = x, dotY = y)
-            onChange(latest)
-        },
-        onCommit = { GlowPrefs.saveDot(context, latest.dotX, latest.dotY) },
-        onSize = { size ->
-            latest = latest.copy(dotSize = size)
-            onChange(latest)
-            GlowPrefs.saveDotSize(context, size)
-        },
-    )
+/** An amber heads-up with one fix-it action. */
+@Composable
+private fun NoticeRow(text: String, action: String, onAction: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GlowShapes.Tile)
+            .background(GlowPalette.Amber.copy(alpha = 0.08f))
+            .border(1.dp, GlowPalette.Amber.copy(alpha = 0.4f), GlowShapes.Tile)
+            .clickable(role = Role.Button, onClick = onAction)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = GlowPalette.TextPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(text = action.uppercase(), style = MaterialTheme.typography.labelMedium, color = GlowPalette.Amber)
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -811,71 +945,225 @@ private fun GhostButton(text: String, emphasized: Boolean, onClick: () -> Unit, 
 }
 
 // ---------------------------------------------------------------------------------------------
-// Style selector
+// 01 New message: the effect (live preview, style, spawn, Edge Frame options), where it plays
 // ---------------------------------------------------------------------------------------------
 
+private val StudioPreviewHeight: Dp = 250.dp
+private val PickerPhoneHeight: Dp = 46.dp
+private val PickerPhoneCorner: Dp = 6.dp
+
+/** Matches the corner of [GlowShapes.Phone], so the previewed frame hugs the mock-up's edge. */
+private val PhoneCorner: Dp = 14.dp
+
+private val PREVIEW_SAMPLE_COLORS = listOf(GlowPalette.Cyan, GlowPalette.Magenta, GlowPalette.Lime)
+private const val PREVIEW_LOOP_GAP_MS = 700L
+
 @Composable
-private fun StyleSelector(settings: GlowSettings, onSelect: (GlowStyle) -> Unit) {
-    Row(
+private fun EffectCard(settings: GlowSettings, onStyle: (GlowStyle) -> Unit, onEffect: (GlowSettings) -> Unit) {
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
+        // Preview beside the style list: what you pick is what plays, without scrolling.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val previewLabel = stringResource(R.string.effect_preview_label)
+                EffectPreview(
+                    settings = settings,
+                    modifier = Modifier
+                        .height(StudioPreviewHeight)
+                        .aspectRatio(0.48f)
+                        .semantics { contentDescription = previewLabel },
+                )
+                Text(
+                    text = stringResource(R.string.effect_replay_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GlowPalette.TextFaint,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SectionLabel(stringResource(R.string.effect_style))
+                StylePicker(settings, onStyle)
+            }
+        }
+        CardDivider()
+        ToggleRow(
+            title = stringResource(R.string.effect_spawn_title),
+            body = stringResource(R.string.effect_spawn_body),
+            checked = settings.spawn,
+            onChange = { onEffect(settings.copy(spawn = it)) },
+        )
+        // The other styles have nothing to tune here; the dot is placed in group 02.
+        AnimatedVisibility(
+            visible = settings.style == GlowStyle.EDGE_FRAME,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                CardDivider()
+                SectionLabel(stringResource(R.string.section_edge), GlowPalette.Cyan)
+                OptionGroup(stringResource(R.string.edge_motion)) {
+                    ChipRow(EdgeMotion.entries, settings.edgeMotion, { it.label }) { onEffect(settings.copy(edgeMotion = it)) }
+                }
+                OptionGroup(stringResource(R.string.edge_color)) {
+                    ChipRow(EdgeColor.entries, settings.edgeColor, { it.label }) { onEffect(settings.copy(edgeColor = it)) }
+                }
+                OptionGroup(stringResource(R.string.edge_width)) {
+                    ChipRow(EdgeWidth.entries, settings.edgeWidth, { it.label }) { onEffect(settings.copy(edgeWidth = it)) }
+                }
+                OptionGroup(stringResource(R.string.edge_glow)) {
+                    ChipRow(EdgeGlow.entries, settings.edgeGlow, { it.label }) { onEffect(settings.copy(edgeGlow = it)) }
+                }
+            }
+        }
+    }
+}
+
+/** The three styles as rows: a mini phone showing the style, and its name. */
+@Composable
+private fun StylePicker(settings: GlowSettings, onSelect: (GlowStyle) -> Unit) {
+    val corner = with(LocalDensity.current) { PickerPhoneCorner.toPx() }
+    Column(
         modifier = Modifier.fillMaxWidth().selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         GlowStyle.entries.forEach { style ->
-            StyleTile(
-                style = style,
-                selected = settings.style == style,
-                settings = settings,
-                onSelect = { onSelect(style) },
-                modifier = Modifier.weight(1f),
-            )
+            val selected = settings.style == style
+            val border: Brush = if (selected) GlowBrushes.Signature else SolidColor(GlowPalette.OutlineSoft)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(GlowShapes.Tile)
+                    .background(if (selected) GlowPalette.SurfaceRaised else GlowPalette.Void)
+                    .border(if (selected) 1.5.dp else 1.dp, border, GlowShapes.Tile)
+                    .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(style) })
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PhoneMock(
+                    modifier = Modifier.height(PickerPhoneHeight).aspectRatio(0.55f),
+                    shape = RoundedCornerShape(PickerPhoneCorner),
+                ) { mockGeometry ->
+                    GlowGraphic(
+                        style = style,
+                        color = if (selected) GlowPalette.Cyan else GlowPalette.TextFaint,
+                        alpha = { 1f },
+                        dotX = settings.dotX,
+                        dotY = settings.dotY,
+                        metrics = GlowMetrics.Tile,
+                        geometry = mockGeometry.copy(cornerRadiusPx = corner),
+                        dotRadius = previewDotRadius(settings.dotSize, TILE_PREVIEW_SCALE),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = stringResource(style.title),
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (selected) GlowPalette.TextPrimary else GlowPalette.TextMuted,
+                    maxLines = 2,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The real [ArrivalEffect] in a phone mock-up, scaled to it and replayed with a short rest,
+ * cycling sample colours. Any change, or a tap, restarts it from the first frame.
+ */
+@Composable
+private fun EffectPreview(settings: GlowSettings, modifier: Modifier = Modifier) {
+    var run by remember { mutableIntStateOf(0) }
+    var resting by remember { mutableStateOf(false) }
+    LaunchedEffect(settings) { resting = false }
+    LaunchedEffect(resting) {
+        if (!resting) return@LaunchedEffect
+        delay(PREVIEW_LOOP_GAP_MS)
+        resting = false
+        run++
+    }
+    val density = LocalDensity.current
+    val screenHeight = LocalWindowInfo.current.containerSize.height.toFloat()
+    val scale = with(density) { StudioPreviewHeight.toPx() / screenHeight.coerceAtLeast(1f) }.coerceIn(0.1f, 1f)
+    val corner = with(density) { PhoneCorner.toPx() }
+    PhoneMock(
+        modifier
+            .clip(GlowShapes.Phone)
+            .clickable(role = Role.Button) {
+                resting = false
+                run++
+            },
+    ) { mockGeometry ->
+        if (!resting) {
+            key(run, settings) {
+                ArrivalEffect(
+                    settings = settings,
+                    color = PREVIEW_SAMPLE_COLORS[run % PREVIEW_SAMPLE_COLORS.size].toArgb(),
+                    geometry = mockGeometry.copy(cornerRadiusPx = corner),
+                    onDone = { resting = true },
+                    scale = scale,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun StyleTile(
-    style: GlowStyle,
-    selected: Boolean,
-    settings: GlowSettings,
-    onSelect: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun ArrivalModeCard(
+    selected: ArrivalMode,
+    shieldOn: Boolean,
+    onShield: () -> Unit,
+    onSelect: (ArrivalMode) -> Unit,
 ) {
-    val border: Brush = if (selected) GlowBrushes.Signature else SolidColor(GlowPalette.OutlineSoft)
-    Column(
-        modifier = modifier
-            .clip(GlowShapes.Tile)
-            .background(if (selected) GlowPalette.SurfaceRaised else GlowPalette.Surface)
-            .border(if (selected) 1.5.dp else 1.dp, border, GlowShapes.Tile)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
-            .padding(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        PhoneMock(modifier = Modifier.fillMaxWidth(0.82f).aspectRatio(0.5f)) { mockGeometry ->
-            GlowGraphic(
-                style = style,
-                color = if (selected) GlowPalette.Cyan else GlowPalette.TextFaint,
-                alpha = { 1f },
-                dotX = settings.dotX,
-                dotY = settings.dotY,
-                metrics = GlowMetrics.Tile,
-                geometry = mockGeometry,
-                dotRadius = previewDotRadius(settings.dotSize, TILE_PREVIEW_SCALE),
-                modifier = Modifier.fillMaxSize(),
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel(stringResource(R.string.arrival_mode), GlowPalette.Cyan)
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ArrivalMode.entries.forEach { mode ->
+                RadioRow(
+                    title = stringResource(mode.label),
+                    body = stringResource(mode.body),
+                    selected = selected == mode,
+                    onClick = { onSelect(mode) },
+                )
+            }
+        }
+        // Without the shield, Lock screen only lights the screen: say so where it is chosen.
+        AnimatedVisibility(
+            visible = selected == ArrivalMode.LOCK_SCREEN && !shieldOn,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            NoticeRow(
+                text = stringResource(R.string.arrival_needs_shield),
+                action = stringResource(R.string.access_shield_grant),
+                onAction = onShield,
             )
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = stringResource(style.title),
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-            color = if (selected) GlowPalette.TextPrimary else GlowPalette.TextMuted,
-            maxLines = 1,
-        )
-        Text(
-            text = stringResource(style.caption),
-            style = MaterialTheme.typography.bodySmall,
-            color = GlowPalette.TextFaint,
-            maxLines = 2,
-        )
+    }
+}
+
+/** One option per chip, equal widths. */
+@Composable
+private fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> Int, onSelect: (T) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        options.forEach { option ->
+            BladeChip(
+                label = stringResource(label(option)),
+                selected = option == selected,
+                onClick = { onSelect(option) },
+                modifier = Modifier.weight(1f),
+                compact = true,
+            )
+        }
     }
 }
 
@@ -915,15 +1203,16 @@ private fun rememberCamera(geometry: ScreenGeometry): ScreenCamera {
 @Composable
 private fun PhoneMock(
     modifier: Modifier = Modifier,
+    shape: Shape = GlowShapes.Phone,
     content: @Composable BoxScope.(ScreenGeometry) -> Unit,
 ) {
     val camera = LocalCamera.current
     val minRadius = with(LocalDensity.current) { 1.5.dp.toPx() }
     BoxWithConstraints(
         modifier = modifier
-            .clip(GlowShapes.Phone)
+            .clip(shape)
             .background(GlowPalette.Void)
-            .border(1.dp, GlowPalette.Outline, GlowShapes.Phone),
+            .border(1.dp, GlowPalette.Outline, shape),
     ) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
@@ -1016,11 +1305,12 @@ private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
 }
 
 @Composable
-private fun DotPositionPanel(
+private fun LedCard(
     settings: GlowSettings,
     onMove: (Float, Float) -> Unit,
     onCommit: () -> Unit,
     onSize: (DotSize) -> Unit,
+    onBrightness: (LedBrightness) -> Unit,
 ) {
     val dotX = settings.dotX
     val dotY = settings.dotY
@@ -1045,15 +1335,7 @@ private fun DotPositionPanel(
     val previewScale = (PanelHeight / screenHeightDp.coerceAtLeast(PanelHeight)).coerceIn(0.1f, 1f)
     val previewRadius = previewDotRadius(settings.dotSize, previewScale)
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(GlowShapes.Card)
-            .background(GlowPalette.Surface)
-            .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Card)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_dot), GlowPalette.Cyan)
         Text(
             text = stringResource(R.string.dot_body),
@@ -1132,32 +1414,15 @@ private fun DotPositionPanel(
             }
         }
 
-        SectionLabel(stringResource(R.string.dot_horizontal))
         val horizontalLabel = stringResource(R.string.dot_horizontal)
-        Slider(
-            value = dotX,
-            onValueChange = { move(it, dotY) },
-            onValueChangeFinished = onCommit,
-            colors = sliderColors,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = horizontalLabel },
-        )
-
-        SectionLabel(stringResource(R.string.dot_size))
-        Row(
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            DotSize.entries.forEach { size ->
-                BladeChip(
-                    label = stringResource(size.label),
-                    selected = settings.dotSize == size,
-                    onClick = { onSize(size) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
-                    Spacer(Modifier.width(8.dp))
-                }
-            }
+        OptionGroup(horizontalLabel) {
+            Slider(
+                value = dotX,
+                onValueChange = { move(it, dotY) },
+                onValueChangeFinished = onCommit,
+                colors = sliderColors,
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = horizontalLabel },
+            )
         }
 
         val pick: (DotSpot) -> Unit = { spot ->
@@ -1166,10 +1431,50 @@ private fun DotPositionPanel(
             onMove(spot.x, spot.y)
             onCommit()
         }
-        SectionLabel(stringResource(R.string.dot_spots_camera_line))
-        SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
-        SectionLabel(stringResource(R.string.dot_spots_other))
-        SpotRow(spots.filterNot { it.onCameraLine }, dotX, dotY, pick)
+        OptionGroup(stringResource(R.string.dot_spots_camera_line)) {
+            SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
+        }
+        OptionGroup(stringResource(R.string.dot_spots_other)) {
+            SpotRow(spots.filterNot { it.onCameraLine }, dotX, dotY, pick)
+        }
+
+        CardDivider()
+        OptionGroup(stringResource(R.string.dot_size)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                DotSize.entries.forEach { size ->
+                    BladeChip(
+                        label = stringResource(size.label),
+                        selected = settings.dotSize == size,
+                        onClick = { onSize(size) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                }
+            }
+        }
+        OptionGroup(stringResource(R.string.led_brightness)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                LedBrightness.entries.forEach { level ->
+                    BladeChip(
+                        label = stringResource(level.label),
+                        selected = settings.ledBrightness == level,
+                        onClick = { onBrightness(level) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Canvas(Modifier.size(8.dp)) { drawCircle(GlowPalette.Cyan.copy(alpha = level.level)) }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                }
+            }
+        }
     }
 }
 

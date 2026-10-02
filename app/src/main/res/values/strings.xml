@@ -17,15 +17,42 @@
     <string name="state_pending">PENDING</string>
 
     <string name="section_dot">LED DOT</string>
-    <string name="section_led_style">ARRIVAL GLOW</string>
-    <string name="led_style_body">A new message plays this effect in the app\'s colour. Afterwards the screen goes black and only the LED dot blinks, cycling through each waiting app\'s colour, until you read or dismiss the messages.</string>
-    <string name="arrival_mode">ON NEW MESSAGE</string>
-    <string name="arrival_lock_screen">LOCK SCREEN</string>
-    <string name="arrival_black">BLACK</string>
-    <string name="arrival_message">MESSAGE</string>
-    <string name="arrival_lock_screen_body">The lock screen lights up with all your notifications and the effect plays over it. Needs Effects &amp; clean wake turned on; without it the lock screen just lights up.</string>
-    <string name="arrival_black_body">The screen comes on black and only the effect plays, then the dot.</string>
-    <string name="arrival_message_body">The screen comes on black, the effect plays and the phone pops up only the new message, in its own notification style, then the dot. Your lock-screen privacy settings decide how much of it shows.</string>
+    <string name="group_arrival_title">New message</string>
+    <string name="group_arrival_body">What plays the moment a message arrives, in the app\'s colour.</string>
+    <string name="group_led_title">Waiting LED</string>
+    <string name="group_led_body">Afterwards the screen goes black and only this dot blinks, one blink per waiting app, until you read or dismiss the messages.</string>
+    <string name="effect_replay_hint">TAP TO REPLAY</string>
+    <string name="effect_style">STYLE</string>
+    <string name="effect_spawn_title">AirDrop spawn</string>
+    <string name="effect_spawn_body">A wave of light bursts out of the camera and lights the glow as it passes.</string>
+    <string name="section_edge">EDGE FRAME</string>
+    <string name="arrival_needs_shield">Turn on Effects &amp; clean wake to play the effect over the lock screen. Without it the lock screen only lights up.</string>
+    <string name="section_effect">EFFECT</string>
+    <string name="effect_preview_label">Preview of the new-message effect, replaying.</string>
+    <string name="edge_width">WIDTH</string>
+    <string name="edge_width_hair">HAIR</string>
+    <string name="edge_width_thin">THIN</string>
+    <string name="edge_width_bold">BOLD</string>
+    <string name="edge_width_heavy">HEAVY</string>
+    <string name="edge_glow">GLOW</string>
+    <string name="edge_glow_off">OFF</string>
+    <string name="edge_glow_soft">SOFT</string>
+    <string name="edge_glow_strong">STRONG</string>
+    <string name="edge_motion">MOTION</string>
+    <string name="edge_motion_pulse">PULSE</string>
+    <string name="edge_motion_comet">COMET</string>
+    <string name="edge_motion_twin">TWIN</string>
+    <string name="edge_color">COLOUR</string>
+    <string name="edge_color_app">APP</string>
+    <string name="edge_color_duo">DUO</string>
+    <string name="edge_color_spectrum">SPECTRUM</string>
+    <string name="arrival_mode">WHERE IT PLAYS</string>
+    <string name="arrival_lock_screen">Lock screen</string>
+    <string name="arrival_black">Black screen</string>
+    <string name="arrival_message">Black screen + message</string>
+    <string name="arrival_lock_screen_body">The lock screen lights up with all your notifications and the effect plays over it.</string>
+    <string name="arrival_black_body">The screen comes on black and plays only the effect.</string>
+    <string name="arrival_message_body">Black screen, the effect, and a pop-up of only the new message. Your lock-screen privacy settings decide how much shows.</string>
     <string name="led_brightness">BRIGHTNESS</string>
     <string name="led_brightness_soft">SOFT</string>
     <string name="led_brightness_bright">BRIGHT</string>
@@ -53,13 +80,10 @@
     <string name="access_shield_manage">Accessibility settings</string>
 
     <string name="style_edge_title">Edge Frame</string>
-    <string name="style_edge_caption">Border on every edge</string>
     <string name="style_ring_title">Camera Ring</string>
-    <string name="style_ring_caption">Halo around the lens</string>
     <string name="style_dot_title">Custom Dot</string>
-    <string name="style_dot_caption">A dot you place</string>
 
-    <string name="dot_body">Only these pixels light up; the rest of the panel stays black. Drag it on the preview or use the sliders; it snaps to the spots below and the ruler marks. Camera-line spots sit level with the centre of your lens.</string>
+    <string name="dot_body">Only these pixels light up. Drag the dot or use the sliders; it snaps to the spots below and the ruler marks.</string>
     <string name="dot_size">SIZE</string>
     <string name="dot_size_led">LED</string>
     <string name="dot_size_s">S</string>
@@ -72,8 +96,8 @@
     <string name="dot_spot_cam_right">CAM R</string>
     <string name="dot_spot_edge_right">EDGE R</string>
     <string name="dot_spot_below_cam">BELOW</string>
-    <string name="dot_spot_corner_left">CORNER L</string>
-    <string name="dot_spot_corner_right">CORNER R</string>
+    <string name="dot_spot_corner_left">TOP L</string>
+    <string name="dot_spot_corner_right">TOP R</string>
     <string name="dot_spot_bottom">BOTTOM</string>
     <string name="dot_preview_label">Dot position preview. Drag to move.</string>
     <string name="dot_horizontal">HORIZONTAL</string>
@@ -85,9 +109,9 @@
     <string name="tab_style">GLOW STYLE</string>
 
     <string name="test_preview">LED PREVIEW</string>
-    <string name="test_locked">LOCKED TEST · 5 s</string>
-    <string name="test_locked_countdown">LOCK YOUR PHONE · %1$d</string>
-    <string name="test_locked_hint">Lock the screen now. The test message arrives when the count reaches zero.</string>
+    <string name="test_locked">LOCKED TEST</string>
+    <string name="test_locked_countdown">LOCK NOW · %1$d</string>
+    <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
     <string name="test_locked_blocked">Allow alerts on the Access tab first.</string>
 
     <string name="message_channel_name">New message pop-up</string>

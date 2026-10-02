@@ -729,21 +729,35 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (keepPanelOn.isHeld) keepPanelOn.release()
     }
 
+    /**
+     * [lowRefresh]: the LED face. While it plays the arrival effect it asks for the panel's top
+     * rate instead: adaptive-refresh panels drop to their idle rate (10 Hz on One UI) over an
+     * almost static black window, and an effect started there only ever draws at that rate, so
+     * the system never sees a reason to raise it. The lock-screen overlay never had this problem
+     * because SystemUI keeps the rate up there.
+     */
     private fun applyWindow(brightness: Float, lowRefresh: Boolean) {
+        val playing = lowRefresh && arriving.value
         window.attributes = window.attributes.apply {
             screenBrightness = brightness
-            preferredDisplayModeId = if (lowRefresh) lowestRefreshModeId() else 0
+            preferredDisplayModeId = if (lowRefresh && !playing) lowestRefreshModeId() else 0
+            preferredRefreshRate = if (playing) highestRefreshRate() else 0f
         }
     }
 
+    private fun currentDisplay(): Display? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        display
+    } else {
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay
+    }
+
+    private fun highestRefreshRate(): Float =
+        currentDisplay()?.supportedModes?.maxOfOrNull { it.refreshRate } ?: 0f
+
     /** Same resolution, lowest refresh rate: fewer panel scans while the LED sits mostly dark. */
     private fun lowestRefreshModeId(): Int {
-        val display: Display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            display ?: return 0
-        } else {
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay
-        }
+        val display = currentDisplay() ?: return 0
         val current = display.mode
         return display.supportedModes
             .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
