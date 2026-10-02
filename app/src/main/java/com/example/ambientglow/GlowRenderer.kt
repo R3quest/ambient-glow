@@ -2,10 +2,18 @@ package com.example.ambientglow
 
 import android.os.Build
 import android.view.RoundedCorner
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -17,6 +25,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.min
 
 /** Physical sizes of every glow element. Full-screen values follow TODO.md (4dp frame). */
@@ -24,8 +34,6 @@ import kotlin.math.min
 data class GlowMetrics(
     val stroke: Dp,
     val haloStroke: Dp,
-    val dotRadius: Dp,
-    val haloDotRadius: Dp,
     val ringGap: Dp,
     val fallbackCornerRadius: Dp,
     val fallbackCameraCenterY: Dp,
@@ -35,8 +43,6 @@ data class GlowMetrics(
         val FullScreen = GlowMetrics(
             stroke = 4.dp,
             haloStroke = 12.dp,
-            dotRadius = 12.dp,
-            haloDotRadius = 22.dp,
             ringGap = 6.dp,
             fallbackCornerRadius = 28.dp,
             fallbackCameraCenterY = 26.dp,
@@ -47,8 +53,6 @@ data class GlowMetrics(
         val Tile = GlowMetrics(
             stroke = 2.dp,
             haloStroke = 5.dp,
-            dotRadius = 4.dp,
-            haloDotRadius = 7.dp,
             ringGap = 2.dp,
             fallbackCornerRadius = 13.dp,
             fallbackCameraCenterY = 9.dp,
@@ -59,8 +63,6 @@ data class GlowMetrics(
         val Panel = GlowMetrics(
             stroke = 2.5.dp,
             haloStroke = 6.dp,
-            dotRadius = 6.dp,
-            haloDotRadius = 11.dp,
             ringGap = 3.dp,
             fallbackCornerRadius = 13.dp,
             fallbackCameraCenterY = 12.dp,
@@ -68,6 +70,9 @@ data class GlowMetrics(
         )
     }
 }
+
+/** Halo radius as a multiple of the dot radius. Also the edge margin that keeps the dot on screen. */
+const val DOT_HALO_FACTOR = 2f
 
 /** Punch-hole position in window pixels. */
 @Immutable
@@ -121,15 +126,16 @@ fun GlowGraphic(
     modifier: Modifier = Modifier,
     metrics: GlowMetrics = GlowMetrics.FullScreen,
     geometry: ScreenGeometry = ScreenGeometry.Unknown,
+    dotRadius: Dp = DotSize.LED.radius,
 ) {
     val density = LocalDensity.current
-    val px = remember(metrics, density) {
+    val px = remember(metrics, dotRadius, density) {
         with(density) {
             ResolvedMetrics(
                 stroke = metrics.stroke.toPx(),
                 haloStroke = metrics.haloStroke.toPx(),
-                dotRadius = metrics.dotRadius.toPx(),
-                haloDotRadius = metrics.haloDotRadius.toPx(),
+                dotRadius = dotRadius.toPx(),
+                haloDotRadius = dotRadius.toPx() * DOT_HALO_FACTOR,
                 ringGap = metrics.ringGap.toPx(),
                 cornerRadius = metrics.fallbackCornerRadius.toPx(),
                 cameraCenterY = metrics.fallbackCameraCenterY.toPx(),
@@ -189,10 +195,56 @@ fun GlowGraphic(
     }
 }
 
+// Arrival effect: two quick pulses, short enough to finish before the LED takes over the lock
+// screen (2.5 s).
+private const val ARRIVAL_PULSES = 2
+private const val ARRIVAL_FADE_IN_MS = 250
+private const val ARRIVAL_HOLD_MS = 550L
+private const val ARRIVAL_FADE_OUT_MS = 400
+private const val ARRIVAL_GAP_MS = 50L
+
+/**
+ * The new-message effect: the user's chosen style pulsed [ARRIVAL_PULSES] times in [color], then
+ * [onDone]. Drawn over the lock screen by [GlowShield], or on the black panel by the glow screen.
+ */
+@Composable
+fun ArrivalEffect(settings: GlowSettings, color: Int, geometry: ScreenGeometry, onDone: () -> Unit) {
+    val glow = remember { Animatable(0f) }
+    val done by rememberUpdatedState(onDone)
+    // A signal, not decoration: keep its timing even with animations scaled down or off.
+    LaunchedEffect(Unit) {
+        withContext(RealTimeMotion) {
+            repeat(ARRIVAL_PULSES) {
+                glow.animateTo(1f, tween(ARRIVAL_FADE_IN_MS, easing = FastOutSlowInEasing))
+                delay(ARRIVAL_HOLD_MS)
+                glow.animateTo(0f, tween(ARRIVAL_FADE_OUT_MS, easing = LinearOutSlowInEasing))
+                delay(ARRIVAL_GAP_MS)
+            }
+        }
+        done()
+    }
+    GlowGraphic(
+        style = settings.style,
+        color = Color(color),
+        alpha = { glow.value },
+        dotX = settings.dotX,
+        dotY = settings.dotY,
+        modifier = Modifier.fillMaxSize(),
+        geometry = geometry,
+        dotRadius = settings.dotSize.radius,
+    )
+}
+
 /** Maps 0..1 slider fractions to a dot centre that always stays fully on screen. */
 fun dotCenter(fractionX: Float, fractionY: Float, canvas: Size, margin: Float): Offset = Offset(
     x = margin + fractionX * (canvas.width - margin * 2f),
     y = margin + fractionY * (canvas.height - margin * 2f),
+)
+
+/** Inverse of [dotCenter]: a touch position back to clamped 0..1 fractions. */
+fun dotFraction(position: Offset, canvas: Size, margin: Float): Offset = Offset(
+    x = ((position.x - margin) / (canvas.width - margin * 2f).coerceAtLeast(1f)).coerceIn(0f, 1f),
+    y = ((position.y - margin) / (canvas.height - margin * 2f).coerceAtLeast(1f)).coerceIn(0f, 1f),
 )
 
 @Immutable

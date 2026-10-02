@@ -14,6 +14,7 @@ This file serves as the permanent system configuration and architectural authori
 - **Approved Permissions:**
   - `android.permission.WAKE_LOCK` (To cleanly illuminate the physical panel).
   - `android.permission.BIND_NOTIFICATION_LISTENER_SERVICE` (System-enforced access boundary).
+  - `android.permission.BIND_ACCESSIBILITY_SERVICE` — optional, user-enabled `GlowShield` only: `TYPE_ACCESSIBILITY_OVERLAY` windows for two short moments — the see-through arrival effect over the lit lock screen (no app window can draw above a visible keyguard), and a black cover for the ~0.5 s LED wake hand-over, because One UI draws its status/navigation bars above every app window during that moment. No event types, no window content.
 
 ## 🚀 3. High-Performance Execution & Memory Rules
 - **Avoid GC Trashing:** During `onNotificationPosted`, converting an app icon to a bitmap can trigger aggressive Garbage Collection (GC) pauses if done inefficiently. Reuse configurations and ensure width/height are constrained.

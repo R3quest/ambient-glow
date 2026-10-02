@@ -9,6 +9,15 @@
     <!-- The only background-launch path Android allows without SYSTEM_ALERT_WINDOW. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
+    <!-- Lets the listener load sender app icons and names for colour + card (Android 11+
+         package visibility). Launcher apps only; no QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -36,11 +45,9 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"
-            android:noHistory="true"
-            android:showWhenLocked="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.AmbientGlow.Wake"
-            android:turnScreenOn="true" />
+            android:theme="@style/Theme.AmbientGlow.Wake" />
+        <!-- showWhenLocked / turnScreenOn are switched at runtime: see WakeScreenActivity. -->
 
         <service
             android:name=".NotificationWakerService"
@@ -58,6 +65,20 @@
             <meta-data
                 android:name="android.service.notification.disabled_filter_types"
                 android:value="ongoing|silent" />
+        </service>
+
+        <!-- Optional: covers the system bars while the LED takes over the screen (GlowShield). -->
+        <service
+            android:name=".GlowShield"
+            android:exported="true"
+            android:label="@string/shield_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/glow_shield" />
         </service>
     </application>
 </manifest>

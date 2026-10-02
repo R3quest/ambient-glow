@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No event types and no window content: the service only owns the overlay cover. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/shield_description"
+    android:summary="@string/shield_summary"
+    android:canRetrieveWindowContent="false"
+    android:notificationTimeout="0" />

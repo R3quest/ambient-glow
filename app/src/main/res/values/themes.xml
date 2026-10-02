@@ -12,7 +12,9 @@
         <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!-- Wake layer: a fully transparent, untitled, non-animated window. -->
+    <!-- Glow window: translucent so it can be fully see-through while the system lock screen
+         shows over it; it turns itself opaque (Activity.setTranslucent) while the LED covers
+         the lock screen. No title, no window animations, no starting window. -->
     <style name="Base.Theme.AmbientGlow.Wake" parent="android:Theme.Translucent.NoTitleBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>

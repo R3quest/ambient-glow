@@ -2,26 +2,40 @@
 <resources>
     <string name="app_name">Ambient Glow</string>
     <string name="listener_label">Ambient Glow message reader</string>
+    <string name="shield_label">Ambient Glow effects</string>
+    <string name="shield_summary">Plays the new-message effect over the lock screen and hides the system bars while the LED turns the screen on.</string>
+    <string name="shield_description">When a new message lights the lock screen, this service draws your chosen glow effect over it for two seconds; the lock screen stays visible and usable underneath. When the LED lights the screen, it also covers the battery icon and navigation handle with black for half a second. It reads no screen content and receives no accessibility events.</string>
 
     <string name="channel_name">Wake bridge</string>
     <string name="channel_description">Briefly used to light the screen when a message arrives. Dismissed automatically.</string>
     <string name="bridge_title">New message</string>
-    <string name="bridge_text">Ambient Glow is lighting your screen</string>
+    <string name="bridge_text">Lighting your screen</string>
 
-    <string name="header_tagline">Event-driven · 0% idle CPU</string>
     <string name="status_armed">ARMED</string>
     <string name="status_setup">SETUP %1$d/%2$d</string>
     <string name="state_active">ACTIVE</string>
     <string name="state_pending">PENDING</string>
 
-    <string name="section_access">ACCESS</string>
-    <string name="section_style">GLOW STYLE</string>
-    <string name="section_dot">DOT POSITION</string>
+    <string name="section_dot">LED DOT</string>
+    <string name="section_led_style">ARRIVAL GLOW</string>
+    <string name="led_style_body">A new message plays this effect in the app\'s colour. Afterwards the screen goes black and only the LED dot blinks, cycling through each waiting app\'s colour, until you read or dismiss the messages.</string>
+    <string name="arrival_mode">ON NEW MESSAGE</string>
+    <string name="arrival_lock_screen">LOCK SCREEN</string>
+    <string name="arrival_black">BLACK</string>
+    <string name="arrival_message">MESSAGE</string>
+    <string name="arrival_lock_screen_body">The lock screen lights up with all your notifications and the effect plays over it. Needs Effects &amp; clean wake turned on; without it the lock screen just lights up.</string>
+    <string name="arrival_black_body">The screen comes on black and only the effect plays, then the dot.</string>
+    <string name="arrival_message_body">The screen comes on black, the effect plays and the phone pops up only the new message, in its own notification style, then the dot. Your lock-screen privacy settings decide how much of it shows.</string>
+    <string name="led_brightness">BRIGHTNESS</string>
+    <string name="led_brightness_soft">SOFT</string>
+    <string name="led_brightness_bright">BRIGHT</string>
+    <string name="led_brightness_max">MAX</string>
 
     <string name="access_listener_title">Notification access</string>
-    <string name="access_listener_body">Lets Ambient Glow see that a message arrived. It reads only the sender app and never stores content.</string>
+    <string name="access_listener_body">Lets Ambient Glow notice new messages to light the screen and pick each app\'s colour. It never reads, stores or sends message content.</string>
     <string name="access_listener_grant">Grant permission</string>
     <string name="access_listener_manage">Manage access</string>
+    <string name="access_manage">MANAGE</string>
 
     <string name="access_post_title">Wake bridge</string>
     <string name="access_post_body">A silent, self-dismissing alert is how Android lets an app light the screen from the background. It needs high importance.</string>
@@ -33,6 +47,11 @@
     <string name="access_fsi_grant">Allow wake</string>
     <string name="access_fsi_manage">Review setting</string>
 
+    <string name="access_shield_title">Effects &amp; clean wake (optional)</string>
+    <string name="access_shield_body">Needed to play the new-message effect over your lock screen; without it the lock screen just lights up. It also covers the battery icon and navigation handle with black for the half second the LED takes over. It reads nothing on screen.</string>
+    <string name="access_shield_grant">Turn on</string>
+    <string name="access_shield_manage">Accessibility settings</string>
+
     <string name="style_edge_title">Edge Frame</string>
     <string name="style_edge_caption">Border on every edge</string>
     <string name="style_ring_title">Camera Ring</string>
@@ -40,13 +59,47 @@
     <string name="style_dot_title">Custom Dot</string>
     <string name="style_dot_caption">A dot you place</string>
 
-    <string name="dot_body">Drag to place the dot. It is saved when you let go.</string>
+    <string name="dot_body">Only these pixels light up; the rest of the panel stays black. Drag it on the preview or use the sliders; it snaps to the spots below and the ruler marks. Camera-line spots sit level with the centre of your lens.</string>
+    <string name="dot_size">SIZE</string>
+    <string name="dot_size_led">LED</string>
+    <string name="dot_size_s">S</string>
+    <string name="dot_size_m">M</string>
+    <string name="dot_size_l">L</string>
+    <string name="dot_spots_camera_line">CAMERA LINE</string>
+    <string name="dot_spots_other">OTHER SPOTS</string>
+    <string name="dot_spot_edge_left">EDGE L</string>
+    <string name="dot_spot_cam_left">CAM L</string>
+    <string name="dot_spot_cam_right">CAM R</string>
+    <string name="dot_spot_edge_right">EDGE R</string>
+    <string name="dot_spot_below_cam">BELOW</string>
+    <string name="dot_spot_corner_left">CORNER L</string>
+    <string name="dot_spot_corner_right">CORNER R</string>
+    <string name="dot_spot_bottom">BOTTOM</string>
+    <string name="dot_preview_label">Dot position preview. Drag to move.</string>
     <string name="dot_horizontal">HORIZONTAL</string>
     <string name="dot_vertical">VERTICAL</string>
     <string name="dot_readout_x">X %1$d%%</string>
     <string name="dot_readout_y">Y %1$d%%</string>
 
-    <string name="test_preview">TEST PREVIEW</string>
-    <string name="test_preview_hint">Shows the wake screen for 3.5 s, just as a real message would</string>
+    <string name="tab_access">ACCESS</string>
+    <string name="tab_style">GLOW STYLE</string>
+
+
+    <string name="test_preview">LED PREVIEW</string>
+        <string name="test_locked">LOCKED TEST · 5 s</string>
+    <string name="test_locked_countdown">LOCK YOUR PHONE · %1$d</string>
+    <string name="test_locked_hint">Lock the screen now. The test message arrives when the count reaches zero.</string>
+    <string name="test_locked_blocked">Allow alerts on the Access tab first.</string>
+
+
+    <string name="message_channel_name">New message pop-up</string>
+    <string name="message_channel_description">Shows the new message again as a pop-up when the black screen comes on. Silent; removed after a few seconds.</string>
+    <string name="test_channel_name">Test messages</string>
+    <string name="test_channel_description">Sample message sent by the locked-screen test.</string>
+    <string name="test_sender">Test 1 · Cyan</string>
+    <string name="test_me">You</string>
+    <string name="test_message">Dismiss me and cyan leaves the LED loop.</string>
+    <string name="test_sender_second">Test 2 · Magenta</string>
+    <string name="test_message_second">Dismiss me and magenta leaves the loop. Dismiss both and the LED stops.</string>
     <string name="footer_privacy">OFFLINE · NO OVERLAY · NO TRACKING</string>
 </resources>
