@@ -23,14 +23,13 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +39,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -48,6 +51,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
@@ -71,6 +75,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -79,11 +84,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -98,19 +105,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -125,12 +137,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
@@ -143,10 +157,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.example.ambientglow.ui.theme.AmbientGlowTheme
 import com.example.ambientglow.ui.theme.GlowBrushes
+import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -301,6 +318,9 @@ private enum class DashboardTab(val label: Int) {
 private val PageGutter = 24.dp
 private val SectionGap = 28.dp
 
+/** How long a real-size effect dissolves when the next preview replaces it. */
+private const val SHOWCASE_FADE_MS = 110
+
 @Composable
 private fun Dashboard(geometry: ScreenGeometry) {
     DashboardContent(geometry)
@@ -344,13 +364,46 @@ private fun DashboardContent(reported: ScreenGeometry) {
     var ledRun by remember { mutableIntStateOf(0) }
     var ledHolding by remember { mutableStateOf(false) }
     var ledShowing by remember { mutableStateOf(false) }
-    val showcase = {
-        ledShowing = false
+    var ledLeaving by remember { mutableStateOf(false) }
+    // The run that is playing, as it was started: while it fades out for the next one it must
+    // not pick up the change that replaced it.
+    var shownSettings by remember { mutableStateOf(settings) }
+    var shownColor by remember { mutableIntStateOf(SAMPLE_COLORS[sample].color.toArgb()) }
+    // Hand-offs dissolve the playing effect instead of cutting it.
+    val showcaseFade = remember { Animatable(1f) }
+    var fadeJob by remember { mutableStateOf<Job?>(null) }
+    // The showcase's glass wave blurs the dashboard under it, as it blurs the lock screen; the
+    // blur relaxes with the fade instead of dropping when the run goes.
+    val haze = remember { GlassHaze() }
+    val fadingHaze = remember { GlassHazeTarget { level, wave -> haze.haze(level * showcaseFade.value, wave) } }
+    val start = {
+        shownSettings = settings
+        shownColor = SAMPLE_COLORS[sample].color.toArgb()
         showcaseRun++
         showcasing = true
     }
+    val fadeThen = { after: () -> Unit ->
+        fadeJob?.cancel()
+        fadeJob = scope.launch {
+            showcaseFade.animateTo(0f, tween(SHOWCASE_FADE_MS, easing = FastOutLinearInEasing))
+            after()
+            showcaseFade.snapTo(1f)
+        }
+    }
+    val showcase = {
+        if (ledShowing) ledLeaving = true
+        if (showcasing) {
+            fadeThen(start)
+        } else {
+            fadeJob?.cancel()
+            scope.launch { showcaseFade.snapTo(1f) }
+            start()
+        }
+    }
     val showLed = { holding: Boolean ->
-        showcasing = false
+        // Once per hand-off, not on every drag frame: a fade restarted each frame never ends.
+        if (showcasing && (!ledShowing || ledLeaving)) fadeThen { showcasing = false }
+        ledLeaving = false
         if (!holding) ledRun++
         ledHolding = holding
         ledShowing = true
@@ -359,6 +412,7 @@ private fun DashboardContent(reported: ScreenGeometry) {
         StylePage(
             settings = settings,
             sample = sample,
+            previewHeld = showcasing || ledShowing,
             shieldOn = access.shield,
             onShield = actions.shield,
             onChange = { settings = it },
@@ -371,7 +425,12 @@ private fun DashboardContent(reported: ScreenGeometry) {
     CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
         Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
             // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
-            Column(Modifier.fillMaxSize().windowInsetsPadding(DashboardInsets)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .glassHaze(haze, shownSettings, geometry)
+                    .windowInsetsPadding(DashboardInsets),
+            ) {
                 TopBar(
                     access = access,
                     accessOpen = accessOpen,
@@ -386,16 +445,19 @@ private fun DashboardContent(reported: ScreenGeometry) {
 
                 if (access.armed) {
                     // Everything granted: setup is done, so the app is just its styling page.
-                    // Access lives behind the ARMED pill.
+                    // Access lives behind the ARMED pill; its summary carries its own gap, so it
+                    // opens and closes without a jump.
                     PageColumn(Modifier.weight(1f)) {
-                        AnimatedVisibility(
-                            visible = accessOpen,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically(),
-                        ) {
-                            AccessSummary(access, actions)
+                        Column {
+                            AnimatedVisibility(
+                                visible = accessOpen,
+                                enter = GlowMotion.DisclosureEnter,
+                                exit = GlowMotion.DisclosureExit,
+                            ) {
+                                Box(Modifier.padding(bottom = SectionGap)) { AccessSummary(access, actions) }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(SectionGap)) { stylePage() }
                         }
-                        stylePage()
                     }
                 } else {
                     Box(Modifier.padding(horizontal = PageGutter)) {
@@ -422,18 +484,7 @@ private fun DashboardContent(reported: ScreenGeometry) {
                 TestDock()
             }
 
-            // Each effect change plays once at real size over the whole screen, as a real message
-            // would. It only draws, so taps go through to the options underneath while it plays.
-            if (showcasing) {
-                key(showcaseRun) {
-                    ArrivalEffect(
-                        settings = settings,
-                        color = SAMPLE_COLORS[sample].color.toArgb(),
-                        geometry = geometry,
-                        onDone = { showcasing = false },
-                    )
-                }
-            }
+            // The LED first, so an effect that replaces it is never dimmed by its lifting scrim.
             if (ledShowing) {
                 LedShowcase(
                     settings = settings,
@@ -441,8 +492,31 @@ private fun DashboardContent(reported: ScreenGeometry) {
                     geometry = geometry,
                     run = ledRun,
                     holding = ledHolding,
-                    onDone = { ledShowing = false },
+                    leaving = ledLeaving,
+                    onDone = {
+                        ledShowing = false
+                        ledLeaving = false
+                    },
                 )
+            }
+            // Each effect change plays once at real size over the whole screen, as a real message
+            // would. It only draws, so taps go through to the options underneath while it plays.
+            // A change mid-run dissolves it (no offscreen pass) and starts the new one.
+            if (showcasing) {
+                key(showcaseRun) {
+                    val run = showcaseRun
+                    ArrivalEffect(
+                        settings = shownSettings,
+                        color = shownColor,
+                        geometry = geometry,
+                        onDone = { if (run == showcaseRun) showcasing = false },
+                        modifier = Modifier.graphicsLayer {
+                            alpha = showcaseFade.value
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                        },
+                        onBlurBehind = fadingHaze,
+                    )
+                }
             }
         }
     }
@@ -619,6 +693,7 @@ private fun AccessRow(title: String, active: Boolean, onManage: () -> Unit) {
 private fun StylePage(
     settings: GlowSettings,
     sample: Int,
+    previewHeld: Boolean,
     shieldOn: Boolean,
     onShield: () -> Unit,
     onChange: (GlowSettings) -> Unit,
@@ -635,6 +710,7 @@ private fun StylePage(
         EffectCard(
             settings = settings,
             sample = sample,
+            previewHeld = previewHeld,
             onStyle = { style ->
                 onChange(settings.copy(style = style))
                 GlowPrefs.saveStyle(context, style)
@@ -665,7 +741,7 @@ private fun StylePage(
     SettingsGroup(index = "02", title = R.string.group_led_title, body = R.string.group_led_body) {
         LedCard(
             settings = settings,
-            // While it moves, the real LED follows on screen; it blinks once when let go.
+            // While it moves, the real LED follows on screen; it breathes once when let go.
             onMove = { x, y, onCamera ->
                 latest = latest.copy(dotX = x, dotY = y, ledOnCamera = onCamera)
                 onChange(latest)
@@ -768,11 +844,15 @@ private fun OptionGroup(label: String, content: @Composable () -> Unit) {
 /** The whole row toggles; the switch only shows the state. */
 @Composable
 private fun ToggleRow(title: String, body: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val haptics = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(GlowShapes.Tile)
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .toggleable(value = checked, role = Role.Switch) {
+                haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                onChange(it)
+            }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -804,12 +884,16 @@ private fun ToggleRow(title: String, body: String, checked: Boolean, onChange: (
 @Composable
 private fun RadioRow(title: String, body: String, selected: Boolean, onClick: () -> Unit) {
     val ring by animateColorAsState(if (selected) GlowPalette.Cyan else GlowPalette.Outline, label = "radio")
+    val haptics = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(GlowShapes.Tile)
             .background(if (selected) GlowPalette.SurfaceRaised else Color.Transparent)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .selectable(selected = selected, role = Role.RadioButton) {
+                if (!selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                onClick()
+            }
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         Canvas(Modifier.padding(top = 2.dp).size(16.dp)) {
@@ -860,7 +944,12 @@ private fun NoticeRow(text: String, action: String, onAction: () -> Unit) {
 /** One compact line: mark, name, and a status pill that opens access (or jumps to setup). */
 @Composable
 private fun TopBar(access: AccessState, accessOpen: Boolean, onStatusClick: () -> Unit) {
-    val chevronTurn by animateFloatAsState(if (accessOpen) 180f else 0f, label = "chevron")
+    // Same springs as the panel's size each way (DisclosureEnter / DisclosureExit), so the chevron lands with it.
+    val chevronTurn by animateFloatAsState(
+        if (accessOpen) 180f else 0f,
+        spring(1f, if (accessOpen) 500f else 700f),
+        label = "chevron",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -957,8 +1046,9 @@ private fun StatusPill(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Segmented blade control. The highlighted blade tracks the pager's scroll position as you
- * swipe; that is read in the layout phase, so swiping does not recompose the bar.
+ * Segmented blade control. The highlighted blade and the label tints track the pager's scroll
+ * position as you swipe; that is read in the layout and draw phases, so swiping does not
+ * recompose the bar.
  */
 @Composable
 private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (DashboardTab) -> Unit) {
@@ -987,10 +1077,6 @@ private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (Dashboa
         Row(Modifier.fillMaxSize().selectableGroup()) {
             DashboardTab.entries.forEach { tab ->
                 val selected = pager.currentPage == tab.ordinal
-                val tint by animateColorAsState(
-                    if (selected) GlowPalette.TextPrimary else GlowPalette.TextFaint,
-                    label = "tab-tint",
-                )
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -1000,10 +1086,14 @@ private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (Dashboa
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
+                    // The label lights as the blade reaches it, read in draw like the blade.
+                    BasicText(
                         text = stringResource(tab.label),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = tint,
+                        color = {
+                            val position = pager.currentPage + pager.currentPageOffsetFraction
+                            lerp(GlowPalette.TextPrimary, GlowPalette.TextFaint, abs(position - tab.ordinal).coerceIn(0f, 1f))
+                        },
                     )
                     if (tab == DashboardTab.ACCESS && pendingAccess > 0) {
                         Spacer(Modifier.width(8.dp))
@@ -1093,7 +1183,7 @@ private fun GhostButton(text: String, emphasized: Boolean, onClick: () -> Unit, 
 }
 
 // ---------------------------------------------------------------------------------------------
-// 01 New message: the effect (live preview, style, try-out, spawn, Edge Frame options), where it plays
+// 01 New message: the effect (live preview, style, try-out, spawn and its glass look, Edge Frame options), where it plays
 // ---------------------------------------------------------------------------------------------
 
 private val StudioPreviewHeight: Dp = 250.dp
@@ -1105,8 +1195,11 @@ private val PhoneCorner: Dp = 14.dp
 
 private const val PREVIEW_LOOP_GAP_MS = 700L
 
-/** Black panel before the dot's first blink, as the LED takes over. */
+/** Black panel before the dot's first breath, as the LED takes over. */
 private const val PREVIEW_LED_DELAY_MS = 350L
+
+/** How fast the mock-up's dot dissolves when the effect restarts or the preview waits. */
+private const val PREVIEW_LED_OUT_MS = 120
 
 /** A colour to try the effect in. Real messages use the colour of the app that sent them. */
 @Immutable
@@ -1122,10 +1215,12 @@ private val SAMPLE_COLORS = listOf(
     SampleColor(R.string.sample_yellow, Color(0xFFFFD60A)),
 )
 
+/** [previewHeld]: a real-size preview is playing, so the inline one waits. */
 @Composable
 private fun EffectCard(
     settings: GlowSettings,
     sample: Int,
+    previewHeld: Boolean,
     onStyle: (GlowStyle) -> Unit,
     onEffect: (GlowSettings) -> Unit,
     onSample: (Int) -> Unit,
@@ -1135,7 +1230,7 @@ private fun EffectCard(
         SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
         // Preview beside the style list: what you pick is what plays, without scrolling.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            EffectPreview(settings = settings, color = color)
+            EffectPreview(settings = settings, color = color, held = previewHeld)
             Spacer(Modifier.width(14.dp))
             Column(
                 modifier = Modifier.weight(1f),
@@ -1154,56 +1249,133 @@ private fun EffectCard(
             )
         }
         CardDivider()
-        ToggleRow(
-            title = stringResource(R.string.effect_spawn_title),
-            body = stringResource(R.string.effect_spawn_body),
-            checked = settings.spawn,
-            onChange = { onEffect(settings.copy(spawn = it)) },
-        )
-        // The other styles have nothing to tune here; the dot is placed in group 02.
-        AnimatedVisibility(
-            visible = settings.style == GlowStyle.EDGE_FRAME,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                CardDivider()
-                SectionLabel(stringResource(R.string.section_edge), GlowPalette.Cyan)
-                OptionGroup(stringResource(R.string.edge_motion)) {
-                    ChipRow(EdgeMotion.entries, settings.edgeMotion, { it.label }) { onEffect(settings.copy(edgeMotion = it)) }
+        // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
+        Column {
+            ToggleRow(
+                title = stringResource(R.string.effect_spawn_title),
+                body = stringResource(R.string.effect_spawn_body),
+                checked = settings.spawn,
+                onChange = { onEffect(settings.copy(spawn = it)) },
+            )
+            // A look for the spawn wave, so only offered with it.
+            AnimatedVisibility(
+                visible = settings.spawn,
+                enter = GlowMotion.DisclosureEnter,
+                exit = GlowMotion.DisclosureExit,
+            ) {
+                Column(Modifier.padding(top = 16.dp)) {
+                    ToggleRow(
+                        title = stringResource(R.string.effect_glass_title),
+                        body = stringResource(R.string.effect_glass_body),
+                        checked = settings.glass,
+                        onChange = { onEffect(settings.copy(glass = it)) },
+                    )
+                    AnimatedVisibility(
+                        visible = settings.glass,
+                        enter = GlowMotion.DisclosureEnter,
+                        exit = GlowMotion.DisclosureExit,
+                    ) {
+                        Box(Modifier.padding(top = 14.dp)) { GlassOptions(settings, onEffect) }
+                    }
                 }
-                OptionGroup(stringResource(R.string.edge_color)) {
-                    ChipRow(EdgeColor.entries, settings.edgeColor, { it.label }) { onEffect(settings.copy(edgeColor = it)) }
-                }
-                OptionGroup(stringResource(R.string.edge_width)) {
-                    ChipRow(EdgeWidth.entries, settings.edgeWidth, { it.label }) { onEffect(settings.copy(edgeWidth = it)) }
-                }
-                OptionGroup(stringResource(R.string.edge_glow)) {
-                    ChipRow(EdgeGlow.entries, settings.edgeGlow, { it.label }) { onEffect(settings.copy(edgeGlow = it)) }
+            }
+            // The other styles have nothing to tune here; the dot is placed in group 02.
+            AnimatedVisibility(
+                visible = settings.style == GlowStyle.EDGE_FRAME,
+                enter = GlowMotion.DisclosureEnter,
+                exit = GlowMotion.DisclosureExit,
+            ) {
+                Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    CardDivider()
+                    SectionLabel(stringResource(R.string.section_edge), GlowPalette.Cyan)
+                    OptionGroup(stringResource(R.string.edge_motion)) {
+                        ChipRow(EdgeMotion.entries, settings.edgeMotion, { it.label }) { onEffect(settings.copy(edgeMotion = it)) }
+                    }
+                    OptionGroup(stringResource(R.string.edge_color)) {
+                        ChipRow(EdgeColor.entries, settings.edgeColor, { it.label }) { onEffect(settings.copy(edgeColor = it)) }
+                    }
+                    OptionGroup(stringResource(R.string.edge_width)) {
+                        ChipRow(EdgeWidth.entries, settings.edgeWidth, { it.label }) { onEffect(settings.copy(edgeWidth = it)) }
+                    }
+                    OptionGroup(stringResource(R.string.edge_glow)) {
+                        ChipRow(EdgeGlow.entries, settings.edgeGlow, { it.label }) { onEffect(settings.copy(edgeGlow = it)) }
+                    }
                 }
             }
         }
     }
 }
 
-/** The three styles as rows: a mini phone showing the style in [accent], and its name. */
+/** Glass wave: how much the screen under it blurs, where, and how frosted. */
+@Composable
+private fun GlassOptions(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column {
+            OptionGroup(stringResource(R.string.glass_blur)) {
+                ChipRow(GlassBlur.entries, settings.glassBlur, { it.label }) { onEffect(settings.copy(glassBlur = it)) }
+            }
+            AnimatedVisibility(
+                visible = settings.glassBlur != GlassBlur.OFF,
+                enter = GlowMotion.DisclosureEnter,
+                exit = GlowMotion.DisclosureExit,
+            ) {
+                Box(Modifier.padding(top = 14.dp)) {
+                    OptionGroup(stringResource(R.string.glass_area)) {
+                        ChipRow(GlassArea.entries, settings.glassArea, { it.label }) { onEffect(settings.copy(glassArea = it)) }
+                        Text(
+                            text = stringResource(R.string.glass_area_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GlowPalette.TextFaint,
+                        )
+                    }
+                }
+            }
+        }
+        OptionGroup(stringResource(R.string.glass_frost)) {
+            ChipRow(GlassFrost.entries, settings.glassFrost, { it.label }) { onEffect(settings.copy(glassFrost = it)) }
+        }
+    }
+}
+
+/**
+ * The three styles as rows: a mini phone showing the style in [accent], and its name. A new
+ * pick crossfades rather than slides, since rows can differ in height at large font sizes.
+ */
 @Composable
 private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowStyle) -> Unit) {
     val corner = with(LocalDensity.current) { PickerPhoneCorner.toPx() }
+    val haptics = LocalHapticFeedback.current
     Column(
         modifier = Modifier.fillMaxWidth().selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         GlowStyle.entries.forEach { style ->
             val selected = settings.style == style
-            val border: Brush = if (selected) GlowBrushes.Signature else SolidColor(GlowPalette.OutlineSoft)
+            val on = animateFloatAsState(
+                targetValue = if (selected) 1f else 0f,
+                animationSpec = tween(GlowMotion.STATE_MS, easing = FastOutSlowInEasing),
+                label = "style-tile",
+            )
+            val title = animateColorAsState(
+                targetValue = if (selected) GlowPalette.TextPrimary else GlowPalette.TextMuted,
+                animationSpec = tween(GlowMotion.STATE_MS, easing = FastOutSlowInEasing),
+                label = "style-title",
+            )
+            // Recomposes the glyph while it turns; only on a pick, and only on two tiles.
+            val glyph by animateColorAsState(
+                targetValue = if (selected) accent else GlowPalette.TextFaint,
+                animationSpec = tween(220),
+                label = "style-glyph",
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(GlowShapes.Tile)
-                    .background(if (selected) GlowPalette.SurfaceRaised else GlowPalette.Void)
-                    .border(if (selected) 1.5.dp else 1.dp, border, GlowShapes.Tile)
-                    .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(style) })
+                    .selectionSurface(GlowShapes.Tile, on, selectedStroke = 1.5.dp)
+                    .selectable(selected = selected, role = Role.RadioButton) {
+                        if (!selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onSelect(style)
+                    }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1213,7 +1385,7 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                 ) { mockGeometry ->
                     GlowGraphic(
                         style = if (style == GlowStyle.CUSTOM_DOT) settings.ledStyle else style,
-                        color = if (selected) accent else GlowPalette.TextFaint,
+                        color = glyph,
                         alpha = { 1f },
                         dotX = settings.dotX,
                         dotY = settings.dotY,
@@ -1224,10 +1396,10 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Text(
+                BasicText(
                     text = stringResource(style.title),
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                    color = if (selected) GlowPalette.TextPrimary else GlowPalette.TextMuted,
+                    color = { title.value },
                     maxLines = 2,
                 )
             }
@@ -1235,36 +1407,60 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
     }
 }
 
-/** One swatch per sample colour, equal widths. */
+private val SWATCH_GAP = 4.dp
+private val SWATCH_SIZE = 28.dp
+
+/** One swatch per sample colour, equal widths. One ring slides to the chosen one. */
 @Composable
 private fun SampleColorRow(selected: Int, onSelect: (Int) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        SAMPLE_COLORS.forEachIndexed { index, sample ->
-            val isSelected = index == selected
-            val ring by animateColorAsState(
-                if (isSelected) GlowPalette.TextPrimary else Color.Transparent,
-                label = "swatch",
-            )
-            val name = stringResource(sample.name)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(40.dp)
-                    .clip(GlowShapes.Pill)
-                    .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(index) })
-                    .semantics { contentDescription = name },
-                contentAlignment = Alignment.Center,
-            ) {
-                Canvas(Modifier.size(28.dp)) {
-                    val stroke = 1.5.dp.toPx()
-                    drawCircle(ring, radius = size.minDimension / 2f - stroke / 2f, style = Stroke(stroke))
-                    drawCircle(sample.color, radius = size.minDimension / 2f - stroke * 2.5f)
+    val haptics = LocalHapticFeedback.current
+    // Starts in place; a new pick slides there, and a quick re-pick turns it mid-way.
+    val slot = remember { Animatable(selected.toFloat()) }
+    LaunchedEffect(selected) { slot.animateTo(selected.toFloat(), GlowMotion.Slide) }
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(SWATCH_GAP),
+        ) {
+            SAMPLE_COLORS.forEachIndexed { index, sample ->
+                val isSelected = index == selected
+                val name = stringResource(sample.name)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clip(GlowShapes.Pill)
+                        .selectable(selected = isSelected, role = Role.RadioButton) {
+                            if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onSelect(index)
+                        }
+                        .semantics { contentDescription = name },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(Modifier.size(SWATCH_SIZE)) {
+                        drawCircle(sample.color, radius = size.minDimension / 2f - 1.5.dp.toPx() * 2.5f)
+                    }
                 }
             }
         }
+        // The ring, over the swatches: its position is read in draw.
+        Spacer(
+            Modifier
+                .matchParentSize()
+                .drawWithCache {
+                    val count = SAMPLE_COLORS.size
+                    val gap = SWATCH_GAP.toPx()
+                    val slotW = (size.width - gap * (count - 1)) / count
+                    val stroke = Stroke(1.5.dp.toPx())
+                    val radius = SWATCH_SIZE.toPx() / 2f - stroke.width / 2f
+                    val rtl = layoutDirection == LayoutDirection.Rtl
+                    onDrawBehind {
+                        val x = slotW / 2f + (slotW + gap) * slot.value
+                        val center = Offset(if (rtl) size.width - x else x, size.height / 2f)
+                        drawCircle(GlowPalette.TextPrimary, radius = radius, center = center, style = stroke)
+                    }
+                },
+        )
     }
 }
 
@@ -1274,23 +1470,39 @@ private enum class PreviewPhase { EFFECT, LED, REST }
 /**
  * The whole arrival in a phone mock-up, looped: the screen the effect plays on (lock screen,
  * black, or black with the message pop-up, as chosen under Where it plays), the real
- * [ArrivalEffect] scaled to it, then the black panel and one blink of the LED dot. Any change,
- * or a tap, restarts it from the effect's first frame.
+ * [ArrivalEffect] scaled to it, then the black panel and one breath of the real [LedDot]. Any
+ * change the effect shows, or a tap, restarts it from the effect's first frame; moving or sizing
+ * the LED does not. Waits while a real-size preview plays ([held]), so only one effect moves at a
+ * time; a tap still plays it.
  */
 @Composable
-private fun EffectPreview(settings: GlowSettings, color: Color) {
+private fun EffectPreview(settings: GlowSettings, color: Color, held: Boolean) {
     var run by remember { mutableIntStateOf(0) }
     var phase by remember { mutableStateOf(PreviewPhase.EFFECT) }
+    // The LED's breath clock (ms into it), and a fade so the dot dissolves rather than cuts out.
     val led = remember { Animatable(0f) }
-    LaunchedEffect(settings, color) { phase = PreviewPhase.EFFECT }
-    LaunchedEffect(phase) {
+    val ledOut = remember { Animatable(1f) }
+    val effectKey = remember(settings) { settings.forPreview() }
+    var tapped by remember { mutableStateOf(false) }
+    LaunchedEffect(held) { if (!held) tapped = false }
+    val parked = held && !tapped
+    LaunchedEffect(effectKey, color, parked) { if (!parked) phase = PreviewPhase.EFFECT }
+    LaunchedEffect(phase, parked) {
+        if (parked || phase == PreviewPhase.EFFECT) {
+            if (ledBreathAt(led.value) * ledOut.value > 0f) {
+                ledOut.animateTo(0f, tween(PREVIEW_LED_OUT_MS, easing = FastOutLinearInEasing))
+            }
+            led.snapTo(0f)
+            ledOut.snapTo(1f)
+            return@LaunchedEffect
+        }
         when (phase) {
-            PreviewPhase.EFFECT -> led.snapTo(0f)
+            PreviewPhase.EFFECT -> Unit
             PreviewPhase.LED -> {
+                ledOut.snapTo(1f)
                 delay(PREVIEW_LED_DELAY_MS)
-                led.animateTo(1f, tween(LED_FADE_IN_MS, easing = FastOutSlowInEasing))
-                delay(LED_HOLD_MS)
-                led.animateTo(0f, tween(LED_FADE_OUT_MS, easing = LinearOutSlowInEasing))
+                led.snapTo(0f)
+                led.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
                 phase = PreviewPhase.REST
             }
             PreviewPhase.REST -> {
@@ -1300,7 +1512,7 @@ private fun EffectPreview(settings: GlowSettings, color: Color) {
             }
         }
     }
-    val playing = phase == PreviewPhase.EFFECT
+    val playing = phase == PreviewPhase.EFFECT && !parked
     // The screen behind the effect lights with it and goes dark as the LED takes over.
     val lockScreen = animateFloatAsState(
         targetValue = if (playing && settings.arrival == ArrivalMode.LOCK_SCREEN) 1f else 0f,
@@ -1317,6 +1529,8 @@ private fun EffectPreview(settings: GlowSettings, color: Color) {
     val screenHeight = LocalWindowInfo.current.containerSize.height.toFloat()
     val scale = with(density) { StudioPreviewHeight.toPx() / screenHeight.coerceAtLeast(1f) }.coerceIn(0.1f, 1f)
     val corner = with(density) { PhoneCorner.toPx() }
+    // The glass wave's blur of the screen under it, as the real lock screen gets it (Android 12+).
+    val haze = remember { GlassHaze() }
     val previewLabel = stringResource(R.string.effect_preview_label)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1330,35 +1544,43 @@ private fun EffectPreview(settings: GlowSettings, color: Color) {
                 .clickable(role = Role.Button) {
                     run++
                     phase = PreviewPhase.EFFECT
+                    tapped = held
                 }
                 .semantics { contentDescription = previewLabel },
         ) { mockGeometry ->
-            MockLockScreen(accent = color, alpha = { lockScreen.value })
+            val effectGeometry = mockGeometry.copy(cornerRadiusPx = corner)
+            MockLockScreen(
+                accent = color,
+                alpha = { lockScreen.value },
+                modifier = Modifier.glassHaze(haze, settings, effectGeometry, scale),
+            )
             MockPopUp(accent = color, alpha = { popUp.value })
             if (playing) {
-                key(run, settings, color) {
+                key(run, effectKey, color) {
                     ArrivalEffect(
-                        settings = settings,
+                        settings = effectKey,
                         color = color.toArgb(),
-                        geometry = mockGeometry.copy(cornerRadiusPx = corner),
+                        geometry = effectGeometry,
                         onDone = { phase = PreviewPhase.LED },
                         scale = scale,
+                        onBlurBehind = haze,
                     )
                 }
             }
-            GlowGraphic(
-                style = settings.ledStyle,
+            // The LED's own light, scaled down: its ring gap shrinks with the mock-up's lens.
+            LedDot(
                 color = color,
-                alpha = { led.value },
+                alpha = { ledBreathAt(led.value) * ledOut.value },
                 dotX = settings.dotX,
                 dotY = settings.dotY,
-                metrics = GlowMetrics.Panel,
+                radius = previewDotRadius(settings.dotSize, scale),
+                onCamera = settings.ledOnCamera,
                 geometry = mockGeometry,
-                dotRadius = previewDotRadius(settings.dotSize, scale),
+                ringGap = (1.5.dp * scale).coerceAtLeast(0.5.dp),
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        PreviewSteps(ledActive = !playing)
+        PreviewSteps(ledActive = phase != PreviewPhase.EFFECT)
     }
 }
 
@@ -1403,10 +1625,10 @@ private fun DrawScope.mockCard(top: Float, height: Float, icon: Color) {
 
 /** A lock screen in miniature: clock, the new message (in [accent]) over an older one, shortcuts. */
 @Composable
-private fun MockLockScreen(accent: Color, alpha: () -> Float) {
+private fun MockLockScreen(accent: Color, alpha: () -> Float, modifier: Modifier = Modifier) {
     // Sized in dp, not sp: it is part of the drawing, so it must not grow with the font scale.
     val clockSize = with(LocalDensity.current) { 26.dp.toSp() }
-    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha() }) {
+    Box(modifier.fillMaxSize().graphicsLayer { this.alpha = alpha() }) {
         Text(
             text = stringResource(R.string.preview_clock),
             style = MaterialTheme.typography.displaySmall.copy(
@@ -1461,27 +1683,31 @@ private fun ArrivalModeCard(
 ) {
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionLabel(stringResource(R.string.arrival_mode), GlowPalette.Cyan)
-        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ArrivalMode.entries.forEach { mode ->
-                RadioRow(
-                    title = stringResource(mode.label),
-                    body = stringResource(mode.body),
-                    selected = selected == mode,
-                    onClick = { onSelect(mode) },
-                )
+        Column {
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ArrivalMode.entries.forEach { mode ->
+                    RadioRow(
+                        title = stringResource(mode.label),
+                        body = stringResource(mode.body),
+                        selected = selected == mode,
+                        onClick = { onSelect(mode) },
+                    )
+                }
             }
-        }
-        // Without the shield, Lock screen only lights the screen: say so where it is chosen.
-        AnimatedVisibility(
-            visible = selected == ArrivalMode.LOCK_SCREEN && !shieldOn,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-        ) {
-            NoticeRow(
-                text = stringResource(R.string.arrival_needs_shield),
-                action = stringResource(R.string.access_shield_grant),
-                onAction = onShield,
-            )
+            // Without the shield, Lock screen only lights the screen: say so where it is chosen.
+            AnimatedVisibility(
+                visible = selected == ArrivalMode.LOCK_SCREEN && !shieldOn,
+                enter = GlowMotion.DisclosureEnter,
+                exit = GlowMotion.DisclosureExit,
+            ) {
+                Box(Modifier.padding(top = 10.dp)) {
+                    NoticeRow(
+                        text = stringResource(R.string.arrival_needs_shield),
+                        action = stringResource(R.string.access_shield_grant),
+                        onAction = onShield,
+                    )
+                }
+            }
         }
     }
 }
@@ -1489,19 +1715,12 @@ private fun ArrivalModeCard(
 /** One option per chip, equal widths. */
 @Composable
 private fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> Int, onSelect: (T) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        options.forEach { option ->
-            BladeChip(
-                label = stringResource(label(option)),
-                selected = option == selected,
-                onClick = { onSelect(option) },
-                modifier = Modifier.weight(1f),
-                compact = true,
-            )
-        }
+    SelectionRow(
+        count = options.size,
+        selected = options.indexOf(selected),
+        onSelect = { onSelect(options[it]) },
+    ) { index, on ->
+        ChipLabel(stringResource(label(options[index])), on, compact = true)
     }
 }
 
@@ -1655,15 +1874,34 @@ private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
 /** How dark the dashboard goes behind the LED preview: nearly the LED's black panel, controls still visible. */
 private const val LED_SCRIM = 0.85f
 private const val LED_SCRIM_IN_MS = 200
-private const val LED_SCRIM_OUT_MS = 300
+private const val LED_SCRIM_OUT_MS = 320
 private const val LED_FOLLOW_IN_MS = 150
+
+/** Handing over to a real-size effect: the dot goes first, the dashboard comes back under it. */
+private const val LED_LEAVE_GLOW_MS = 120
+private const val LED_LEAVE_SCRIM_MS = 220
+
+/** Where on the breath's rise the LED is at [level], so a new breath picks up without a jump. */
+private fun riseMsAt(level: Float): Float {
+    var lo = 0f
+    var hi = LED_RISE_MS
+    repeat(12) {
+        val mid = (lo + hi) / 2f
+        if (ledBreathAt(mid) < level) lo = mid else hi = mid
+    }
+    return hi
+}
 
 /**
  * The real LED over the darkened dashboard: its own drawing ([LedDot]) at its real size and
  * position, with the window at the chosen LED brightness, since on an AMOLED panel that is what
  * sets how bright the dot is. While [holding] (the dot is being moved) it stays lit and follows;
- * otherwise it blinks once with the LED's timing and fades away. A new [run] blinks again.
- * Only draws, so the controls underneath keep working.
+ * otherwise it breathes once with the LED's curve and fades away. A new [run] breathes again;
+ * [leaving] hands the screen to a real-size effect.
+ *
+ * The dashboard darkens first, then the window takes the LED brightness under the scrim, so the
+ * jump is hidden; it is released only once the dot is dark, and the bars return as the scrim
+ * starts to lift. Only draws, so the controls underneath keep working.
  */
 @Composable
 private fun LedShowcase(
@@ -1672,51 +1910,90 @@ private fun LedShowcase(
     geometry: ScreenGeometry,
     run: Int,
     holding: Boolean,
+    leaving: Boolean,
     onDone: () -> Unit,
 ) {
     val scrim = remember { Animatable(0f) }
+    // Held lit while dragging, and the breath's clock (ms into it).
     val glow = remember { Animatable(0f) }
+    val clock = remember { Animatable(0f) }
     val done by rememberUpdatedState(onDone)
-    LaunchedEffect(run, holding) {
-        launch { scrim.animateTo(LED_SCRIM, tween(LED_SCRIM_IN_MS)) }
+    // Window brightness and hidden bars follow these: two changes per run, not per frame.
+    var lit by remember { mutableStateOf(false) }
+    var dark by remember { mutableStateOf(true) }
+    LaunchedEffect(run, holding, leaving) {
+        // Already dark: return at once (a tween to the value it holds still runs its full length).
+        suspend fun darken() {
+            if (scrim.value < LED_SCRIM) scrim.animateTo(LED_SCRIM, tween(LED_SCRIM_IN_MS, easing = FastOutSlowInEasing))
+        }
+        // Whatever is showing now, as the held level, so the next step starts where the dot is.
+        val shown = maxOf(glow.value, ledBreathAt(clock.value))
+        if (leaving) {
+            dark = false
+            glow.snapTo(shown)
+            clock.snapTo(0f)
+            coroutineScope {
+                launch { scrim.animateTo(0f, tween(LED_LEAVE_SCRIM_MS, easing = LinearOutSlowInEasing)) }
+                glow.animateTo(0f, tween(LED_LEAVE_GLOW_MS, easing = FastOutLinearInEasing))
+                lit = false // only once the dot is dark, so it never steps to dashboard brightness
+            }
+            done()
+            return@LaunchedEffect
+        }
+        dark = true
         if (holding) {
+            glow.snapTo(shown)
+            clock.snapTo(0f)
+            // Lights up only under the LED brightness; at once when re-grabbed over the dark scrim.
+            darken()
+            lit = true
             glow.animateTo(1f, tween(LED_FOLLOW_IN_MS))
             return@LaunchedEffect
         }
-        glow.animateTo(1f, tween(LED_FADE_IN_MS, easing = FastOutSlowInEasing))
-        delay(LED_HOLD_MS)
-        glow.animateTo(0f, tween(LED_FADE_OUT_MS, easing = LinearOutSlowInEasing))
-        scrim.animateTo(0f, tween(LED_SCRIM_OUT_MS))
+        darken()
+        lit = true
+        // From the crest when it was held lit; part-way up the rise if it was still breathing.
+        clock.snapTo(riseMsAt(shown))
+        glow.snapTo(0f)
+        clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
+        lit = false
+        dark = false
+        scrim.animateTo(0f, tween(LED_SCRIM_OUT_MS, easing = LinearOutSlowInEasing))
         done()
     }
     val window = LocalActivity.current?.window
     val level = settings.ledBrightness.level
-    DisposableEffect(window, level) {
-        window?.setBrightness(level)
+    DisposableEffect(window, level, lit) {
+        if (lit) window?.setBrightness(level)
         onDispose { window?.setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) }
     }
     // The clock, battery and gesture handle draw above the app, so hide them as the LED screen
     // does; dark while they slide out, so they vanish into the black at once.
-    DisposableEffect(window) {
+    DisposableEffect(window, dark) {
         val bars = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        bars?.apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
+        val hidden = dark
+        if (hidden) {
+            bars?.apply {
+                isAppearanceLightStatusBars = true
+                isAppearanceLightNavigationBars = true
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            }
         }
         onDispose {
-            bars?.apply {
-                show(WindowInsetsCompat.Type.systemBars())
-                isAppearanceLightStatusBars = false
-                isAppearanceLightNavigationBars = false
+            if (hidden) {
+                bars?.apply {
+                    show(WindowInsetsCompat.Type.systemBars())
+                    isAppearanceLightStatusBars = false
+                    isAppearanceLightNavigationBars = false
+                }
             }
         }
     }
     Spacer(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = scrim.value) })
     LedDot(
         color = color,
-        alpha = { glow.value },
+        alpha = { maxOf(glow.value, ledBreathAt(clock.value)) },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
@@ -1893,29 +2170,32 @@ private fun LedCard(
             onMove(spot.x, spot.y, spot.camera)
             onCommit()
         }
+        // The camera fit unfolds under the lens chip, carrying its own gap; no camera, no gap.
         spots.firstOrNull { it.camera }?.let { ring ->
-            OptionGroup(stringResource(R.string.dot_spots_lens)) {
-                BladeChip(
-                    label = stringResource(ring.label),
-                    selected = settings.ledOnCamera,
-                    onClick = { pick(ring) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Canvas(Modifier.size(14.dp)) {
-                        val line = 2.dp.toPx()
-                        drawCircle(GlowPalette.SurfaceHighest, radius = size.minDimension / 2f - line * 1.5f)
-                        drawCircle(GlowPalette.Cyan, radius = size.minDimension / 2f - line / 2f, style = Stroke(line))
+            Column {
+                OptionGroup(stringResource(R.string.dot_spots_lens)) {
+                    BladeChip(
+                        label = stringResource(ring.label),
+                        selected = settings.ledOnCamera,
+                        onClick = { pick(ring) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Canvas(Modifier.size(14.dp)) {
+                            val line = 2.dp.toPx()
+                            drawCircle(GlowPalette.SurfaceHighest, radius = size.minDimension / 2f - line * 1.5f)
+                            drawCircle(GlowPalette.Cyan, radius = size.minDimension / 2f - line / 2f, style = Stroke(line))
+                        }
+                        Spacer(Modifier.width(10.dp))
                     }
-                    Spacer(Modifier.width(10.dp))
+                }
+                AnimatedVisibility(
+                    visible = settings.ledOnCamera,
+                    enter = GlowMotion.DisclosureEnter,
+                    exit = GlowMotion.DisclosureExit,
+                ) {
+                    Box(Modifier.padding(top = 16.dp)) { LensFit(settings, onLensFit, onLensFitDone) }
                 }
             }
-        }
-        AnimatedVisibility(
-            visible = settings.ledOnCamera,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-        ) {
-            LensFit(settings, onLensFit, onLensFitDone)
         }
         OptionGroup(stringResource(R.string.dot_spots_camera_line)) {
             SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
@@ -1927,39 +2207,27 @@ private fun LedCard(
         CardDivider()
         // On the camera, size is how thick the ring is.
         OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                DotSize.entries.forEach { size ->
-                    BladeChip(
-                        label = stringResource(size.label),
-                        selected = settings.dotSize == size,
-                        onClick = { onSize(size) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                }
+            SelectionRow(
+                count = DotSize.entries.size,
+                selected = settings.dotSize.ordinal,
+                onSelect = { onSize(DotSize.entries[it]) },
+            ) { index, on ->
+                val size = DotSize.entries[index]
+                Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
+                Spacer(Modifier.width(8.dp))
+                ChipLabel(stringResource(size.label), on)
             }
         }
         OptionGroup(stringResource(R.string.led_brightness)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                LedBrightness.entries.forEach { level ->
-                    BladeChip(
-                        label = stringResource(level.label),
-                        selected = settings.ledBrightness == level,
-                        onClick = { onBrightness(level) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Canvas(Modifier.size(8.dp)) { drawCircle(GlowPalette.Cyan.copy(alpha = level.level)) }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                }
+            SelectionRow(
+                count = LedBrightness.entries.size,
+                selected = settings.ledBrightness.ordinal,
+                onSelect = { onBrightness(LedBrightness.entries[it]) },
+            ) { index, on ->
+                val level = LedBrightness.entries[index]
+                Canvas(Modifier.size(8.dp)) { drawCircle(GlowPalette.Cyan.copy(alpha = level.level)) }
+                Spacer(Modifier.width(8.dp))
+                ChipLabel(stringResource(level.label), on)
             }
         }
     }
@@ -1968,22 +2236,45 @@ private fun LedCard(
 private const val STEP_REPEAT_DELAY_MS = 400L
 private const val STEP_REPEAT_MS = 60L
 
-/** After the last − / + tap, how long the LED stays lit before it is saved and blinks out. */
+/** After the last − / + tap, how long the LED stays lit before it is saved and breathes out. */
 private const val STEP_SETTLE_MS = 1_200L
 
 /** How far the camera fit can go either way, in physical pixels. */
 private const val LENS_FIT_MAX_PX = 40
 
-/** A − or + step; holding it repeats. */
+/** A − or + step; holding it repeats. It dips while pressed and ticks on every step. */
 @Composable
 private fun StepButton(plus: Boolean, description: String, onStep: () -> Unit, modifier: Modifier = Modifier) {
-    val step by rememberUpdatedState(onStep)
+    val haptics = LocalHapticFeedback.current
+    val onStepNow by rememberUpdatedState(onStep)
+    val step = {
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+        onStepNow()
+    }
+    // The raw gesture below consumes the press, so it reports it here for the dip and ripple.
+    val interaction = remember { MutableInteractionSource() }
+    val down by interaction.collectIsPressedAsState()
+    val scale = animateFloatAsState(
+        targetValue = if (down) 0.9f else 1f,
+        animationSpec = if (down) tween(90, easing = FastOutSlowInEasing) else spring(dampingRatio = 0.6f, stiffness = 800f),
+        label = "step-press",
+    )
+    val edge by animateColorAsState(
+        targetValue = if (down) GlowPalette.Cyan.copy(alpha = 0.6f) else GlowPalette.OutlineSoft,
+        animationSpec = tween(GlowMotion.STATE_MS),
+        label = "step-edge",
+    )
     Box(
         modifier = modifier
             .size(36.dp)
+            .graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+            }
             .clip(GlowShapes.Pill)
             .background(GlowPalette.SurfaceRaised)
-            .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Pill)
+            .border(1.dp, edge, GlowShapes.Pill)
+            .indication(interaction, ripple())
             .semantics {
                 role = Role.Button
                 contentDescription = description
@@ -1994,13 +2285,27 @@ private fun StepButton(plus: Boolean, description: String, onStep: () -> Unit, m
             }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    awaitFirstDown().consume()
-                    step()
-                    var wait = STEP_REPEAT_DELAY_MS
-                    // Null only on timeout: still held, so step again, faster.
-                    while (withTimeoutOrNull(wait) { waitForUpOrCancellation(); true } == null) {
+                    val first = awaitFirstDown().also { it.consume() }
+                    val press = PressInteraction.Press(first.position)
+                    interaction.tryEmit(press)
+                    var ended = false
+                    try {
                         step()
-                        wait = STEP_REPEAT_MS
+                        var wait = STEP_REPEAT_DELAY_MS
+                        while (true) {
+                            // Null only on timeout: still held, so step again, faster.
+                            val up = withTimeoutOrNull(wait) { waitForUpOrCancellation() != null }
+                            if (up == null) {
+                                step()
+                                wait = STEP_REPEAT_MS
+                                continue
+                            }
+                            interaction.tryEmit(if (up) PressInteraction.Release(press) else PressInteraction.Cancel(press))
+                            ended = true
+                            break
+                        }
+                    } finally {
+                        if (!ended) interaction.tryEmit(PressInteraction.Cancel(press))
                     }
                 }
             },
@@ -2239,6 +2544,132 @@ private fun glowSliderColors(): SliderColors = SliderDefaults.colors(
 // Chips
 // ---------------------------------------------------------------------------------------------
 
+private val CHIP_HEIGHT = 40.dp
+private val CHIP_GAP = 6.dp
+
+/**
+ * Equal-width chips with one blade that slides to the chosen one, as the tab bar's does. The
+ * wells, blade and strokes are built once; a slide moves the blade in layout and tints the
+ * labels in draw, so it doesn't recompose. [chip] draws a chip's content; [on] means chosen.
+ */
+@Composable
+private fun SelectionRow(
+    count: Int,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    chip: @Composable RowScope.(index: Int, on: Boolean) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    // Starts in place; a new pick slides there, and a quick re-pick turns it mid-way.
+    val slot = remember { Animatable(selected.toFloat()) }
+    LaunchedEffect(selected) { slot.animateTo(selected.toFloat(), GlowMotion.Slide) }
+    BoxWithConstraints(Modifier.fillMaxWidth().height(CHIP_HEIGHT).selectableGroup()) {
+        val slotWidth = (maxWidth - CHIP_GAP * (count - 1)) / count
+        // The empty wells, inset like Modifier.border.
+        Spacer(
+            Modifier
+                .matchParentSize()
+                .drawWithCache {
+                    val s = 1.dp.toPx()
+                    val gap = CHIP_GAP.toPx()
+                    val w = (size.width - gap * (count - 1)) / count
+                    val h = size.height
+                    val fill = GlowShapes.Pill.createOutline(Size(w, h), layoutDirection, this)
+                    val edge = GlowShapes.Pill.createOutline(Size(w - s, h - s), layoutDirection, this)
+                    val stroke = Stroke(s)
+                    onDrawBehind {
+                        repeat(count) { i ->
+                            translate(left = i * (w + gap)) {
+                                drawOutline(fill, GlowPalette.Void)
+                                translate(s / 2f, s / 2f) { drawOutline(edge, GlowPalette.OutlineSoft, style = stroke) }
+                            }
+                        }
+                    }
+                },
+        )
+        Box(
+            Modifier
+                .width(slotWidth)
+                .fillMaxHeight()
+                .offset { IntOffset(((slotWidth + CHIP_GAP).toPx() * slot.value).roundToInt(), 0) }
+                .clip(GlowShapes.Pill)
+                .background(GlowPalette.SurfaceRaised)
+                .border(1.dp, GlowBrushes.Signature, GlowShapes.Pill),
+        )
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP)) {
+            repeat(count) { index ->
+                val on = index == selected
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(GlowShapes.Pill)
+                        .selectable(selected = on, role = Role.RadioButton) {
+                            if (!on) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onSelect(index)
+                        }
+                        .padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    chip(index, on)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun chipTextStyle(compact: Boolean): TextStyle = if (compact) {
+    MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+} else {
+    MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+}
+
+/** A chip's label; its tint eases to [on] and is read in draw. */
+@Composable
+private fun ChipLabel(text: String, on: Boolean, compact: Boolean = false) {
+    val tint = animateColorAsState(
+        targetValue = if (on) GlowPalette.TextPrimary else GlowPalette.TextMuted,
+        animationSpec = tween(GlowMotion.STATE_MS, easing = FastOutSlowInEasing),
+        label = "chip-label",
+    )
+    BasicText(
+        text = text,
+        style = chipTextStyle(compact),
+        color = { tint.value },
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
+ * A chip or tile's fill and edge, crossfading to the chosen look as [on] goes 0 → 1: the raised
+ * fill and a [selectedStroke] signature edge. Outlines and strokes are built once per size; [on]
+ * is read in draw. For selections that can't slide (rows of unequal height, or no match).
+ */
+private fun Modifier.selectionSurface(shape: Shape, on: State<Float>, selectedStroke: Dp): Modifier = drawWithCache {
+    val thin = 1.dp.toPx()
+    val thick = selectedStroke.toPx()
+    val fill = shape.createOutline(size, layoutDirection, this)
+    val soft = shape.createOutline(Size(size.width - thin, size.height - thin), layoutDirection, this)
+    val signature = shape.createOutline(Size(size.width - thick, size.height - thick), layoutDirection, this)
+    val thinStroke = Stroke(thin)
+    val thickStroke = Stroke(thick)
+    onDrawBehind {
+        val t = on.value
+        drawOutline(fill, GlowPalette.Void)
+        if (t > 0f) drawOutline(fill, GlowPalette.SurfaceRaised, alpha = t)
+        if (t < 1f) {
+            translate(thin / 2f, thin / 2f) { drawOutline(soft, GlowPalette.OutlineSoft, alpha = 1f - t, style = thinStroke) }
+        }
+        if (t > 0f) {
+            translate(thick / 2f, thick / 2f) { drawOutline(signature, GlowBrushes.Signature, alpha = t, style = thickStroke) }
+        }
+    }
+}
+
+/** A single chip that crossfades when chosen; equal-width rows use [SelectionRow] instead. */
 @Composable
 private fun BladeChip(
     label: String,
@@ -2248,30 +2679,23 @@ private fun BladeChip(
     compact: Boolean = false,
     leading: @Composable () -> Unit = {},
 ) {
-    val border: Brush = if (selected) GlowBrushes.Signature else SolidColor(GlowPalette.OutlineSoft)
+    val on = animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(GlowMotion.STATE_MS, easing = FastOutSlowInEasing),
+        label = "chip",
+    )
     Row(
         modifier = modifier
-            .height(40.dp)
+            .height(CHIP_HEIGHT)
             .clip(GlowShapes.Pill)
-            .background(if (selected) GlowPalette.SurfaceRaised else GlowPalette.Void)
-            .border(1.dp, border, GlowShapes.Pill)
+            .selectionSurface(GlowShapes.Pill, on, selectedStroke = 1.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading()
-        Text(
-            text = label,
-            style = if (compact) {
-                MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
-            } else {
-                MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-            },
-            color = if (selected) GlowPalette.TextPrimary else GlowPalette.TextMuted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        ChipLabel(label, selected, compact)
     }
 }
 
@@ -2287,6 +2711,12 @@ private fun TestDock() {
     var countdown by remember { mutableIntStateOf(0) }
     var runs by remember { mutableIntStateOf(0) }
     var blocked by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+    val dim = animateFloatAsState(
+        targetValue = if (countdown > 0) 0.55f else 1f,
+        animationSpec = tween(GlowMotion.STATE_MS, easing = FastOutSlowInEasing),
+        label = "test-dim",
+    )
 
     // Display-only countdown; the message itself is posted by GlowLauncher's single callback.
     LaunchedEffect(runs) {
@@ -2310,7 +2740,6 @@ private fun TestDock() {
             .fillMaxWidth()
             .background(GlowPalette.Void)
             .padding(horizontal = PageGutter, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // The one end-to-end check: real messages through the listener, on the locked phone.
         // The effect alone replays at full size whenever it is changed.
@@ -2318,11 +2747,12 @@ private fun TestDock() {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp)
-                .graphicsLayer { alpha = if (countdown > 0) 0.55f else 1f }
+                .graphicsLayer { alpha = dim.value }
                 .clip(GlowShapes.Button)
                 .background(GlowBrushes.SignatureHorizontal)
                 .clickable(role = Role.Button, enabled = countdown == 0) {
                     blocked = !GlowLauncher.scheduleTestNotification(context)
+                    haptics.performHapticFeedback(if (blocked) HapticFeedbackType.Reject else HapticFeedbackType.Confirm)
                     if (!blocked) runs++
                 },
             contentAlignment = Alignment.Center,
@@ -2337,12 +2767,19 @@ private fun TestDock() {
                 color = GlowPalette.Void,
             )
         }
-        AnimatedVisibility(visible = blocked || countdown > 0) {
-            Text(
-                text = stringResource(if (blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (blocked) GlowPalette.Amber else GlowPalette.TextMuted,
-            )
+        // Carries its own gap, so the dock grows and shrinks in one movement.
+        AnimatedVisibility(
+            visible = blocked || countdown > 0,
+            enter = GlowMotion.DisclosureEnter,
+            exit = GlowMotion.DisclosureExit,
+        ) {
+            Box(Modifier.padding(top = 10.dp)) {
+                Text(
+                    text = stringResource(if (blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (blocked) GlowPalette.Amber else GlowPalette.TextMuted,
+                )
+            }
         }
     }
 }

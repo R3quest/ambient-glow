@@ -22,8 +22,8 @@ import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -62,6 +63,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 /** What the glow screen is doing right now. */
 internal enum class Face {
@@ -134,7 +136,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private val face = mutableStateOf(Face.LOCK_SCREEN)
 
-    /** The last message was read while the LED was lit: dot stopped, black until the screen goes off. */
+    /** The last message was read while the LED was lit: the dot ends its breath, then black until the screen goes off. */
     private val ending = mutableStateOf(false)
 
     /** A new message came in while the panel was dark: play its effect once the screen is on. */
@@ -191,6 +193,15 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (face.value == Face.LOCK_SCREEN && autoTakeover && power.isInteractive && keyguard.isKeyguardLocked) {
             autoTakeover = false
             showLed()
+        } else if (power.isInteractive) {
+            GlowShield.hide() // bailed: give the lit lock screen back from under the dim
+        }
+    }
+
+    /** Dims the lit lock screen to black over [TAKEOVER_DIM_MS], ending as [takeOver] covers it. */
+    private val dimForTakeover = Runnable {
+        if (face.value == Face.LOCK_SCREEN && autoTakeover && power.isInteractive && keyguard.isKeyguardLocked) {
+            GlowShield.dimIn(TAKEOVER_DIM_MS)
         }
     }
 
@@ -206,6 +217,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val relightLater = Runnable { relightLed(RELIGHT_DELAY_MS) }
     private val settings = mutableStateOf(GlowSettings())
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
+
+    /** The LED asked for its breath rate ([ledFrameRate]); a finger is on it ([onLedTouch]). */
+    private var ledFast = false
+    private var touching = false
+
+    /** (idle, breath) display mode ids, see [ledModes]; cleared on every [showLed]. */
+    private var ledModeIds: Pair<Int, Int>? = null
 
     private val screenSignals = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -303,7 +321,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         setContent {
             GlowScreen(
                 face = face.value,
-                ending = ending.value || settling.value,
+                ending = ending.value,
+                settling = settling.value,
                 arriving = arriving.value,
                 arrivalSeq = arrivalSeq.intValue,
                 settings = settings.value,
@@ -312,7 +331,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 onTouch = ::onLedTouch,
                 onArrivalDone = ::onArrivalDone,
                 onShowMessage = ::showMessage,
+                onRetractMessage = ::retractMessage,
                 onBlink = { leaveIfUnlocked() },
+                onLedFade = ::ledFrameRate,
             )
         }
         start(intent)
@@ -419,10 +440,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     override fun onPendingChanged() {
         if (!GlowPending.isEmpty) return
         if (face.value == Face.LED && power.isInteractive) {
-            // Read elsewhere while the LED is lit: don't pop the lock screen up. Stop the dot,
-            // stay black, let the screen time out normally, and finish when it goes off.
+            // Read elsewhere while the LED is lit: don't pop the lock screen up. Let the dot finish
+            // its breath, stay black, let the screen time out normally, and finish when it goes off.
+            // An arrival in progress is cut short: brightness and rate drop, the dot lights no more.
             GlowLog.d("act draining")
             ending.value = true
+            onArrivalDone()
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             releaseKeepOn()
         } else {
@@ -466,6 +489,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (power.isInteractive) return
         DarkHold.acquire(this)
         timers.removeCallbacks(takeOver)
+        timers.removeCallbacks(dimForTakeover)
         timers.removeCallbacks(verifyWake)
         arrivalDue = false
         GlowShield.stopArrival()
@@ -539,7 +563,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun scheduleTakeover() {
         timers.removeCallbacks(takeOver)
-        if (autoTakeover && power.isInteractive) timers.postDelayed(takeOver, TAKEOVER_MS)
+        timers.removeCallbacks(dimForTakeover)
+        if (autoTakeover && power.isInteractive) {
+            timers.postDelayed(dimForTakeover, TAKEOVER_MS - TAKEOVER_DIM_MS)
+            timers.postDelayed(takeOver, TAKEOVER_MS)
+        }
     }
 
     /**
@@ -610,13 +638,32 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * A finger came down on the LED, or left without a tap. The LED holds the panel at its idle
      * rate (10 Hz on One UI), which also overrides the system's touch boost, so the taps would be
      * read and the lock screen's reveal start drawing at that rate. Leave it at the first touch:
-     * the panel is at full rate by the time the double tap completes.
+     * the panel is at full rate by the time the double tap completes. On release, back to the
+     * LED's own rate, the breath's if one is lit.
      */
     private fun onLedTouch(down: Boolean) {
+        touching = down
         if (face.value != Face.LED || arriving.value) return
         window.attributes = window.attributes.apply {
-            preferredDisplayModeId = if (down) 0 else lowestRefreshModeId()
+            preferredDisplayModeId = if (down) 0 else if (ledFast) ledModes().second else ledModes().first
             preferredRefreshRate = if (down) highestRefreshRate() else 0f
+        }
+    }
+
+    /**
+     * The LED face idles at the panel's lowest rate (10 Hz on One UI), where a 0.4 s fade is only
+     * four frames. Each breath asks for ~[LED_FADE_HZ] just before it lights and lets go once it
+     * is dark again, so the rate only ever changes while the dot is off.
+     */
+    private fun ledFrameRate(fast: Boolean) {
+        if (ledFast == fast) return
+        ledFast = fast
+        if (face.value != Face.LED || arriving.value || settling.value || touching) return
+        val (idle, fade) = ledModes()
+        if (idle == fade) return
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = if (fast) fade else idle
+            preferredRefreshRate = 0f
         }
     }
 
@@ -665,6 +712,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d("act showLed arrival=$arrival pending=${GlowPending.entries.size}")
         timers.removeCallbacks(sleepWatch)
         timers.removeCallbacks(takeOver)
+        timers.removeCallbacks(dimForTakeover)
+        // The double tap never reports a release; a resolution change needs new mode ids.
+        touching = false
+        ledFast = false
+        ledModeIds = null
         arrivalDue = false
         GlowShield.stopArrival()
         if (GlowPending.isEmpty) {
@@ -723,6 +775,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (!message.systemPopsUp) GlowLauncher.showMessage(this, message.sbn)
     }
 
+    /** [ArrivalMode.MESSAGE]: slide the pop-up away while brightness and rate still hold. */
+    private fun retractMessage() {
+        if (arriving.value) GlowLauncher.dismissMessage(this)
+    }
+
     /** The effect on the black panel has handed over to the dot: drop to the user's LED brightness. */
     private fun onArrivalDone() {
         if (!arriving.value) return
@@ -767,6 +824,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun becomeInvisible() {
         timers.removeCallbacks(settleNow)
         settling.value = false
+        touching = false
+        ledFast = false
         arriving.value = false // the dot comes back alone
         GlowLauncher.dismissMessage(this) // the lock screen lists the original already
         GlowShield.hide()
@@ -852,14 +911,20 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * rate instead: adaptive-refresh panels drop to their idle rate (10 Hz on One UI) over an
      * almost static black window, and an effect started there only ever draws at that rate, so
      * the system never sees a reason to raise it. The lock-screen overlay never had this problem
-     * because SystemUI keeps the rate up there.
+     * because SystemUI keeps the rate up there. Otherwise the dot keeps the rate it asked for
+     * ([ledFrameRate]), and a finger on it the top rate ([onLedTouch]).
      */
     private fun applyWindow(brightness: Float, lowRefresh: Boolean) {
         val playing = lowRefresh && arriving.value
+        val boosted = playing || (lowRefresh && touching)
         window.attributes = window.attributes.apply {
             screenBrightness = brightness
-            preferredDisplayModeId = if (lowRefresh && !playing) lowestRefreshModeId() else 0
-            preferredRefreshRate = if (playing) highestRefreshRate() else 0f
+            preferredDisplayModeId = when {
+                !lowRefresh || boosted -> 0
+                ledFast -> ledModes().second
+                else -> ledModes().first
+            }
+            preferredRefreshRate = if (boosted) highestRefreshRate() else 0f
         }
     }
 
@@ -873,14 +938,20 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun highestRefreshRate(): Float =
         currentDisplay()?.supportedModes?.maxOfOrNull { it.refreshRate } ?: 0f
 
-    /** Same resolution, lowest refresh rate: fewer panel scans while the LED sits mostly dark. */
-    private fun lowestRefreshModeId(): Int {
-        val display = currentDisplay() ?: return 0
+    /**
+     * The LED's display modes at the current resolution, as (idle, breath): the lowest rate, for
+     * fewer panel scans while it sits dark, and the one nearest [LED_FADE_HZ] for its breaths.
+     * Looked up once per [showLed], never per frame; (0, 0) (no preference) without a display.
+     */
+    private fun ledModes(): Pair<Int, Int> {
+        ledModeIds?.let { return it }
+        val display = currentDisplay() ?: return 0 to 0
         val current = display.mode
-        return display.supportedModes
+        val modes = display.supportedModes
             .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-            .minByOrNull { it.refreshRate }
-            ?.modeId ?: 0
+        val idle = modes.minByOrNull { it.refreshRate }?.modeId ?: 0
+        val fade = modes.minByOrNull { abs(it.refreshRate - LED_FADE_HZ) }?.modeId ?: idle
+        return (idle to fade).also { ledModeIds = it }
     }
 
     private fun hideSystemBars() {
@@ -915,6 +986,15 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         /** One UI sleeps an untouched lock screen 3 s after the wake; take over 0.5 s before. */
         const val TAKEOVER_MS = 2_500L
 
+        /** Lock screen dims to black over this long before [TAKEOVER_MS], so the takeover isn't a cut. */
+        const val TAKEOVER_DIM_MS = 240L
+
+        /**
+         * The rate the LED asks for while it breathes. The S23's panel offers 10/24/30/48/60/96/120
+         * Hz: 30 is three times smoother than the 10 Hz idle at half the cost of 60.
+         */
+        const val LED_FADE_HZ = 30f
+
         /** If focus never arrives after a wake into the LED, show it anyway. */
         const val SETTLE_FALLBACK_MS = 600L
 
@@ -934,19 +1014,48 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 }
 
-// One LED blink: fade in, hold, fade out, dark. Frames are drawn only during the fades.
-// The dashboard preview blinks with the same timing.
-internal const val LED_FADE_IN_MS = 420
-internal const val LED_HOLD_MS = 650L
-internal const val LED_FADE_OUT_MS = 700
-private const val LED_DARK_MS = 1_600L
+// One LED breath: a quick soft rise, a short sinking crest, a slower exhale, then dark.
+// One clock (ms into the breath) drives it; the dashboard previews breathe with the same function.
+internal const val LED_RISE_MS = 400f
+internal const val LED_CREST_MS = 560f
+internal const val LED_FALL_MS = 900f
+internal const val LED_BREATH_MS = LED_RISE_MS + LED_CREST_MS + LED_FALL_MS // 1860
+private const val LED_CREST_LEVEL = 0.88f
+
+/** Dark between breaths; with the breath it keeps a ~3.37 s period. */
+private const val LED_DARK_MS = 1_510L
+
+/** Dark between two apps' breaths within one round; the round ends with the full [LED_DARK_MS]. */
+private const val LED_GAP_MS = 700L
+
+/**
+ * One 10 Hz relayout vsync plus SurfaceFlinger's switch at its next vsync, with margin; taken
+ * from the dark gap, so the period is unchanged.
+ */
+private const val LED_RATE_PREROLL_MS = 200L
+
+private val LedRise = CubicBezierEasing(0.3f, 0f, 0.15f, 1f)
+private val LedCrest = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
+private val LedFall = CubicBezierEasing(0.4f, 0f, 0.12f, 1f)
+
+/** LED level at [ms] into one breath. Every joint has zero velocity on both sides, so there is no knee. */
+internal fun ledBreathAt(ms: Float): Float = when {
+    ms <= 0f -> 0f
+    ms < LED_RISE_MS -> LedRise.transform(ms / LED_RISE_MS)
+    ms < LED_RISE_MS + LED_CREST_MS ->
+        1f - (1f - LED_CREST_LEVEL) * LedCrest.transform((ms - LED_RISE_MS) / LED_CREST_MS)
+    ms < LED_BREATH_MS ->
+        LED_CREST_LEVEL * (1f - LedFall.transform((ms - LED_RISE_MS - LED_CREST_MS) / LED_FALL_MS))
+    else -> 0f
+}
+
 private const val LED_HALO_FACTOR = 3.2f
 
 internal object RealTimeMotion : MotionDurationScale {
     override val scaleFactor: Float = 1f
 }
 
-/** Burn-in guard: the glow steps through a 2 px square, one corner per blink. */
+/** Burn-in guard: the glow steps through a 2 px square, one corner per breath. */
 private val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f), Offset(0f, 2f))
 
 /** The ring's burn-in guard: it breathes 1 px in and out instead, so it stays centred on the lens. */
@@ -956,6 +1065,7 @@ private val RING_SHIFTS = listOf(0f, 1f, 0f, -1f)
 private fun GlowScreen(
     face: Face,
     ending: Boolean,
+    settling: Boolean,
     arriving: Boolean,
     arrivalSeq: Int,
     settings: GlowSettings,
@@ -964,7 +1074,9 @@ private fun GlowScreen(
     onTouch: (down: Boolean) -> Unit,
     onArrivalDone: () -> Unit,
     onShowMessage: () -> Unit,
+    onRetractMessage: () -> Unit,
     onBlink: () -> Unit,
+    onLedFade: (fast: Boolean) -> Unit,
 ) {
     // Only the LED face draws anything. The others stay fully transparent, so the lock screen
     // (or, right after an unlock, the home screen) is what the user sees.
@@ -994,55 +1106,94 @@ private fun GlowScreen(
             },
     ) {
         // Keyed per announced message, so a new one restarts the effect. Newest colour first.
-        if (!ending) {
+        // Settling: nothing until the bars are ours. Ending (read elsewhere): an arrival vanishes
+        // (the activity ends it too), the dot finishes the breath it is in and lights no more.
+        if (!settling) {
             key(arrivalSeq) {
-                if (arriving && settings.arrival == ArrivalMode.MESSAGE) {
-                    // The effect plays once around the system's pop-up; the pop-up sets the length.
-                    ArrivalEffect(settings, colors.first(), geometry, onDone = {})
-                    MessagePopUp(onShow = onShowMessage, onDone = onArrivalDone)
-                } else if (arriving) {
-                    ArrivalEffect(settings, colors.first(), geometry, onDone = onArrivalDone)
-                } else {
-                    LedLayer(settings, colors, geometry, onBlink)
+                if (arriving && !ending) {
+                    if (settings.arrival == ArrivalMode.MESSAGE) {
+                        // The effect plays once around the system's pop-up; the pop-up sets the length.
+                        ArrivalEffect(settings, colors.first(), geometry, onDone = {})
+                        MessagePopUp(onShow = onShowMessage, onRetract = onRetractMessage, onDone = onArrivalDone)
+                    } else {
+                        ArrivalEffect(settings, colors.first(), geometry, onDone = onArrivalDone)
+                    }
+                } else if (!arriving) {
+                    LedLayer(settings, colors, geometry, onBlink, onFade = onLedFade, stopping = ending)
                 }
             }
         }
     }
 }
 
-/** How long the black panel holds for the system's message pop-up before the dot takes over. */
+/** How long the black panel holds the system's message pop-up before retracting it. */
 private const val MESSAGE_HOLD_MS = 6_000L
 
-/** [ArrivalMode.MESSAGE]: the system's pop-up is the message; this only raises it and times it. */
+/** The heads-up's slide-out before brightness drops and the dot starts; tune 350-450 against One UI. */
+private const val MESSAGE_RETRACT_MS = 400L
+
+/**
+ * [ArrivalMode.MESSAGE]: the system's pop-up is the message; this only raises it, times it and
+ * retracts it, so the card is gone before the dot takes over.
+ */
 @Composable
-private fun MessagePopUp(onShow: () -> Unit, onDone: () -> Unit) {
+private fun MessagePopUp(onShow: () -> Unit, onRetract: () -> Unit, onDone: () -> Unit) {
     val show by rememberUpdatedState(onShow)
+    val retract by rememberUpdatedState(onRetract)
     val done by rememberUpdatedState(onDone)
     LaunchedEffect(Unit) {
         show()
-        withContext(RealTimeMotion) { delay(MESSAGE_HOLD_MS) }
+        withContext(RealTimeMotion) {
+            delay(MESSAGE_HOLD_MS)
+            retract()
+            delay(MESSAGE_RETRACT_MS)
+        }
         done()
     }
 }
 
 /**
- * Old-school notification LED: blink, rest, next app's colour, repeat. Always the dot; the
- * chosen style is only the new-message effect ([ArrivalEffect]).
+ * Old-school notification LED: a round of breaths, one per waiting app, newest first, then a
+ * rest. Always the dot; the chosen style is only the new-message effect ([ArrivalEffect]).
+ * [onFade] asks for the breath's frame rate while dark, before it lights and after it fades.
+ * [stopping]: the breath in progress runs out on its own exhale and no new one starts.
  */
 @Composable
-private fun LedLayer(settings: GlowSettings, colors: List<Int>, geometry: ScreenGeometry, onBlink: () -> Unit) {
-    val glow = remember { Animatable(0f) }
+private fun LedLayer(
+    settings: GlowSettings,
+    colors: List<Int>,
+    geometry: ScreenGeometry,
+    onBlink: () -> Unit,
+    onFade: (fast: Boolean) -> Unit,
+    stopping: Boolean,
+) {
+    val clock = remember { Animatable(0f) }
     val blink by rememberUpdatedState(onBlink)
+    val fade by rememberUpdatedState(onFade)
+    val stop by rememberUpdatedState(stopping)
+    val palette by rememberUpdatedState(colors)
     var cycle by remember { mutableIntStateOf(0) }
-    // The blink is a signal, not decoration: keep its timing even when developer options
+    // Fixed per breath, so a palette change (or the default once all is read) waits for the dark.
+    var shown by remember { mutableIntStateOf(colors.first()) }
+    DisposableEffect(Unit) { onDispose { fade(false) } }
+    // The breath is a signal, not decoration: keep its timing even when developer options
     // shorten or disable animations (animator duration scale).
     LaunchedEffect(Unit) {
         withContext(RealTimeMotion) {
             while (true) {
-                glow.animateTo(1f, tween(LED_FADE_IN_MS, easing = FastOutSlowInEasing))
-                delay(LED_HOLD_MS)
-                glow.animateTo(0f, tween(LED_FADE_OUT_MS, easing = LinearOutSlowInEasing))
-                delay(LED_DARK_MS)
+                if (stop) break
+                fade(true)
+                delay(LED_RATE_PREROLL_MS) // dark: the new rate is in place before the first lit frame
+                if (stop) {
+                    fade(false)
+                    break
+                }
+                shown = palette[cycle % palette.size]
+                clock.snapTo(0f)
+                clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
+                fade(false)
+                val last = palette.size <= 1 || cycle % palette.size == palette.size - 1
+                delay((if (last) LED_DARK_MS else LED_GAP_MS) - LED_RATE_PREROLL_MS)
                 cycle++
                 blink()
             }
@@ -1051,8 +1202,8 @@ private fun LedLayer(settings: GlowSettings, colors: List<Int>, geometry: Screen
     val onCamera = settings.ledOnCamera
     val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
     LedDot(
-        color = Color(colors[cycle % colors.size]),
-        alpha = { glow.value },
+        color = Color(shown),
+        alpha = { ledBreathAt(clock.value) },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
@@ -1074,11 +1225,12 @@ private val LED_RING_GAP = 1.5.dp
 
 /**
  * A bright core, a hot white centre and a soft radial bloom. The brush is built once per
- * colour/size change in drawWithCache; each blink frame only changes the layer alpha.
- * The dashboard draws its real-size LED preview with this too.
+ * colour/size change in drawWithCache; each breath frame only changes the layer alpha.
+ * The dashboard draws its real-size LED preview and the phone mock-up's LED with this too.
  *
  * [onCamera]: the same light as a ring hugging the punch-hole, whose pixels cannot light;
- * [radius] then sets the ring's thickness.
+ * [radius] then sets the ring's thickness and [ringGap] its clearance from the lens (the mock-up
+ * scales it with its lens).
  */
 @Composable
 internal fun LedDot(
@@ -1091,6 +1243,7 @@ internal fun LedDot(
     onCamera: Boolean = false,
     geometry: ScreenGeometry = ScreenGeometry.Unknown,
     ringGrowPx: Float = 0f,
+    ringGap: Dp = LED_RING_GAP,
 ) {
     Spacer(
         modifier
@@ -1107,7 +1260,7 @@ internal fun LedDot(
                     )
                     val center = Offset(lens.centerX, lens.centerY)
                     val line = core * LED_RING_STROKE_FACTOR
-                    val ring = lens.radius + LED_RING_GAP.toPx() + line / 2f + ringGrowPx
+                    val ring = lens.radius + ringGap.toPx() + line / 2f + ringGrowPx
                     val bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f)
                     val halo = Brush.radialGradient(
                         0f to Color.Transparent,

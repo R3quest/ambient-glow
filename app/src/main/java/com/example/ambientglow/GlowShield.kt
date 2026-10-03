@@ -10,6 +10,9 @@ import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.ViewCompat
@@ -20,17 +23,24 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Optional overlay above the lock screen, for two short moments:
  *
  * - The arrival effect: when a new message lights the lock screen, the user's chosen style
  *   (edge frame, camera ring or dot) pulses over it, see-through and untouchable, so the lock
- *   screen and all its notifications stay visible and usable underneath.
+ *   screen and all its notifications stay visible and usable underneath. With the glass wave
+ *   (Android 12+), the window also briefly blurs the lock screen behind it as the wave rolls
+ *   over ([hazeTarget]): One UI's own blur ([SemBlur]), which can follow the wave, or Android's
+ *   window blur, which can only blur the whole screen.
  * - A black cover for the LED hand-over: on every wake into the LED, One UI's lock-screen window
  *   stays on top of the glow screen for 100-450 ms and shows its battery icon and nav handle at
  *   the system brightness. The glow screen raises the cover just before such a wake and drops it
- *   once its own window owns the (hidden) bars.
+ *   once its own window owns the (hidden) bars. When the LED takes over a lit lock screen, the
+ *   cover fades in over it first ([dimIn]), so the takeover isn't a cut to black.
  *
  * No app window can draw over a visible lock screen; an accessibility overlay can, because it
  * sits above the system bars and the keyguard. The service subscribes to no accessibility events
@@ -44,8 +54,9 @@ class GlowShield : AccessibilityService() {
     private val hideNow = Runnable { removeCover() }
     private val stopArrivalNow = Runnable { removeArrival() }
     private var cover: View? = null
-    private var arrival: ComposeView? = null
+    private var arrival: FrameLayout? = null
     private var arrivalOwner: OverlayOwner? = null
+    private var arrivalParams: WindowManager.LayoutParams? = null
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
 
     override fun onServiceConnected() {
@@ -80,16 +91,40 @@ class GlowShield : AccessibilityService() {
         timers.postDelayed(hideNow, MAX_COVER_MS)
         if (cover != null) return
         val view = View(this).apply { setBackgroundColor(Color.BLACK) }
-        if (addOverlay(view, PixelFormat.OPAQUE, "AmbientGlow:shield")) {
+        if (addOverlay(view, PixelFormat.OPAQUE, "AmbientGlow:shield") != null) {
             cover = view
             GlowLog.d("shield up")
         }
+    }
+
+    /**
+     * The cover, faded in over [durationMs] above the arrival window. The effect's tail fades out
+     * under it and is removed once the screen is black.
+     */
+    private fun addDimCover(durationMs: Long) {
+        timers.removeCallbacks(hideNow)
+        timers.postDelayed(hideNow, MAX_COVER_MS)
+        if (cover != null) return
+        val view = View(this).apply {
+            setBackgroundColor(Color.BLACK)
+            alpha = 0f
+        }
+        addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
+        cover = view
+        GlowLog.d("shield dimming")
+        view.animate()
+            .alpha(1f)
+            .setDuration(durationMs)
+            .setInterpolator(DIM_EASE)
+            .withEndAction { if (cover === view) removeArrival() }
     }
 
     private fun removeCover() {
         timers.removeCallbacks(hideNow)
         val view = cover ?: return
         cover = null
+        // A cancelled dim skips its end action, so it can never remove a newer arrival.
+        view.animate().cancel()
         runCatching { windowManager.removeViewImmediate(view) }
         GlowLog.d("shield down")
     }
@@ -98,24 +133,33 @@ class GlowShield : AccessibilityService() {
         removeArrival() // a newer message restarts the effect in its colour
         val settings = GlowPrefs.load(this)
         val owner = OverlayOwner()
-        val view = ComposeView(this).apply {
+        // A frame, so the blur views ([hazeTarget]) can sit beside the effect.
+        // Owners on the window's root: Compose looks for them there.
+        val view = FrameLayout(this).apply {
             setViewTreeLifecycleOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
-            setContent {
-                val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
-                ArrivalEffect(settings, color, lens, onDone = { removeArrival() })
-            }
         }
+        val haze = hazeTarget(settings, view)
+        view.addView(
+            ComposeView(this).apply {
+                setContent {
+                    val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
+                    ArrivalEffect(settings, color, lens, onDone = { removeArrival() }, onBlurBehind = haze)
+                }
+            },
+        )
         ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
             geometry.value = ScreenGeometry.from(insets)
             insets
         }
-        if (!addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:arrival")) {
+        val params = addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:arrival")
+        if (params == null) {
             owner.destroy()
             return
         }
         arrival = view
         arrivalOwner = owner
+        arrivalParams = params
         timers.postDelayed(stopArrivalNow, MAX_ARRIVAL_MS)
         GlowLog.d("arrival up style=${settings.style}")
     }
@@ -127,11 +171,111 @@ class GlowShield : AccessibilityService() {
         runCatching { windowManager.removeViewImmediate(view) }
         arrivalOwner?.destroy()
         arrivalOwner = null
+        arrivalParams = null
         GlowLog.d("arrival down")
     }
 
+    /**
+     * The glass wave's blur of the lock screen, or null where there is none to be had:
+     * - One UI ([SemBlur]): a row of [BLUR_STRIPS] narrow blur views in [root], each moved every
+     *   frame to where the wave crosses its column (One UI won't let apps cut a blur to a shape,
+     *   but it blurs exactly a view's bounds). One full-window view for [GlassArea.SCREEN].
+     * - Android's window blur (where the system allows it): the whole window, in steps, since
+     *   every change is a relayout. It can't follow the wave, so every area blurs the screen.
+     */
+    private fun hazeTarget(settings: GlowSettings, root: FrameLayout): GlassHazeTarget? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || !settings.hazes) return null
+        val density = resources.displayMetrics.density
+        val peak = settings.glassBlur.radius.value * density
+        fun stepped(level: Float) = (level * GLASS_BLUR_STEPS + 0.5f).toInt() / GLASS_BLUR_STEPS.toFloat()
+        val area = if (SemBlur.available) settings.glassArea else GlassArea.SCREEN
+        return when {
+            SemBlur.available && area == GlassArea.SCREEN -> {
+                val view = blurView(root, FrameLayout.LayoutParams.MATCH_PARENT)
+                var last = 0
+                GlassHazeTarget { level, _ ->
+                    val radius = (stepped(level) * peak * SemBlur.SCALE).roundToInt()
+                    if (radius != last && arrival === root) {
+                        last = radius
+                        SemBlur.set(view, radius)
+                    }
+                }
+            }
+            SemBlur.available -> {
+                val strips = Array(BLUR_STRIPS) { blurView(root, 0) }
+                val last = IntArray(BLUR_STRIPS)
+                val reveal = area == GlassArea.REVEAL
+                GlassHazeTarget { level, wave ->
+                    if (arrival !== root) return@GlassHazeTarget
+                    val width = root.width
+                    val height = root.height
+                    val origin = waveOrigin(geometry.value.fitted(settings, density), width.toFloat(), density, 1f)
+                    val radius = wave * waveReach(origin, width.toFloat(), height.toFloat())
+                    val blur = (stepped(level) * peak * SemBlur.SCALE).roundToInt()
+                    for (i in strips.indices) {
+                        val left = width * i / BLUR_STRIPS
+                        val right = width * (i + 1) / BLUR_STRIPS
+                        val dx = abs((left + right) / 2f - origin.x)
+                        val top: Float
+                        val bottom: Float
+                        if (reveal) {
+                            // Everything the wave hasn't reached yet.
+                            val edge = halfChord(HAZE_REVEAL_EDGE * radius, dx)
+                            top = if (edge.isNaN()) 0f else origin.y + edge
+                            bottom = height.toFloat()
+                        } else {
+                            // The band under the crest, where it crosses this column.
+                            val outer = halfChord(HAZE_BAND_OUTER * radius, dx)
+                            val inner = halfChord(HAZE_BAND_INNER * radius, dx)
+                            top = if (outer.isNaN()) 0f else if (inner.isNaN()) origin.y - outer else origin.y + inner
+                            bottom = if (outer.isNaN()) 0f else origin.y + outer
+                        }
+                        val view = strips[i]
+                        val t = top.roundToInt().coerceIn(0, height)
+                        val b = bottom.roundToInt().coerceIn(t, height)
+                        // Placed by hand, without a layout pass; the params keep any later one in step.
+                        (view.layoutParams as FrameLayout.LayoutParams).apply {
+                            this.width = right - left
+                            this.height = b - t
+                            leftMargin = left
+                            topMargin = t
+                        }
+                        view.layout(left, t, right, b)
+                        val strip = if (b > t) blur else 0
+                        if (strip != last[i]) {
+                            last[i] = strip
+                            SemBlur.set(view, strip)
+                        }
+                    }
+                }
+            }
+            windowManager.isCrossWindowBlurEnabled -> GlassHazeTarget { level, _ ->
+                setArrivalBlur((stepped(level) * peak).roundToInt())
+            }
+            else -> null
+        }.also { GlowLog.d("haze ${if (it == null) "none" else if (SemBlur.available) "one-ui $area" else "android screen"}") }
+    }
+
+    /** An empty view behind the effect, for One UI to turn into a blur. */
+    private fun blurView(root: FrameLayout, size: Int): View =
+        View(this).also { root.addView(it, 0, FrameLayout.LayoutParams(size, size)) }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun setArrivalBlur(radius: Int) {
+        val view = arrival ?: return
+        val params = arrivalParams ?: return
+        if (params.blurBehindRadius == radius) return
+        params.blurBehindRadius = radius
+        params.flags = if (radius > 0) {
+            params.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+        } else {
+            params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
+        }
+        runCatching { windowManager.updateViewLayout(view, params) }
+    }
+
     /** Full display, bars and cutout included; untouchable, so taps reach whatever is underneath. */
-    private fun addOverlay(view: View, format: Int, name: String): Boolean {
+    private fun addOverlay(view: View, format: Int, name: String): WindowManager.LayoutParams? {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -153,19 +297,27 @@ class GlowShield : AccessibilityService() {
         }
         return try {
             windowManager.addView(view, params)
-            true
+            params
         } catch (e: RuntimeException) {
             GlowLog.d("shield refused $name: $e")
-            false
+            null
         }
     }
 
     companion object {
+        /** Columns the One UI blur follows the wave in; more look smoother and cost more per frame. */
+        private const val BLUR_STRIPS = 24
+
         /** Upper bound for one cover; a wake hand-over takes well under a second. */
         private const val MAX_COVER_MS = 2_000L
 
         /** Upper bound for the arrival overlay, in case the effect never reports done. */
         private const val MAX_ARRIVAL_MS = 4_000L
+
+        // Alpha eases out so the remaining light falls about evenly to the eye (perceived lightness
+        // is roughly the cube root of luminance); a linear or accelerating alpha holds the screen
+        // bright and then snaps to black.
+        private val DIM_EASE = DecelerateInterpolator()
 
         // Set only while the system has the service bound; cleared in onUnbind/onDestroy.
         @SuppressLint("StaticFieldLeak")
@@ -174,6 +326,11 @@ class GlowShield : AccessibilityService() {
         /** Covers the whole display, bars included. No-op when the service is off. */
         fun show() {
             instance?.addCover()
+        }
+
+        /** Fades the cover in over the lit lock screen, ending as the LED takes over. No-op when the service is off. */
+        fun dimIn(durationMs: Long) {
+            instance?.addDimCover(durationMs)
         }
 
         fun hide() {
@@ -191,6 +348,9 @@ class GlowShield : AccessibilityService() {
     }
 }
 
+/** Half the height of a circle of [radius] at [dx] from its centre, or NaN where it doesn't reach. */
+private fun halfChord(radius: Float, dx: Float): Float = sqrt(radius * radius - dx * dx)
+
 /** Minimal lifecycle for a ComposeView in a service window: resumed while attached, then destroyed. */
 private class OverlayOwner : SavedStateRegistryOwner {
     private val registry = LifecycleRegistry(this)
@@ -206,5 +366,60 @@ private class OverlayOwner : SavedStateRegistryOwner {
 
     fun destroy() {
         registry.currentState = Lifecycle.State.DESTROYED
+    }
+}
+
+/**
+ * One UI's own window blur, for Samsung phones, which switch Android's cross-window blur off
+ * ([WindowManager.isCrossWindowBlurEnabled] is false) and blur through `View.semSetBlurInfo`
+ * instead. That is Samsung SDK API, cleared for apps but not in the Android SDK, so it is found
+ * by reflection once; anywhere it is missing, or the model has no window blur, nothing happens.
+ * It turns the view's background into a blur of whatever is behind its window, within the view's
+ * bounds, applied by the render thread: neither a new radius nor moving the view costs a window
+ * relayout, so it can follow the wave.
+ */
+private object SemBlur {
+    private class Api(
+        val builder: java.lang.reflect.Constructor<*>,
+        val setRadius: java.lang.reflect.Method,
+        val build: java.lang.reflect.Method,
+        val apply: java.lang.reflect.Method,
+        val windowMode: Int,
+    )
+
+    private val api: Api? by lazy(LazyThreadSafetyMode.NONE) {
+        runCatching {
+            val info = Class.forName("android.view.SemBlurInfo")
+            val builder = Class.forName("android.view.SemBlurInfo\$Builder")
+            Api(
+                builder = builder.getConstructor(Int::class.javaPrimitiveType),
+                setRadius = builder.getMethod("setRadius", Int::class.javaPrimitiveType),
+                build = builder.getMethod("build"),
+                apply = View::class.java.getMethod("semSetBlurInfo", info),
+                windowMode = info.getField("BLUR_MODE_WINDOW").getInt(null),
+            )
+        }.onFailure { GlowLog.d("no One UI blur: $it") }.getOrNull()
+    }
+
+    val available: Boolean get() = api != null
+
+    /**
+     * One UI's radius runs on its own, much larger scale (System UI asks 300 for its frosted
+     * notification cards and 128 for the PIN pad); this brings [GLASS_BLUR] to the same look.
+     */
+    const val SCALE = 3f
+
+    /** Blurs what is behind [view]'s window, within its bounds, by [radius] (One UI's scale); 0 clears it. */
+    fun set(view: View, radius: Int) {
+        val api = api ?: return
+        runCatching {
+            if (radius <= 0) {
+                api.apply.invoke(view, null)
+            } else {
+                val builder = api.builder.newInstance(api.windowMode)
+                api.setRadius.invoke(builder, radius)
+                api.apply.invoke(view, api.build.invoke(builder))
+            }
+        }.onFailure { GlowLog.d("One UI blur failed: $it") }
     }
 }

@@ -85,7 +85,7 @@ enum class EdgeGlow(val layers: List<Pair<Dp, Float>>, @param:StringRes val labe
 
 /**
  * How the Edge Frame moves during the new-message effect.
- * - PULSE: the whole frame breathes twice.
+ * - PULSE: the glow breathes out, in, and out again while the line stays crisp.
  * - COMET: one bright head with a fading tail runs around the screen.
  * - TWIN: two heads chase each other from opposite sides.
  */
@@ -112,6 +112,50 @@ enum class EdgeColor(@param:StringRes val label: Int) {
 
     companion object {
         fun fromName(name: String?): EdgeColor = entries.firstOrNull { it.name == name } ?: APP
+    }
+}
+
+/**
+ * Glass wave: how soft the screen under it goes, as the blur radius at full screen. The black
+ * panel has nothing under it to blur, so there it is only the drawn wave and frost.
+ */
+enum class GlassBlur(val radius: Dp, @param:StringRes val label: Int) {
+    OFF(0.dp, R.string.glass_blur_off),
+    LIGHT(6.dp, R.string.glass_blur_light),
+    MEDIUM(10.dp, R.string.glass_blur_medium),
+    STRONG(16.dp, R.string.glass_blur_strong);
+
+    companion object {
+        fun fromName(name: String?): GlassBlur = entries.firstOrNull { it.name == name } ?: MEDIUM
+    }
+}
+
+/**
+ * Glass wave: where the blur is. REVEAL and WAVE need a blur that can follow the wave (One UI's,
+ * or the app's own preview); Android's window blur can't, so there they fall back to SCREEN.
+ * - REVEAL: the screen lights up frosted and the wave sweeps it clear, so notifications swim
+ *   out sharp behind the crest.
+ * - WAVE: a blurred band rides under the crest; what it passes goes soft, then sharp again.
+ * - SCREEN: the whole screen goes soft as the wave rolls in and clears as it leaves.
+ */
+enum class GlassArea(@param:StringRes val label: Int) {
+    REVEAL(R.string.glass_area_reveal),
+    WAVE(R.string.glass_area_wave),
+    SCREEN(R.string.glass_area_screen);
+
+    companion object {
+        fun fromName(name: String?): GlassArea = entries.firstOrNull { it.name == name } ?: REVEAL
+    }
+}
+
+/** Glass wave: a white mist laid where the blur is, as on breathed-on glass. Drawn, so it shows everywhere. */
+enum class GlassFrost(val alpha: Float, @param:StringRes val label: Int) {
+    OFF(0f, R.string.glass_frost_off),
+    SOFT(0.07f, R.string.glass_frost_soft),
+    MILKY(0.16f, R.string.glass_frost_milky);
+
+    companion object {
+        fun fromName(name: String?): GlassFrost = entries.firstOrNull { it.name == name } ?: SOFT
     }
 }
 
@@ -159,6 +203,11 @@ data class GlowSettings(
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
     val spawn: Boolean = true,
+    /** The spawn wave rolls in like the iPhone's: a soft, shimmering crest of light and a trailing ripple. */
+    val glass: Boolean = false,
+    val glassBlur: GlassBlur = GlassBlur.MEDIUM,
+    val glassArea: GlassArea = GlassArea.REVEAL,
+    val glassFrost: GlassFrost = GlassFrost.SOFT,
     val edgeWidth: EdgeWidth = EdgeWidth.THIN,
     val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
@@ -170,6 +219,26 @@ data class GlowSettings(
     companion object {
         const val DEFAULT_DOT_X = 0.06f
         const val DEFAULT_DOT_Y = 0.008f
+    }
+}
+
+/**
+ * This look as the arrival effect sees it: LED-only fields reset, so moving or sizing the LED
+ * doesn't restart effect previews. Keep in step with what ArrivalEffect reads (BeaconArrival
+ * reads the dot and [GlowSettings.ledOnCamera] for Custom Dot). The lens fit reaches the effect
+ * through its geometry instead.
+ */
+fun GlowSettings.forPreview(): GlowSettings {
+    val base = copy(ledBrightness = LedBrightness.MAX, lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
+    return if (style == GlowStyle.CUSTOM_DOT) {
+        base
+    } else {
+        base.copy(
+            dotX = GlowSettings.DEFAULT_DOT_X,
+            dotY = GlowSettings.DEFAULT_DOT_Y,
+            dotSize = DotSize.LED,
+            ledOnCamera = false,
+        )
     }
 }
 
@@ -187,6 +256,10 @@ object GlowPrefs {
     private const val KEY_LED_BRIGHTNESS = "led_brightness"
     private const val KEY_ARRIVAL = "arrival"
     private const val KEY_SPAWN = "spawn"
+    private const val KEY_GLASS = "glass"
+    private const val KEY_GLASS_BLUR = "glass_blur"
+    private const val KEY_GLASS_AREA = "glass_area"
+    private const val KEY_GLASS_FROST = "glass_frost"
     private const val KEY_EDGE_WIDTH = "edge_width"
     private const val KEY_EDGE_GLOW = "edge_glow"
     private const val KEY_EDGE_MOTION = "edge_motion"
@@ -209,6 +282,10 @@ object GlowPrefs {
             ledBrightness = LedBrightness.fromName(prefs.getString(KEY_LED_BRIGHTNESS, null)),
             arrival = ArrivalMode.fromName(prefs.getString(KEY_ARRIVAL, null)),
             spawn = prefs.getBoolean(KEY_SPAWN, true),
+            glass = prefs.getBoolean(KEY_GLASS, false),
+            glassBlur = GlassBlur.fromName(prefs.getString(KEY_GLASS_BLUR, null)),
+            glassArea = GlassArea.fromName(prefs.getString(KEY_GLASS_AREA, null)),
+            glassFrost = GlassFrost.fromName(prefs.getString(KEY_GLASS_FROST, null)),
             edgeWidth = EdgeWidth.fromName(prefs.getString(KEY_EDGE_WIDTH, null)),
             edgeGlow = EdgeGlow.fromName(prefs.getString(KEY_EDGE_GLOW, null)),
             edgeMotion = EdgeMotion.fromName(prefs.getString(KEY_EDGE_MOTION, null)),
@@ -216,10 +293,14 @@ object GlowPrefs {
         )
     }
 
-    /** Saves the new-message effect choices: the spawn intro and every Edge Frame option. */
+    /** Saves the new-message effect choices: the spawn intro, its glass look, and every Edge Frame option. */
     fun saveEffect(context: Context, settings: GlowSettings) {
         prefs(context).edit {
             putBoolean(KEY_SPAWN, settings.spawn)
+            putBoolean(KEY_GLASS, settings.glass)
+            putString(KEY_GLASS_BLUR, settings.glassBlur.name)
+            putString(KEY_GLASS_AREA, settings.glassArea.name)
+            putString(KEY_GLASS_FROST, settings.glassFrost.name)
             putString(KEY_EDGE_WIDTH, settings.edgeWidth.name)
             putString(KEY_EDGE_GLOW, settings.edgeGlow.name)
             putString(KEY_EDGE_MOTION, settings.edgeMotion.name)
@@ -298,7 +379,7 @@ object GlowPending {
         return entries.removeAll { it.key == key }
     }
 
-    /** Distinct colours in arrival order (newest first): one blink each in the LED loop. */
+    /** Distinct colours in arrival order (newest first): one breath each in the LED's round. */
     fun colors(): List<Int> = entries.map { it.color }.distinct()
 }
 
