@@ -35,7 +35,10 @@
     <string name="glass_area_reveal">SWIM OUT</string>
     <string name="glass_area_wave">WAVE</string>
     <string name="glass_area_screen">SCREEN</string>
-    <string name="glass_area_hint">Swim out: the lock screen lights up frosted and the wave sweeps it clear, so your notifications swim out sharp behind it. Wave: a blurred band rides under the crest. Screen: everything blurs, then clears. Needs Android 12+; where the blur can\'t follow the wave, the whole screen blurs.</string>
+    <string name="glass_area_reveal_body">The lock screen lights up frosted and the wave sweeps it clear, so your notifications swim out sharp behind it.</string>
+    <string name="glass_area_wave_body">A blurred band rides under the crest: whatever it passes goes soft, then sharp again.</string>
+    <string name="glass_area_screen_body">Everything blurs as the wave rolls in, then clears as it leaves.</string>
+    <string name="glass_area_fallback">Needs Android 12+. Where the blur can\'t follow the wave, the whole screen blurs.</string>
     <string name="glass_frost">FROST</string>
     <string name="glass_frost_off">OFF</string>
     <string name="glass_frost_soft">SOFT</string>

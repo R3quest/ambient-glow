@@ -20,7 +20,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -143,6 +149,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -1322,11 +1329,11 @@ private fun GlassOptions(settings: GlowSettings, onEffect: (GlowSettings) -> Uni
                 Box(Modifier.padding(top = 14.dp)) {
                     OptionGroup(stringResource(R.string.glass_area)) {
                         ChipRow(GlassArea.entries, settings.glassArea, { it.label }) { onEffect(settings.copy(glassArea = it)) }
-                        Text(
-                            text = stringResource(R.string.glass_area_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = GlowPalette.TextFaint,
-                        )
+                        OptionBody(settings.glassArea) { area ->
+                            // The fallback only concerns the areas that follow the wave.
+                            val body = stringResource(area.body)
+                            if (area == GlassArea.SCREEN) body else body + " " + stringResource(R.string.glass_area_fallback)
+                        }
                     }
                 }
             }
@@ -1334,6 +1341,31 @@ private fun GlassOptions(settings: GlowSettings, onEffect: (GlowSettings) -> Uni
         OptionGroup(stringResource(R.string.glass_frost)) {
             ChipRow(GlassFrost.entries, settings.glassFrost, { it.label }) { onEffect(settings.copy(glassFrost = it)) }
         }
+    }
+}
+
+/**
+ * What the chip picked above does: only the selected option's text, crossfaded on a new pick
+ * while the space eases to the new height, so the options don't have to be read as a list.
+ */
+@Composable
+private fun <T> OptionBody(selected: T, text: @Composable (T) -> String) {
+    AnimatedContent(
+        targetState = selected,
+        transitionSpec = {
+            fadeIn(tween(GlowMotion.ENTER_MS, GlowMotion.ENTER_DELAY_MS, LinearOutSlowInEasing)) togetherWith
+                fadeOut(tween(GlowMotion.EXIT_MS, easing = FastOutLinearInEasing)) using
+                SizeTransform(clip = false) { _, _ -> spring(1f, 500f, IntSize.VisibilityThreshold) }
+        },
+        contentAlignment = Alignment.TopStart,
+        label = "option-body",
+    ) { option ->
+        Text(
+            text = text(option),
+            style = MaterialTheme.typography.bodySmall,
+            color = GlowPalette.TextFaint,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

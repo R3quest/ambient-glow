@@ -138,10 +138,10 @@ enum class GlassBlur(val radius: Dp, @param:StringRes val label: Int) {
  * - WAVE: a blurred band rides under the crest; what it passes goes soft, then sharp again.
  * - SCREEN: the whole screen goes soft as the wave rolls in and clears as it leaves.
  */
-enum class GlassArea(@param:StringRes val label: Int) {
-    REVEAL(R.string.glass_area_reveal),
-    WAVE(R.string.glass_area_wave),
-    SCREEN(R.string.glass_area_screen);
+enum class GlassArea(@param:StringRes val label: Int, @param:StringRes val body: Int) {
+    REVEAL(R.string.glass_area_reveal, R.string.glass_area_reveal_body),
+    WAVE(R.string.glass_area_wave, R.string.glass_area_wave_body),
+    SCREEN(R.string.glass_area_screen, R.string.glass_area_screen_body);
 
     companion object {
         fun fromName(name: String?): GlassArea = entries.firstOrNull { it.name == name } ?: REVEAL
