@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -25,7 +26,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -101,6 +104,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val power by lazy(LazyThreadSafetyMode.NONE) { getSystemService(PowerManager::class.java) }
     private val keyguard by lazy(LazyThreadSafetyMode.NONE) { getSystemService(KeyguardManager::class.java) }
     private val audio by lazy(LazyThreadSafetyMode.NONE) { getSystemService(AudioManager::class.java) }
+    private val displays by lazy(LazyThreadSafetyMode.NONE) { getSystemService(DisplayManager::class.java) }
 
     // Some builds stop honouring FLAG_KEEP_SCREEN_ON once this window has taken over a showing
     // lock screen, so an explicit screen lock backs it up while the LED is resumed. The power
@@ -204,6 +208,34 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
+    /**
+     * The earliest sign of a power press while the LED is in front: going to sleep changes the
+     * display 40-75 ms after the press, as the ~340 ms screen-off fade starts, and the phone is
+     * no longer interactive by then. Opening the lock screen and waking right here cancels the
+     * sleep, so the panel never goes dark. onPause only comes once the panel is off, which costs
+     * the whole fade plus a panel off/on cycle (~0.5 s). Event-driven: nothing runs in between.
+     *
+     * Only on the change from interactive to not: we also put the LED up while the panel is
+     * already dark (a black arrival, or the lock screen timing out), and the display changes
+     * then too.
+     */
+    private val sleepSignal = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != Display.DEFAULT_DISPLAY) return
+            val wasInteractive = interactiveSeen
+            interactiveSeen = power.isInteractive
+            if (wasInteractive && ledTurnedOff()) {
+                GlowLog.d("act display changed: going to sleep with the LED in front")
+                revealAfterPower()
+            }
+        }
+    }
+
+    /** [PowerManager.isInteractive] at the last display change. */
+    private var interactiveSeen = false
+
     // USER_PRESENT is sent by SystemUI, not the system uid, so a RECEIVER_NOT_EXPORTED receiver
     // never gets it (seen on One UI 8.5: the LED stayed over the unlocked phone). It is a
     // protected broadcast, so exporting this receiver lets no other app trigger it.
@@ -250,6 +282,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             IntentFilter(Intent.ACTION_USER_PRESENT),
             ContextCompat.RECEIVER_EXPORTED,
         )
+        listenForSleep()
         GlowSession.attach(this)
         onBackPressedDispatcher.addCallback(this) { onUserDismiss() }
 
@@ -263,6 +296,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 preview = preview.value,
                 geometry = geometry.value,
                 onTap = ::onUserDismiss,
+                onTouch = ::onLedTouch,
                 onArrivalDone = ::onArrivalDone,
                 onShowMessage = ::showMessage,
                 onBlink = { leaveIfUnlocked() },
@@ -296,12 +330,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d("act onPause face=${face.value} interactive=${power.isInteractive}")
         releaseKeepOn()
         // Paused by the panel going dark while the LED was in front: the user pressed power (or
-        // double-tapped to sleep). Open the lock screen right away rather than waiting for the
-        // late ACTION_SCREEN_OFF, which arrives ~0.3 s after the panel is already dark. Not when
-        // we put the LED up ourselves during the sleep fade.
-        if (face.value == Face.LED && !power.isInteractive && !preview.value && !inCall() && !ledArmedForSleep) {
-            revealAfterPower()
-        }
+        // double-tapped to sleep). Normally [sleepSignal] has already handled it; otherwise open
+        // the lock screen now rather than waiting for the late ACTION_SCREEN_OFF, which arrives
+        // ~0.3 s after the panel is already dark.
+        if (ledTurnedOff()) revealAfterPower()
         super.onPause()
     }
 
@@ -329,6 +361,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLauncher.dismissMessage(this)
         unregisterReceiver(screenSignals)
         unregisterReceiver(unlockSignal)
+        displays.unregisterDisplayListener(sleepSignal)
         super.onDestroy()
     }
 
@@ -467,6 +500,24 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
+    private fun listenForSleep() {
+        interactiveSeen = power.isInteractive
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            // Also state, refresh-rate and (36.1+) brightness changes: with only the default
+            // events the first one comes ~135 ms after the press (One UI 8.5).
+            var events = DisplayManager.EVENT_TYPE_DISPLAY_CHANGED or
+                DisplayManager.EVENT_TYPE_DISPLAY_REFRESH_RATE or
+                DisplayManager.EVENT_TYPE_DISPLAY_STATE
+            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+                @SuppressLint("InlinedApi")
+                events = events or DisplayManager.EVENT_TYPE_DISPLAY_BRIGHTNESS
+            }
+            displays.registerDisplayListener(mainExecutor, events, sleepSignal)
+        } else {
+            displays.registerDisplayListener(sleepSignal, timers)
+        }
+    }
+
     /** Backup for a missed unlock broadcast: never stay over an unlocked phone. */
     private fun leaveIfUnlocked(): Boolean {
         if (preview.value || face.value == Face.AWAY || keyguard.isKeyguardLocked) return false
@@ -512,6 +563,20 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         wakeAfter(SLEEP_CANCEL_DELAY_MS)
     }
 
+    /**
+     * A finger came down on the LED, or left without a tap. The LED holds the panel at its idle
+     * rate (10 Hz on One UI), which also overrides the system's touch boost, so the taps would be
+     * read and the lock screen's reveal start drawing at that rate. Leave it at the first touch:
+     * the panel is at full rate by the time the double tap completes.
+     */
+    private fun onLedTouch(down: Boolean) {
+        if (face.value != Face.LED || arriving.value) return
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = if (down) 0 else lowestRefreshModeId()
+            preferredRefreshRate = if (down) highestRefreshRate() else 0f
+        }
+    }
+
     /** Tap or back on the LED: show the lock screen, with no automatic hand-back. */
     private fun onUserDismiss() {
         GlowLog.d("act user dismiss face=${face.value}")
@@ -523,6 +588,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
+    /**
+     * The phone stopped being interactive with the LED in front: the user pressed power. Not
+     * when we put the LED up ourselves during the sleep fade, and not for the proximity sensor
+     * during a call.
+     */
+    private fun ledTurnedOff(): Boolean =
+        face.value == Face.LED && !power.isInteractive && !preview.value && !inCall() && !ledArmedForSleep
+
     /** Set from the power press until the panel is back on, so the late SCREEN_OFF is ignored. */
     private var revealingAfterPower = false
 
@@ -530,8 +603,15 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d("act revealAfterPower")
         revealingAfterPower = true
         DarkHold.acquire(this)
+        // Uncover, then wake. One UI starts its sleep transition ~7 ms after the press, before
+        // any signal reaches us, so the lock screen always comes in through its ~0.3 s wake
+        // transition, never the quicker uncover a tap gets. Waking first and uncovering once
+        // One UI is back to "covered" was measured slower (0.5-0.65 s).
         showLockScreen()
-        wakeAfter(0)
+        // Wake now, not through the queue: during the screen-off fade the main thread can be held
+        // up by a frame for ~0.2 s, long enough for the panel to go dark first.
+        timers.removeCallbacks(wakeNow)
+        wakeNow.run()
     }
 
     /** Cover the lock screen with the LED; [arrival] first plays the effect on the black panel. */
@@ -842,6 +922,7 @@ private fun GlowScreen(
     preview: Boolean,
     geometry: ScreenGeometry,
     onTap: () -> Unit,
+    onTouch: (down: Boolean) -> Unit,
     onArrivalDone: () -> Unit,
     onShowMessage: () -> Unit,
     onBlink: () -> Unit,
@@ -851,13 +932,27 @@ private fun GlowScreen(
     if (face != Face.LED) return
     val colors = if (preview) PREVIEW_COLORS else GlowPending.colors().ifEmpty { listOf(DEFAULT_GLOW_COLOR) }
     val tap by rememberUpdatedState(onTap)
+    val touch by rememberUpdatedState(onTouch)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             // Swallow both taps of a double tap, so the second one can't reach the lock screen
-            // (where One UI's double-tap-to-sleep would turn the screen off again).
-            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { tap() }, onTap = { tap() }) },
+            // (where One UI's double-tap-to-sleep would turn the screen off again). Act on the
+            // second press, not its release: its lift still comes to this window, and the lock
+            // screen starts showing one press-length sooner.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown().consume()
+                    touch(true)
+                    if (waitForUpOrCancellation()?.consume() == null) {
+                        touch(false)
+                        return@awaitEachGesture
+                    }
+                    withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) { awaitFirstDown() }?.consume()
+                    tap()
+                }
+            },
     ) {
         // Keyed per announced message, so a new one restarts the effect. Newest colour first.
         if (!ending) {
