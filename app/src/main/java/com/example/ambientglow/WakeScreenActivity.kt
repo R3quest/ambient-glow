@@ -129,7 +129,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         val mode = if (face.value == Face.LED) WakeMode.LED else WakeMode.WAKE
         GlowLauncher.launchFromBackground(this, mode, GlowPending.entries.firstOrNull()?.color ?: DEFAULT_GLOW_COLOR)
     }
-    private val closeNow = Runnable { finishAndRemoveTask() }
 
     private val face = mutableStateOf(Face.LOCK_SCREEN)
 
@@ -165,7 +164,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      */
     private val sleepWatch = object : Runnable {
         override fun run() {
-            if (face.value != Face.LOCK_SCREEN || preview.value) return
+            if (face.value != Face.LOCK_SCREEN) return
             if (power.isInteractive) {
                 timers.postDelayed(this, SLEEP_WATCH_MS)
             } else {
@@ -205,10 +204,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val relightLater = Runnable { relightLed(RELIGHT_DELAY_MS) }
     private val settings = mutableStateOf(GlowSettings())
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
-    private val preview = mutableStateOf(false)
-
-    /** The sample app colour a preview plays in. */
-    private val previewColor = mutableIntStateOf(DEFAULT_GLOW_COLOR)
 
     private val screenSignals = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -310,8 +305,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 arriving = arriving.value,
                 arrivalSeq = arrivalSeq.intValue,
                 settings = settings.value,
-                preview = preview.value,
-                previewColor = previewColor.intValue,
                 geometry = geometry.value,
                 onTap = ::onUserDismiss,
                 onTouch = ::onLedTouch,
@@ -334,7 +327,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         super.onResume()
         GlowLog.d("act onResume face=${face.value} interactive=${power.isInteractive} locked=${keyguard.isKeyguardLocked}")
         // Resumed with no lock screen: the phone was unlocked underneath us.
-        if (!preview.value && face.value != Face.AWAY && !keyguard.isKeyguardLocked) {
+        if (face.value != Face.AWAY && !keyguard.isKeyguardLocked) {
             goAway()
             return
         }
@@ -422,7 +415,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     override fun onPendingChanged() {
-        if (preview.value || !GlowPending.isEmpty) return
+        if (!GlowPending.isEmpty) return
         if (face.value == Face.LED && power.isInteractive) {
             // Read elsewhere while the LED is lit: don't pop the lock screen up. Stop the dot,
             // stay black, let the screen time out normally, and finish when it goes off.
@@ -442,10 +435,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun start(intent: Intent?) {
         GlowLauncher.dismissBridge(this)
         timers.removeCallbacksAndMessages(null)
-        preview.value = intent?.getBooleanExtra(GlowLauncher.EXTRA_PREVIEW, false) == true
-        previewColor.intValue = intent?.getIntExtra(GlowLauncher.EXTRA_COLOR, DEFAULT_GLOW_COLOR) ?: DEFAULT_GLOW_COLOR
         settings.value = GlowPrefs.load(this)
-        if (!preview.value && GlowPending.isEmpty) {
+        if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
             finishAndRemoveTask()
             return
@@ -476,7 +467,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         timers.removeCallbacks(verifyWake)
         arrivalDue = false
         GlowShield.stopArrival()
-        if (preview.value || ending.value) {
+        if (ending.value) {
             finishAndRemoveTask()
             return
         }
@@ -538,7 +529,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /** Backup for a missed unlock broadcast: never stay over an unlocked phone. */
     private fun leaveIfUnlocked(): Boolean {
-        if (preview.value || face.value == Face.AWAY || keyguard.isKeyguardLocked) return false
+        if (face.value == Face.AWAY || keyguard.isKeyguardLocked) return false
         GlowLog.d("act unlocked underneath (face=${face.value})")
         goAway()
         return true
@@ -561,7 +552,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun watchForSleep() {
         timers.removeCallbacks(sleepWatch)
-        if (face.value == Face.LOCK_SCREEN && power.isInteractive && !preview.value) {
+        if (face.value == Face.LOCK_SCREEN && power.isInteractive) {
             timers.postDelayed(sleepWatch, SLEEP_WATCH_MS)
         }
     }
@@ -631,7 +622,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun onUserDismiss() {
         GlowLog.d("act user dismiss face=${face.value}")
         if (leaveIfUnlocked()) return
-        if (preview.value || ending.value) {
+        if (ending.value) {
             finishAndRemoveTask()
         } else if (face.value == Face.LED) {
             showLockScreen()
@@ -644,7 +635,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * during a call.
      */
     private fun ledTurnedOff(): Boolean =
-        face.value == Face.LED && !power.isInteractive && !preview.value && !inCall() && !ledArmedForSleep
+        face.value == Face.LED && !power.isInteractive && !inCall() && !ledArmedForSleep
 
     /** Set from the power press until the panel is back on, so that sleep's SCREEN_OFF is ignored. */
     private var revealingAfterPower = false
@@ -674,7 +665,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         timers.removeCallbacks(takeOver)
         arrivalDue = false
         GlowShield.stopArrival()
-        if (!preview.value && GlowPending.isEmpty) {
+        if (GlowPending.isEmpty) {
             finishAndRemoveTask()
             return
         }
@@ -688,7 +679,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         window.clearFlags(UNTOUCHABLE)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Arranged while dark (or before focus): come up at the lowest brightness, dot hidden,
-        // until we own the bars. Already focused (e.g. preview): go straight to full.
+        // until we own the bars. Already focused: go straight to full.
         val focused = hasWindowFocus() && power.isInteractive
         settling.value = !focused
         // One UI's bars come up over us until the hand-over; cover them if the user allowed it.
@@ -704,8 +695,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         face.value = Face.LED
         setLockScreenCover(cover = true)
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) acquireKeepOn()
-        // A preview has no notification to read: it plays the effect, demos the LED briefly and closes.
-        if (preview.value) timers.postDelayed(closeNow, PREVIEW_MS)
     }
 
     /**
@@ -748,7 +737,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun goAway() {
         GlowLog.d("act goAway face=${face.value}")
         timers.removeCallbacksAndMessages(null)
-        if (preview.value || ending.value || GlowPending.isEmpty) {
+        if (ending.value || GlowPending.isEmpty) {
             finishAndRemoveTask()
             return
         }
@@ -940,8 +929,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         /** After a full-screen launch, light the panel ourselves if the system didn't. */
         const val LAUNCH_WAKE_CHECK_MS = 600L
         const val WAKE_VERIFY_MS = 1_200L
-        /** Whole preview: the effect, then about three LED blinks. */
-        const val PREVIEW_MS = 12_000L
     }
 }
 
@@ -967,8 +954,6 @@ private fun GlowScreen(
     arriving: Boolean,
     arrivalSeq: Int,
     settings: GlowSettings,
-    preview: Boolean,
-    previewColor: Int,
     geometry: ScreenGeometry,
     onTap: () -> Unit,
     onTouch: (down: Boolean) -> Unit,
@@ -979,7 +964,7 @@ private fun GlowScreen(
     // Only the LED face draws anything. The others stay fully transparent, so the lock screen
     // (or, right after an unlock, the home screen) is what the user sees.
     if (face != Face.LED) return
-    val colors = if (preview) listOf(previewColor) else GlowPending.colors().ifEmpty { listOf(DEFAULT_GLOW_COLOR) }
+    val colors = GlowPending.colors().ifEmpty { listOf(DEFAULT_GLOW_COLOR) }
     val tap by rememberUpdatedState(onTap)
     val touch by rememberUpdatedState(onTouch)
     Box(
@@ -1006,8 +991,7 @@ private fun GlowScreen(
         // Keyed per announced message, so a new one restarts the effect. Newest colour first.
         if (!ending) {
             key(arrivalSeq) {
-                // A preview has no message to pop up: it plays the effect alone.
-                if (arriving && settings.arrival == ArrivalMode.MESSAGE && !preview) {
+                if (arriving && settings.arrival == ArrivalMode.MESSAGE) {
                     // The effect plays once around the system's pop-up; the pop-up sets the length.
                     ArrivalEffect(settings, colors.first(), geometry, onDone = {})
                     MessagePopUp(onShow = onShowMessage, onDone = onArrivalDone)

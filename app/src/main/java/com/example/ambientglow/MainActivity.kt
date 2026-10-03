@@ -294,6 +294,22 @@ private fun Dashboard(geometry: ScreenGeometry) {
 private fun DashboardContent(geometry: ScreenGeometry) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(GlowPrefs.load(context)) }
+    var access by remember { mutableStateOf(AccessState.read(context)) }
+    var accessOpen by remember { mutableStateOf(false) }
+    val refresh = { access = AccessState.read(context) }
+
+    LifecycleResumeEffect(Unit) {
+        refresh()
+        onPauseOrDispose { }
+    }
+
+    val pager = rememberPagerState(
+        initialPage = DashboardTab.ACCESS.ordinal,
+        pageCount = { DashboardTab.entries.size },
+    )
+    val scope = rememberCoroutineScope()
+    val actions = rememberAccessActions(onRefresh = refresh)
+
     // The preview colour, and the full-size replay that every effect change starts.
     var sample by rememberSaveable { mutableIntStateOf(0) }
     var showcaseRun by remember { mutableIntStateOf(0) }
@@ -313,86 +329,71 @@ private fun DashboardContent(geometry: ScreenGeometry) {
             onShowcase = showcase,
         )
     }
-    var access by remember { mutableStateOf(AccessState.read(context)) }
-    var accessOpen by remember { mutableStateOf(false) }
-    val refresh = { access = AccessState.read(context) }
-
-    LifecycleResumeEffect(Unit) {
-        refresh()
-        onPauseOrDispose { }
-    }
-
-    val pager = rememberPagerState(
-        initialPage = DashboardTab.ACCESS.ordinal,
-        pageCount = { DashboardTab.entries.size },
-    )
-    val scope = rememberCoroutineScope()
-    val actions = rememberAccessActions(onRefresh = refresh)
 
     Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
-    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        TopBar(
-            access = access,
-            accessOpen = accessOpen,
-            onStatusClick = {
-                if (access.armed) {
-                    accessOpen = !accessOpen
-                } else {
-                    scope.launch { pager.animateScrollToPage(DashboardTab.ACCESS.ordinal) }
-                }
-            },
-        )
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            TopBar(
+                access = access,
+                accessOpen = accessOpen,
+                onStatusClick = {
+                    if (access.armed) {
+                        accessOpen = !accessOpen
+                    } else {
+                        scope.launch { pager.animateScrollToPage(DashboardTab.ACCESS.ordinal) }
+                    }
+                },
+            )
 
-        if (access.armed) {
-            // Everything granted: setup is done, so the app is just its styling page.
-            // Access lives behind the ARMED pill.
-            PageColumn(Modifier.weight(1f)) {
-                AnimatedVisibility(
-                    visible = accessOpen,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically(),
-                ) {
-                    AccessSummary(access, actions)
+            if (access.armed) {
+                // Everything granted: setup is done, so the app is just its styling page.
+                // Access lives behind the ARMED pill.
+                PageColumn(Modifier.weight(1f)) {
+                    AnimatedVisibility(
+                        visible = accessOpen,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
+                        AccessSummary(access, actions)
+                    }
+                    stylePage()
                 }
-                stylePage()
-            }
-        } else {
-            Box(Modifier.padding(horizontal = PageGutter)) {
-                GlowTabBar(
-                    pager = pager,
-                    pendingAccess = access.required - access.granted,
-                    onSelect = { tab -> scope.launch { pager.animateScrollToPage(tab.ordinal) } },
-                )
-            }
-            HorizontalPager(
-                state = pager,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                beyondViewportPageCount = 1,
-            ) { page ->
-                PageColumn(Modifier.fillMaxSize()) {
-                    when (DashboardTab.entries[page]) {
-                        DashboardTab.ACCESS -> AccessPage(access, actions)
-                        DashboardTab.STYLE -> stylePage()
+            } else {
+                Box(Modifier.padding(horizontal = PageGutter)) {
+                    GlowTabBar(
+                        pager = pager,
+                        pendingAccess = access.required - access.granted,
+                        onSelect = { tab -> scope.launch { pager.animateScrollToPage(tab.ordinal) } },
+                    )
+                }
+                HorizontalPager(
+                    state = pager,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    beyondViewportPageCount = 1,
+                ) { page ->
+                    PageColumn(Modifier.fillMaxSize()) {
+                        when (DashboardTab.entries[page]) {
+                            DashboardTab.ACCESS -> AccessPage(access, actions)
+                            DashboardTab.STYLE -> stylePage()
+                        }
                     }
                 }
             }
+
+            TestDock()
         }
 
-        TestDock()
-    }
-
-    // Each effect change plays once at real size over the whole screen, as a real message
-    // would. It only draws, so taps go through to the options underneath while it plays.
-    if (showcasing) {
-        key(showcaseRun) {
-            ArrivalEffect(
-                settings = settings,
-                color = SAMPLE_COLORS[sample].color.toArgb(),
-                geometry = geometry,
-                onDone = { showcasing = false },
-            )
+        // Each effect change plays once at real size over the whole screen, as a real message
+        // would. It only draws, so taps go through to the options underneath while it plays.
+        if (showcasing) {
+            key(showcaseRun) {
+                ArrivalEffect(
+                    settings = settings,
+                    color = SAMPLE_COLORS[sample].color.toArgb(),
+                    geometry = geometry,
+                    onDone = { showcasing = false },
+                )
+            }
         }
-    }
     }
 }
 

@@ -39,8 +39,6 @@ object GlowLauncher {
     private const val MESSAGE_CHANNEL_ID = "glow_message"
 
     const val EXTRA_MODE = "com.example.ambientglow.extra.MODE"
-    const val EXTRA_PREVIEW = "com.example.ambientglow.extra.PREVIEW"
-    const val EXTRA_COLOR = "com.example.ambientglow.extra.COLOR"
 
     private const val BRIDGE_NOTIFICATION_ID = 0xA61
     private const val TEST_NOTIFICATION_ID = 0xA62
@@ -63,7 +61,7 @@ object GlowLauncher {
     /** Key of the message currently re-posted on [MESSAGE_CHANNEL_ID], if any. */
     private var shownMessageKey: String? = null
 
-    fun wakeIntent(context: Context, mode: WakeMode, preview: Boolean = false): Intent =
+    fun wakeIntent(context: Context, mode: WakeMode): Intent =
         Intent(context, WakeScreenActivity::class.java)
             .addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -71,15 +69,6 @@ object GlowLauncher {
                     Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
             )
             .putExtra(EXTRA_MODE, mode.name)
-            .putExtra(EXTRA_PREVIEW, preview)
-
-    /**
-     * Foreground-only path, used by the dashboard's full-screen preview: the new-message effect
-     * at real size in [color], then the LED, as on a black-screen arrival.
-     */
-    fun launchPreview(context: Context, color: Int) {
-        context.startActivity(wakeIntent(context, WakeMode.ARRIVAL, preview = true).putExtra(EXTRA_COLOR, color))
-    }
 
     fun ensureChannel(context: Context) {
         val manager = NotificationManagerCompat.from(context)
