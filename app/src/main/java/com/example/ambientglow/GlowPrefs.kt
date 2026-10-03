@@ -16,7 +16,7 @@ import androidx.core.content.edit
 /** Minimum gap between two screen wakes for new messages, so a burst wakes the panel once. */
 const val WAKE_DEBOUNCE_MS = 3_500L
 
-/** Brand accent used when an app icon yields no usable colour, and for the Test Preview. */
+/** Brand accent used when an app icon yields no usable colour, and the default preview colour. */
 const val DEFAULT_GLOW_COLOR = 0xFF00E5FF.toInt()
 
 enum class GlowStyle(@param:StringRes val title: Int) {

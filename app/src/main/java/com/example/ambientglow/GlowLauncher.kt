@@ -40,6 +40,7 @@ object GlowLauncher {
 
     const val EXTRA_MODE = "com.example.ambientglow.extra.MODE"
     const val EXTRA_PREVIEW = "com.example.ambientglow.extra.PREVIEW"
+    const val EXTRA_COLOR = "com.example.ambientglow.extra.COLOR"
 
     private const val BRIDGE_NOTIFICATION_ID = 0xA61
     private const val TEST_NOTIFICATION_ID = 0xA62
@@ -72,9 +73,12 @@ object GlowLauncher {
             .putExtra(EXTRA_MODE, mode.name)
             .putExtra(EXTRA_PREVIEW, preview)
 
-    /** Foreground-only path, used by the dashboard's LED preview. */
-    fun launchPreview(context: Context) {
-        context.startActivity(wakeIntent(context, WakeMode.LED, preview = true))
+    /**
+     * Foreground-only path, used by the dashboard's full-screen preview: the new-message effect
+     * at real size in [color], then the LED, as on a black-screen arrival.
+     */
+    fun launchPreview(context: Context, color: Int) {
+        context.startActivity(wakeIntent(context, WakeMode.ARRIVAL, preview = true).putExtra(EXTRA_COLOR, color))
     }
 
     fun ensureChannel(context: Context) {

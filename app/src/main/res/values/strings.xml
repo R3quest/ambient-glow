@@ -21,14 +21,25 @@
     <string name="group_arrival_body">What plays the moment a message arrives, in the app\'s colour.</string>
     <string name="group_led_title">Waiting LED</string>
     <string name="group_led_body">Afterwards the screen goes black and only this dot blinks, one blink per waiting app, until you read or dismiss the messages.</string>
-    <string name="effect_replay_hint">TAP TO REPLAY</string>
     <string name="effect_style">STYLE</string>
     <string name="effect_spawn_title">AirDrop spawn</string>
     <string name="effect_spawn_body">A wave of light bursts out of the camera and lights the glow as it passes.</string>
     <string name="section_edge">EDGE FRAME</string>
     <string name="arrival_needs_shield">Turn on Effects &amp; clean wake to play the effect over the lock screen. Without it the lock screen only lights up.</string>
     <string name="section_effect">EFFECT</string>
-    <string name="effect_preview_label">Preview of the new-message effect, replaying.</string>
+    <string name="effect_preview_label">Preview of a new message: the effect, then the LED. Tap to replay.</string>
+    <string name="preview_step_effect">EFFECT</string>
+    <string name="preview_step_led">LED</string>
+    <string name="preview_clock" translatable="false">9:41</string>
+    <string name="effect_sample_color">PREVIEW COLOUR</string>
+    <string name="sample_cyan">Cyan</string>
+    <string name="sample_green">Green</string>
+    <string name="sample_blue">Blue</string>
+    <string name="sample_violet">Violet</string>
+    <string name="sample_pink">Pink</string>
+    <string name="sample_red">Red</string>
+    <string name="sample_yellow">Yellow</string>
+    <string name="effect_showcase_hint">Every change plays once at full size on this screen. Messages glow in the colour of the app that sent them.</string>
     <string name="edge_width">WIDTH</string>
     <string name="edge_width_hair">HAIR</string>
     <string name="edge_width_thin">THIN</string>
@@ -111,8 +122,7 @@
     <string name="tab_access">ACCESS</string>
     <string name="tab_style">GLOW STYLE</string>
 
-    <string name="test_preview">LED PREVIEW</string>
-    <string name="test_locked">LOCKED TEST</string>
+    <string name="test_locked">TEST ON LOCKED PHONE</string>
     <string name="test_locked_countdown">LOCK NOW · %1$d</string>
     <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
     <string name="test_locked_blocked">Allow alerts on the Access tab first.</string>

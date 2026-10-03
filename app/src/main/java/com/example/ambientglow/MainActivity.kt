@@ -19,7 +19,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -55,9 +59,9 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -76,12 +80,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -89,6 +96,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -278,14 +286,33 @@ private val SectionGap = 28.dp
 @Composable
 private fun Dashboard(geometry: ScreenGeometry) {
     CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
-        DashboardContent()
+        DashboardContent(geometry)
     }
 }
 
 @Composable
-private fun DashboardContent() {
+private fun DashboardContent(geometry: ScreenGeometry) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(GlowPrefs.load(context)) }
+    // The preview colour, and the full-size replay that every effect change starts.
+    var sample by rememberSaveable { mutableIntStateOf(0) }
+    var showcaseRun by remember { mutableIntStateOf(0) }
+    var showcasing by remember { mutableStateOf(false) }
+    val showcase = {
+        showcaseRun++
+        showcasing = true
+    }
+    val stylePage: @Composable () -> Unit = {
+        StylePage(
+            settings = settings,
+            sample = sample,
+            shieldOn = access.shield,
+            onShield = actions.shield,
+            onChange = { settings = it },
+            onSample = { sample = it },
+            onShowcase = showcase,
+        )
+    }
     var access by remember { mutableStateOf(AccessState.read(context)) }
     var accessOpen by remember { mutableStateOf(false) }
     val refresh = { access = AccessState.read(context) }
@@ -302,12 +329,8 @@ private fun DashboardContent() {
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(GlowPalette.Void)
-            .windowInsetsPadding(WindowInsets.safeDrawing),
-    ) {
+    Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         TopBar(
             access = access,
             accessOpen = accessOpen,
@@ -331,7 +354,7 @@ private fun DashboardContent() {
                 ) {
                     AccessSummary(access, actions)
                 }
-                StylePage(settings, access.shield, actions.shield, onChange = { settings = it })
+                stylePage()
             }
         } else {
             Box(Modifier.padding(horizontal = PageGutter)) {
@@ -349,13 +372,27 @@ private fun DashboardContent() {
                 PageColumn(Modifier.fillMaxSize()) {
                     when (DashboardTab.entries[page]) {
                         DashboardTab.ACCESS -> AccessPage(access, actions)
-                        DashboardTab.STYLE -> StylePage(settings, access.shield, actions.shield, onChange = { settings = it })
+                        DashboardTab.STYLE -> stylePage()
                     }
                 }
             }
         }
 
         TestDock()
+    }
+
+    // Each effect change plays once at real size over the whole screen, as a real message
+    // would. It only draws, so taps go through to the options underneath while it plays.
+    if (showcasing) {
+        key(showcaseRun) {
+            ArrivalEffect(
+                settings = settings,
+                color = SAMPLE_COLORS[sample].color.toArgb(),
+                geometry = geometry,
+                onDone = { showcasing = false },
+            )
+        }
+    }
     }
 }
 
@@ -529,9 +566,12 @@ private fun AccessRow(title: String, active: Boolean, onManage: () -> Unit) {
 @Composable
 private fun StylePage(
     settings: GlowSettings,
+    sample: Int,
     shieldOn: Boolean,
     onShield: () -> Unit,
     onChange: (GlowSettings) -> Unit,
+    onSample: (Int) -> Unit,
+    onShowcase: () -> Unit,
 ) {
     val context = LocalContext.current
     // Latest value for slider commit callbacks, which fire after several onMove updates.
@@ -541,13 +581,20 @@ private fun StylePage(
     SettingsGroup(index = "01", title = R.string.group_arrival_title, body = R.string.group_arrival_body) {
         EffectCard(
             settings = settings,
+            sample = sample,
             onStyle = { style ->
                 onChange(settings.copy(style = style))
                 GlowPrefs.saveStyle(context, style)
+                onShowcase()
             },
             onEffect = { next ->
                 onChange(next)
                 GlowPrefs.saveEffect(context, next)
+                onShowcase()
+            },
+            onSample = { index ->
+                onSample(index)
+                onShowcase()
             },
         )
         ArrivalModeCard(
@@ -977,7 +1024,7 @@ private fun GhostButton(text: String, emphasized: Boolean, onClick: () -> Unit, 
 }
 
 // ---------------------------------------------------------------------------------------------
-// 01 New message: the effect (live preview, style, spawn, Edge Frame options), where it plays
+// 01 New message: the effect (live preview, style, try-out, spawn, Edge Frame options), where it plays
 // ---------------------------------------------------------------------------------------------
 
 private val StudioPreviewHeight: Dp = 250.dp
@@ -987,41 +1034,55 @@ private val PickerPhoneCorner: Dp = 6.dp
 /** Matches the corner of [GlowShapes.Phone], so the previewed frame hugs the mock-up's edge. */
 private val PhoneCorner: Dp = 14.dp
 
-private val PREVIEW_SAMPLE_COLORS = listOf(GlowPalette.Cyan, GlowPalette.Magenta, GlowPalette.Lime)
 private const val PREVIEW_LOOP_GAP_MS = 700L
 
+/** Black panel before the dot's first blink, as the LED takes over. */
+private const val PREVIEW_LED_DELAY_MS = 350L
+
+/** A colour to try the effect in. Real messages use the colour of the app that sent them. */
+@Immutable
+private data class SampleColor(@param:StringRes val name: Int, val color: Color)
+
+private val SAMPLE_COLORS = listOf(
+    SampleColor(R.string.sample_cyan, Color(DEFAULT_GLOW_COLOR)),
+    SampleColor(R.string.sample_green, Color(0xFF25D366)),
+    SampleColor(R.string.sample_blue, Color(0xFF1E88E5)),
+    SampleColor(R.string.sample_violet, Color(0xFF8B5CF6)),
+    SampleColor(R.string.sample_pink, GlowPalette.Magenta),
+    SampleColor(R.string.sample_red, Color(0xFFFF4B33)),
+    SampleColor(R.string.sample_yellow, Color(0xFFFFD60A)),
+)
+
 @Composable
-private fun EffectCard(settings: GlowSettings, onStyle: (GlowStyle) -> Unit, onEffect: (GlowSettings) -> Unit) {
+private fun EffectCard(
+    settings: GlowSettings,
+    sample: Int,
+    onStyle: (GlowStyle) -> Unit,
+    onEffect: (GlowSettings) -> Unit,
+    onSample: (Int) -> Unit,
+) {
+    val color = SAMPLE_COLORS[sample].color
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
         // Preview beside the style list: what you pick is what plays, without scrolling.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val previewLabel = stringResource(R.string.effect_preview_label)
-                EffectPreview(
-                    settings = settings,
-                    modifier = Modifier
-                        .height(StudioPreviewHeight)
-                        .aspectRatio(0.48f)
-                        .semantics { contentDescription = previewLabel },
-                )
-                Text(
-                    text = stringResource(R.string.effect_replay_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = GlowPalette.TextFaint,
-                )
-            }
+            EffectPreview(settings = settings, color = color)
             Spacer(Modifier.width(14.dp))
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SectionLabel(stringResource(R.string.effect_style))
-                StylePicker(settings, onStyle)
+                StylePicker(settings, color, onStyle)
             }
+        }
+        OptionGroup(stringResource(R.string.effect_sample_color)) {
+            SampleColorRow(selected = sample, onSelect = onSample)
+            Text(
+                text = stringResource(R.string.effect_showcase_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = GlowPalette.TextFaint,
+            )
         }
         CardDivider()
         ToggleRow(
@@ -1056,9 +1117,9 @@ private fun EffectCard(settings: GlowSettings, onStyle: (GlowStyle) -> Unit, onE
     }
 }
 
-/** The three styles as rows: a mini phone showing the style, and its name. */
+/** The three styles as rows: a mini phone showing the style in [accent], and its name. */
 @Composable
-private fun StylePicker(settings: GlowSettings, onSelect: (GlowStyle) -> Unit) {
+private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowStyle) -> Unit) {
     val corner = with(LocalDensity.current) { PickerPhoneCorner.toPx() }
     Column(
         modifier = Modifier.fillMaxWidth().selectableGroup(),
@@ -1083,7 +1144,7 @@ private fun StylePicker(settings: GlowSettings, onSelect: (GlowStyle) -> Unit) {
                 ) { mockGeometry ->
                     GlowGraphic(
                         style = style,
-                        color = if (selected) GlowPalette.Cyan else GlowPalette.TextFaint,
+                        color = if (selected) accent else GlowPalette.TextFaint,
                         alpha = { 1f },
                         dotX = settings.dotX,
                         dotY = settings.dotY,
@@ -1105,44 +1166,219 @@ private fun StylePicker(settings: GlowSettings, onSelect: (GlowStyle) -> Unit) {
     }
 }
 
+/** One swatch per sample colour, equal widths. */
+@Composable
+private fun SampleColorRow(selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        SAMPLE_COLORS.forEachIndexed { index, sample ->
+            val isSelected = index == selected
+            val ring by animateColorAsState(
+                if (isSelected) GlowPalette.TextPrimary else Color.Transparent,
+                label = "swatch",
+            )
+            val name = stringResource(sample.name)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(40.dp)
+                    .clip(GlowShapes.Pill)
+                    .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(index) })
+                    .semantics { contentDescription = name },
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(Modifier.size(28.dp)) {
+                    val stroke = 1.5.dp.toPx()
+                    drawCircle(ring, radius = size.minDimension / 2f - stroke / 2f, style = Stroke(stroke))
+                    drawCircle(sample.color, radius = size.minDimension / 2f - stroke * 2.5f)
+                }
+            }
+        }
+    }
+}
+
+/** Where the inline preview is in the story a message tells: its effect, then the LED. */
+private enum class PreviewPhase { EFFECT, LED, REST }
+
 /**
- * The real [ArrivalEffect] in a phone mock-up, scaled to it and replayed with a short rest,
- * cycling sample colours. Any change, or a tap, restarts it from the first frame.
+ * The whole arrival in a phone mock-up, looped: the screen the effect plays on (lock screen,
+ * black, or black with the message pop-up, as chosen under Where it plays), the real
+ * [ArrivalEffect] scaled to it, then the black panel and one blink of the LED dot. Any change,
+ * or a tap, restarts it from the effect's first frame.
  */
 @Composable
-private fun EffectPreview(settings: GlowSettings, modifier: Modifier = Modifier) {
+private fun EffectPreview(settings: GlowSettings, color: Color) {
     var run by remember { mutableIntStateOf(0) }
-    var resting by remember { mutableStateOf(false) }
-    LaunchedEffect(settings) { resting = false }
-    LaunchedEffect(resting) {
-        if (!resting) return@LaunchedEffect
-        delay(PREVIEW_LOOP_GAP_MS)
-        resting = false
-        run++
+    var phase by remember { mutableStateOf(PreviewPhase.EFFECT) }
+    val led = remember { Animatable(0f) }
+    LaunchedEffect(settings, color) { phase = PreviewPhase.EFFECT }
+    LaunchedEffect(phase) {
+        when (phase) {
+            PreviewPhase.EFFECT -> led.snapTo(0f)
+            PreviewPhase.LED -> {
+                delay(PREVIEW_LED_DELAY_MS)
+                led.animateTo(1f, tween(LED_FADE_IN_MS, easing = FastOutSlowInEasing))
+                delay(LED_HOLD_MS)
+                led.animateTo(0f, tween(LED_FADE_OUT_MS, easing = LinearOutSlowInEasing))
+                phase = PreviewPhase.REST
+            }
+            PreviewPhase.REST -> {
+                delay(PREVIEW_LOOP_GAP_MS)
+                run++
+                phase = PreviewPhase.EFFECT
+            }
+        }
     }
+    val playing = phase == PreviewPhase.EFFECT
+    // The screen behind the effect lights with it and goes dark as the LED takes over.
+    val lockScreen = animateFloatAsState(
+        targetValue = if (playing && settings.arrival == ArrivalMode.LOCK_SCREEN) 1f else 0f,
+        animationSpec = tween(if (playing) 200 else 450),
+        label = "lock-screen",
+    )
+    val popUp = animateFloatAsState(
+        targetValue = if (playing && settings.arrival == ArrivalMode.MESSAGE) 1f else 0f,
+        animationSpec = tween(if (playing) 300 else 450),
+        label = "pop-up",
+    )
+
     val density = LocalDensity.current
     val screenHeight = LocalWindowInfo.current.containerSize.height.toFloat()
     val scale = with(density) { StudioPreviewHeight.toPx() / screenHeight.coerceAtLeast(1f) }.coerceIn(0.1f, 1f)
     val corner = with(density) { PhoneCorner.toPx() }
-    PhoneMock(
-        modifier
-            .clip(GlowShapes.Phone)
-            .clickable(role = Role.Button) {
-                resting = false
-                run++
-            },
-    ) { mockGeometry ->
-        if (!resting) {
-            key(run, settings) {
-                ArrivalEffect(
-                    settings = settings,
-                    color = PREVIEW_SAMPLE_COLORS[run % PREVIEW_SAMPLE_COLORS.size].toArgb(),
-                    geometry = mockGeometry.copy(cornerRadiusPx = corner),
-                    onDone = { resting = true },
-                    scale = scale,
-                )
+    val previewLabel = stringResource(R.string.effect_preview_label)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        PhoneMock(
+            Modifier
+                .height(StudioPreviewHeight)
+                .aspectRatio(0.48f)
+                .clip(GlowShapes.Phone)
+                .clickable(role = Role.Button) {
+                    run++
+                    phase = PreviewPhase.EFFECT
+                }
+                .semantics { contentDescription = previewLabel },
+        ) { mockGeometry ->
+            MockLockScreen(accent = color, alpha = { lockScreen.value })
+            MockPopUp(accent = color, alpha = { popUp.value })
+            if (playing) {
+                key(run, settings, color) {
+                    ArrivalEffect(
+                        settings = settings,
+                        color = color.toArgb(),
+                        geometry = mockGeometry.copy(cornerRadiusPx = corner),
+                        onDone = { phase = PreviewPhase.LED },
+                        scale = scale,
+                    )
+                }
             }
+            GlowGraphic(
+                style = GlowStyle.CUSTOM_DOT,
+                color = color,
+                alpha = { led.value },
+                dotX = settings.dotX,
+                dotY = settings.dotY,
+                metrics = GlowMetrics.Panel,
+                dotRadius = previewDotRadius(settings.dotSize, scale),
+                modifier = Modifier.fillMaxSize(),
+            )
         }
+        PreviewSteps(ledActive = !playing)
+    }
+}
+
+/** "EFFECT → LED", the current step lit. */
+@Composable
+private fun PreviewSteps(ledActive: Boolean) {
+    val effectTint by animateColorAsState(if (ledActive) GlowPalette.TextFaint else GlowPalette.Cyan, label = "step-effect")
+    val ledTint by animateColorAsState(if (ledActive) GlowPalette.Cyan else GlowPalette.TextFaint, label = "step-led")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.preview_step_effect), style = MaterialTheme.typography.labelSmall, color = effectTint)
+        Chevron(
+            tint = GlowPalette.TextFaint,
+            modifier = Modifier
+                .padding(horizontal = 6.dp)
+                .size(7.dp)
+                .graphicsLayer { rotationZ = -90f },
+        )
+        Text(stringResource(R.string.preview_step_led), style = MaterialTheme.typography.labelSmall, color = ledTint)
+    }
+}
+
+/** Notification cards of the mock-ups: an app icon in [icon] and two lines of text. */
+private fun DrawScope.mockCard(top: Float, height: Float, icon: Color) {
+    val side = size.width * 0.06f
+    val cardWidth = size.width - side * 2f
+    drawRoundRect(
+        color = GlowPalette.SurfaceHigh,
+        topLeft = Offset(side, top),
+        size = Size(cardWidth, height),
+        cornerRadius = CornerRadius(height * 0.3f),
+    )
+    val iconRadius = height * 0.17f
+    val iconX = side + height * 0.38f
+    drawCircle(icon, iconRadius, Offset(iconX, top + height / 2f))
+    val textX = iconX + iconRadius * 2.2f
+    val line = height * 0.1f
+    val textWidth = side + cardWidth - textX - height * 0.3f
+    val lines = CornerRadius(line / 2f)
+    drawRoundRect(GlowPalette.Outline, Offset(textX, top + height * 0.34f), Size(textWidth * 0.55f, line), lines)
+    drawRoundRect(GlowPalette.Outline, Offset(textX, top + height * 0.58f), Size(textWidth * 0.85f, line), lines)
+}
+
+/** A lock screen in miniature: clock, the new message (in [accent]) over an older one, shortcuts. */
+@Composable
+private fun MockLockScreen(accent: Color, alpha: () -> Float) {
+    // Sized in dp, not sp: it is part of the drawing, so it must not grow with the font scale.
+    val clockSize = with(LocalDensity.current) { 26.dp.toSp() }
+    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha() }) {
+        Text(
+            text = stringResource(R.string.preview_clock),
+            style = MaterialTheme.typography.displaySmall.copy(
+                fontWeight = FontWeight.Light,
+                fontSize = clockSize,
+                lineHeight = clockSize,
+            ),
+            color = GlowPalette.TextPrimary.copy(alpha = 0.85f),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 28.dp),
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            val dateWidth = size.width * 0.36f
+            drawRoundRect(
+                color = GlowPalette.Outline,
+                topLeft = Offset((size.width - dateWidth) / 2f, size.height * 0.27f),
+                size = Size(dateWidth, 2.5.dp.toPx()),
+                cornerRadius = CornerRadius(2.dp.toPx()),
+            )
+            val cardHeight = size.height * 0.11f
+            mockCard(size.height * 0.42f, cardHeight, accent)
+            mockCard(size.height * 0.42f + cardHeight + 4.dp.toPx(), cardHeight, GlowPalette.TextFaint)
+            val shortcut = size.width * 0.07f
+            val shortcutY = size.height - shortcut * 2.2f
+            drawCircle(GlowPalette.SurfaceHigh, shortcut, Offset(shortcut * 2.2f, shortcutY))
+            drawCircle(GlowPalette.SurfaceHigh, shortcut, Offset(size.width - shortcut * 2.2f, shortcutY))
+        }
+    }
+}
+
+/** The system's pop-up of only the new message, sliding in under the camera. */
+@Composable
+private fun MockPopUp(accent: Color, alpha: () -> Float) {
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val shown = alpha()
+                this.alpha = shown
+                translationY = -(1f - shown) * 6.dp.toPx()
+            },
+    ) {
+        mockCard(size.height * 0.08f, size.height * 0.11f, accent)
     }
 }
 
@@ -1676,7 +1912,7 @@ private fun BladeChip(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Test dock (pinned under both tabs)
+// Test dock (pinned under every page)
 // ---------------------------------------------------------------------------------------------
 
 private const val COUNTDOWN_SECONDS = (GlowLauncher.TEST_DELAY_MS / 1_000L).toInt()
@@ -1712,35 +1948,29 @@ private fun TestDock() {
             .padding(horizontal = PageGutter, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
-                    .clip(GlowShapes.Button)
-                    .background(GlowBrushes.SignatureHorizontal)
-                    .clickable(role = Role.Button) { GlowLauncher.launchPreview(context) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(R.string.test_preview),
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
-                    color = GlowPalette.Void,
-                )
-            }
-            GhostButton(
+        // The one end-to-end check: real messages through the listener, on the locked phone.
+        // The effect alone replays at full size whenever it is changed.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .graphicsLayer { alpha = if (countdown > 0) 0.55f else 1f }
+                .clip(GlowShapes.Button)
+                .background(GlowBrushes.SignatureHorizontal)
+                .clickable(role = Role.Button, enabled = countdown == 0) {
+                    blocked = !GlowLauncher.scheduleTestNotification(context)
+                    if (!blocked) runs++
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
                 text = if (countdown > 0) {
                     stringResource(R.string.test_locked_countdown, countdown)
                 } else {
                     stringResource(R.string.test_locked)
                 },
-                emphasized = true,
-                onClick = {
-                    if (countdown > 0) return@GhostButton
-                    blocked = !GlowLauncher.scheduleTestNotification(context)
-                    if (!blocked) runs++
-                },
-                modifier = Modifier.weight(1f).height(50.dp),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                color = GlowPalette.Void,
             )
         }
         AnimatedVisibility(visible = blocked || countdown > 0) {

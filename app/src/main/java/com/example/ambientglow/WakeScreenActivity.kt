@@ -207,6 +207,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
     private val preview = mutableStateOf(false)
 
+    /** The sample app colour a preview plays in. */
+    private val previewColor = mutableIntStateOf(DEFAULT_GLOW_COLOR)
+
     private val screenSignals = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             GlowLog.d("act ${intent.action?.substringAfterLast('.')} face=${face.value}")
@@ -308,6 +311,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 arrivalSeq = arrivalSeq.intValue,
                 settings = settings.value,
                 preview = preview.value,
+                previewColor = previewColor.intValue,
                 geometry = geometry.value,
                 onTap = ::onUserDismiss,
                 onTouch = ::onLedTouch,
@@ -439,6 +443,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLauncher.dismissBridge(this)
         timers.removeCallbacksAndMessages(null)
         preview.value = intent?.getBooleanExtra(GlowLauncher.EXTRA_PREVIEW, false) == true
+        previewColor.intValue = intent?.getIntExtra(GlowLauncher.EXTRA_COLOR, DEFAULT_GLOW_COLOR) ?: DEFAULT_GLOW_COLOR
         settings.value = GlowPrefs.load(this)
         if (!preview.value && GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
@@ -699,8 +704,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         face.value = Face.LED
         setLockScreenCover(cover = true)
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) acquireKeepOn()
-        // A preview has no notification to read, so it demos the LED briefly and closes.
-        if (preview.value) timers.postDelayed(closeNow, PREVIEW_LED_MS)
+        // A preview has no notification to read: it plays the effect, demos the LED briefly and closes.
+        if (preview.value) timers.postDelayed(closeNow, PREVIEW_MS)
     }
 
     /**
@@ -935,14 +940,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         /** After a full-screen launch, light the panel ourselves if the system didn't. */
         const val LAUNCH_WAKE_CHECK_MS = 600L
         const val WAKE_VERIFY_MS = 1_200L
-        const val PREVIEW_LED_MS = 12_000L
+        /** Whole preview: the effect, then about three LED blinks. */
+        const val PREVIEW_MS = 12_000L
     }
 }
 
 // One LED blink: fade in, hold, fade out, dark. Frames are drawn only during the fades.
-private const val LED_FADE_IN_MS = 420
-private const val LED_HOLD_MS = 650L
-private const val LED_FADE_OUT_MS = 700
+// The dashboard preview blinks with the same timing.
+internal const val LED_FADE_IN_MS = 420
+internal const val LED_HOLD_MS = 650L
+internal const val LED_FADE_OUT_MS = 700
 private const val LED_DARK_MS = 1_600L
 private const val LED_HALO_FACTOR = 3.2f
 
@@ -953,8 +960,6 @@ internal object RealTimeMotion : MotionDurationScale {
 /** Burn-in guard: the glow steps through a 2 px square, one corner per blink. */
 private val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f), Offset(0f, 2f))
 
-private val PREVIEW_COLORS = listOf(DEFAULT_GLOW_COLOR, 0xFFFF2E93.toInt(), 0xFFB6FF3B.toInt())
-
 @Composable
 private fun GlowScreen(
     face: Face,
@@ -963,6 +968,7 @@ private fun GlowScreen(
     arrivalSeq: Int,
     settings: GlowSettings,
     preview: Boolean,
+    previewColor: Int,
     geometry: ScreenGeometry,
     onTap: () -> Unit,
     onTouch: (down: Boolean) -> Unit,
@@ -973,7 +979,7 @@ private fun GlowScreen(
     // Only the LED face draws anything. The others stay fully transparent, so the lock screen
     // (or, right after an unlock, the home screen) is what the user sees.
     if (face != Face.LED) return
-    val colors = if (preview) PREVIEW_COLORS else GlowPending.colors().ifEmpty { listOf(DEFAULT_GLOW_COLOR) }
+    val colors = if (preview) listOf(previewColor) else GlowPending.colors().ifEmpty { listOf(DEFAULT_GLOW_COLOR) }
     val tap by rememberUpdatedState(onTap)
     val touch by rememberUpdatedState(onTouch)
     Box(
@@ -1000,7 +1006,8 @@ private fun GlowScreen(
         // Keyed per announced message, so a new one restarts the effect. Newest colour first.
         if (!ending) {
             key(arrivalSeq) {
-                if (arriving && settings.arrival == ArrivalMode.MESSAGE) {
+                // A preview has no message to pop up: it plays the effect alone.
+                if (arriving && settings.arrival == ArrivalMode.MESSAGE && !preview) {
                     // The effect plays once around the system's pop-up; the pop-up sets the length.
                     ArrivalEffect(settings, colors.first(), geometry, onDone = {})
                     MessagePopUp(onShow = onShowMessage, onDone = onArrivalDone)
