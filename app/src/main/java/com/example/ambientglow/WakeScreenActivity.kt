@@ -193,7 +193,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
-    private val relightTimes = ArrayDeque<Long>()
+    /**
+     * Rate limit for lock screen → LED relights, as a token bucket: up to [RELIGHT_BURST] at once,
+     * then one per [RELIGHT_REFILL_MS]. Every power press flips the face, and each flip back to the
+     * LED is a relight, so no rule can tell a user's quick presses from something forcing sleep in
+     * a loop. So it never drops a relight, it only spaces them out: quick presses see the LED at
+     * most a refill late, and a loop is held to one panel wake per refill.
+     */
+    private var relightTokens = RELIGHT_BURST
+    private var relightRefilledAt = 0L
+    private val relightLater = Runnable { relightLed(RELIGHT_DELAY_MS) }
     private val settings = mutableStateOf(GlowSettings())
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
     private val preview = mutableStateOf(false)
@@ -226,6 +235,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (displayId != Display.DEFAULT_DISPLAY) return
             val wasInteractive = interactiveSeen
             interactiveSeen = power.isInteractive
+            if (interactiveSeen) {
+                // Awake again: the sleep we were handling was cancelled; the next one is the user's.
+                ledArmedForSleep = false
+                revealingAfterPower = false
+            }
             if (wasInteractive && ledTurnedOff()) {
                 GlowLog.d("act display changed: going to sleep with the LED in front")
                 revealAfterPower()
@@ -448,6 +462,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     private fun onScreenOff() {
+        // SCREEN_OFF arrives ~0.2-0.3 s late. If the panel is already back on (a quick second
+        // power press, or our own wake cancelled the sleep), it is stale: acting on it would put
+        // the LED over a lit lock screen.
+        if (power.isInteractive) return
         DarkHold.acquire(this)
         timers.removeCallbacks(takeOver)
         timers.removeCallbacks(verifyWake)
@@ -470,20 +488,15 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             Face.LED -> revealAfterPower()
             // The lock screen went dark (timeout, or power on the lock screen): back to the LED,
             // arranged while dark so the panel comes on already black with the dot.
-            Face.LOCK_SCREEN -> {
-                if (overRelightBudget()) {
-                    GlowLog.d("act relight budget used; staying dark")
-                    return
-                }
-                showLed()
-                wakeAfter(RELIGHT_DELAY_MS)
-            }
+            Face.LOCK_SCREEN -> relightLed(RELIGHT_DELAY_MS)
             Face.AWAY -> Unit // the listener relights through the full-screen intent
         }
     }
 
     private fun onScreenOn() {
         revealingAfterPower = false
+        ledArmedForSleep = false
+        timers.removeCallbacks(relightLater)
         disarmTurnScreenOn()
         timers.removeCallbacks(verifyWake)
         when (face.value) {
@@ -550,17 +563,49 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun onGoingToSleep() {
         GlowLog.d("act going to sleep on the lock screen")
-        if (inCall() || GlowPending.isEmpty) return
-        if (overRelightBudget()) {
-            GlowLog.d("act relight budget used; staying dark")
-            return
-        }
+        if (inCall() || GlowPending.isEmpty || !takeRelightToken()) return
         DarkHold.acquire(this)
         showLed()
         ledArmedForSleep = true
         // Relight while the panel is still fading, so the sleep is cancelled rather than finished.
         // If this wake is refused, SCREEN_OFF relights as before.
         wakeAfter(SLEEP_CANCEL_DELAY_MS)
+    }
+
+    /**
+     * The lock screen is dark: put the LED up and light it after [delayMs], or, when the rate
+     * limit has no token, as soon as it has one.
+     */
+    private fun relightLed(delayMs: Long) {
+        timers.removeCallbacks(relightLater)
+        if (power.isInteractive || face.value != Face.LOCK_SCREEN || inCall() || GlowPending.isEmpty) return
+        if (!takeRelightToken()) return
+        showLed()
+        wakeAfter(delayMs)
+    }
+
+    /**
+     * Takes a relight token. Without one, schedules [relightLater] for when the next one is due
+     * and returns false.
+     */
+    private fun takeRelightToken(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val refills = (now - relightRefilledAt) / RELIGHT_REFILL_MS
+        if (refills > 0) {
+            relightTokens = minOf(RELIGHT_BURST.toLong(), relightTokens + refills).toInt()
+            relightRefilledAt = if (relightTokens == RELIGHT_BURST) now else relightRefilledAt + refills * RELIGHT_REFILL_MS
+        }
+        if (relightTokens > 0) {
+            relightTokens--
+            return true
+        }
+        val wait = relightRefilledAt + RELIGHT_REFILL_MS - now
+        GlowLog.d("act relight rate-limited, in $wait ms")
+        timers.removeCallbacks(relightLater)
+        timers.postDelayed(relightLater, wait)
+        // Handler time stops while the CPU sleeps.
+        DarkHold.acquire(this, wait + RELIGHT_DELAY_MS + 500)
+        return false
     }
 
     /**
@@ -596,7 +641,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun ledTurnedOff(): Boolean =
         face.value == Face.LED && !power.isInteractive && !preview.value && !inCall() && !ledArmedForSleep
 
-    /** Set from the power press until the panel is back on, so the late SCREEN_OFF is ignored. */
+    /** Set from the power press until the panel is back on, so that sleep's SCREEN_OFF is ignored. */
     private var revealingAfterPower = false
 
     private fun revealAfterPower() {
@@ -612,6 +657,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // up by a frame for ~0.2 s, long enough for the panel to go dark first.
         timers.removeCallbacks(wakeNow)
         wakeNow.run()
+        // showLockScreen ran while still asleep, so it couldn't start this; a quick second press
+        // on the lock screen should go back to the LED like any other.
+        watchForSleep()
     }
 
     /** Cover the lock screen with the LED; [arrival] first plays the effect on the black panel. */
@@ -640,6 +688,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         settling.value = !focused
         // One UI's bars come up over us until the hand-over; cover them if the user allowed it.
         if (!focused) GlowShield.show()
+        // Already lit, so no SCREEN_ON will come to end the settling; if focus doesn't change
+        // either, the dot would stay hidden on a black panel at the lowest brightness.
+        if (!focused && power.isInteractive) timers.postDelayed(settleNow, SETTLE_FALLBACK_MS)
         applyWindow(
             brightness = if (focused) ledLevel() else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF,
             lowRefresh = true,
@@ -739,15 +790,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     private fun inCall(): Boolean = audio.mode != AudioManager.MODE_NORMAL
-
-    /** Loop guard: at most [RELIGHT_BUDGET] lock-screen → LED relights per [RELIGHT_WINDOW_MS]. */
-    private fun overRelightBudget(): Boolean {
-        val now = SystemClock.elapsedRealtime()
-        while (relightTimes.isNotEmpty() && now - relightTimes.first() > RELIGHT_WINDOW_MS) relightTimes.removeFirst()
-        if (relightTimes.size >= RELIGHT_BUDGET) return true
-        relightTimes.addLast(now)
-        return false
-    }
 
     // ---------------------------------------------------------------------------------------
     // Window plumbing
@@ -883,8 +925,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         /** The framework's slide-out of bars a window gains while they show (InsetsController, 340 ms). */
         const val BARS_HIDE_MS = 360L
 
-        const val RELIGHT_BUDGET = 3
-        const val RELIGHT_WINDOW_MS = 15_000L
+        /** Relight rate limit: a burst for quick presses by hand (~1 s per LED ↔ lock screen round trip), then one per refill. */
+        const val RELIGHT_BURST = 8
+        const val RELIGHT_REFILL_MS = 2_000L
 
         /** Lock screen dark → LED: the switch is committed ~10 ms after screen-off; small margin. */
         const val RELIGHT_DELAY_MS = 150L

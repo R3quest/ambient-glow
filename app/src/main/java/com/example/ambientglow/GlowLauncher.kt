@@ -306,12 +306,17 @@ object PanelWaker {
 object DarkHold {
     private const val HOLD_MS = 2_000L
     private var lock: PowerManager.WakeLock? = null
+    private var heldUntil = 0L
 
-    fun acquire(context: Context) {
+    /** Holds the CPU for at least [holdMs]; never shortens a longer hold already running. */
+    fun acquire(context: Context, holdMs: Long = HOLD_MS) {
+        val until = SystemClock.elapsedRealtime() + holdMs
         val held = lock ?: context.applicationContext.getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AmbientGlow:dark")
             .apply { setReferenceCounted(false) }
             .also { lock = it }
-        held.acquire(HOLD_MS)
+        if (held.isHeld && until <= heldUntil) return
+        heldUntil = until
+        held.acquire(holdMs)
     }
 }
