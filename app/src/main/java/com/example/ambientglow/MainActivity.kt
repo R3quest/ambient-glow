@@ -23,19 +23,19 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,6 +100,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -115,6 +116,8 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -132,7 +135,9 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -149,9 +154,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
@@ -167,12 +171,13 @@ import com.example.ambientglow.ui.theme.GlowBrushes
 import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
-import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     // Real punch-hole position, so LED presets and mock-ups line up with this phone's camera.
@@ -1441,14 +1446,24 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
 
 private val SWATCH_GAP = 4.dp
 private val SWATCH_SIZE = 28.dp
+private val SWATCH_RING = 1.5.dp
 
-/** One swatch per sample colour, equal widths. One ring slides to the chosen one. */
+/** Clear space between a swatch's colour and the ring around it. */
+private val SWATCH_RING_GAP = 2.25.dp
+
+/**
+ * One swatch per sample colour, equal widths. One ring slides to the chosen one, between the
+ * swatches' measured centres: weighted widths are whole pixels with the remainder spread over
+ * some of them, so centres worked out from the row width drift off by a pixel or more.
+ */
 @Composable
 private fun SampleColorRow(selected: Int, onSelect: (Int) -> Unit) {
     val haptics = LocalHapticFeedback.current
     // Starts in place; a new pick slides there, and a quick re-pick turns it mid-way.
     val slot = remember { Animatable(selected.toFloat()) }
     LaunchedEffect(selected) { slot.animateTo(selected.toFloat(), GlowMotion.Slide) }
+    // Each swatch's centre in the row, from its placement; read in draw.
+    val centers = remember { mutableStateListOf(*Array(SAMPLE_COLORS.size) { Offset.Unspecified }) }
     Box(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().selectableGroup(),
@@ -1466,11 +1481,12 @@ private fun SampleColorRow(selected: Int, onSelect: (Int) -> Unit) {
                             if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             onSelect(index)
                         }
-                        .semantics { contentDescription = name },
+                        .semantics { contentDescription = name }
+                        .onPlaced { centers[index] = it.boundsInParent().center },
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(Modifier.size(SWATCH_SIZE)) {
-                        drawCircle(sample.color, radius = size.minDimension / 2f - 1.5.dp.toPx() * 2.5f)
+                        drawCircle(sample.color, radius = size.minDimension / 2f - (SWATCH_RING + SWATCH_RING_GAP).toPx())
                     }
                 }
             }
@@ -1480,16 +1496,17 @@ private fun SampleColorRow(selected: Int, onSelect: (Int) -> Unit) {
             Modifier
                 .matchParentSize()
                 .drawWithCache {
-                    val count = SAMPLE_COLORS.size
-                    val gap = SWATCH_GAP.toPx()
-                    val slotW = (size.width - gap * (count - 1)) / count
-                    val stroke = Stroke(1.5.dp.toPx())
+                    val stroke = Stroke(SWATCH_RING.toPx())
                     val radius = SWATCH_SIZE.toPx() / 2f - stroke.width / 2f
-                    val rtl = layoutDirection == LayoutDirection.Rtl
                     onDrawBehind {
-                        val x = slotW / 2f + (slotW + gap) * slot.value
-                        val center = Offset(if (rtl) size.width - x else x, size.height / 2f)
-                        drawCircle(GlowPalette.TextPrimary, radius = radius, center = center, style = stroke)
+                        // Between the two swatches either side of the slide (the row already mirrors in RTL).
+                        val at = slot.value.coerceIn(0f, (centers.size - 1).toFloat())
+                        val from = centers[at.toInt()]
+                        val to = centers[ceil(at).toInt()]
+                        if (from.isSpecified && to.isSpecified) {
+                            val center = lerp(from, to, at - at.toInt())
+                            drawCircle(GlowPalette.TextPrimary, radius = radius, center = center, style = stroke)
+                        }
                     }
                 },
         )
