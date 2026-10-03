@@ -10,8 +10,11 @@ import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Window
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -32,26 +35,32 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -72,6 +81,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -80,12 +90,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -110,8 +122,11 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -122,6 +137,9 @@ import androidx.compose.ui.unit.toSize
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.example.ambientglow.ui.theme.AmbientGlowTheme
 import com.example.ambientglow.ui.theme.GlowBrushes
@@ -285,15 +303,23 @@ private val SectionGap = 28.dp
 
 @Composable
 private fun Dashboard(geometry: ScreenGeometry) {
-    CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
-        DashboardContent(geometry)
-    }
+    DashboardContent(geometry)
 }
 
+// Ignoring visibility is the long-standing (still experimental-marked) way to keep bar padding.
+@OptIn(ExperimentalLayoutApi::class)
+private val DashboardInsets: WindowInsets
+    @Composable get() = WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout)
+
 @Composable
-private fun DashboardContent(geometry: ScreenGeometry) {
+private fun DashboardContent(reported: ScreenGeometry) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(GlowPrefs.load(context)) }
+    // The camera as the user fitted it: what every mock-up and real-size preview lines up with.
+    val density = LocalDensity.current.density
+    val geometry = remember(reported, settings.lensOffsetXDp, settings.lensOffsetDp, settings.lensGrowDp, density) {
+        reported.fitted(settings, density)
+    }
     var access by remember { mutableStateOf(AccessState.read(context)) }
     var accessOpen by remember { mutableStateOf(false) }
     val refresh = { access = AccessState.read(context) }
@@ -310,13 +336,24 @@ private fun DashboardContent(geometry: ScreenGeometry) {
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
-    // The preview colour, and the full-size replay that every effect change starts.
+    // The preview colour, and the real-size previews every change starts: the effect, or the
+    // LED on a darkened screen. One at a time.
     var sample by rememberSaveable { mutableIntStateOf(0) }
     var showcaseRun by remember { mutableIntStateOf(0) }
     var showcasing by remember { mutableStateOf(false) }
+    var ledRun by remember { mutableIntStateOf(0) }
+    var ledHolding by remember { mutableStateOf(false) }
+    var ledShowing by remember { mutableStateOf(false) }
     val showcase = {
+        ledShowing = false
         showcaseRun++
         showcasing = true
+    }
+    val showLed = { holding: Boolean ->
+        showcasing = false
+        if (!holding) ledRun++
+        ledHolding = holding
+        ledShowing = true
     }
     val stylePage: @Composable () -> Unit = {
         StylePage(
@@ -327,70 +364,84 @@ private fun DashboardContent(geometry: ScreenGeometry) {
             onChange = { settings = it },
             onSample = { sample = it },
             onShowcase = showcase,
+            onLed = showLed,
         )
     }
 
-    Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            TopBar(
-                access = access,
-                accessOpen = accessOpen,
-                onStatusClick = {
-                    if (access.armed) {
-                        accessOpen = !accessOpen
-                    } else {
-                        scope.launch { pager.animateScrollToPage(DashboardTab.ACCESS.ordinal) }
-                    }
-                },
-            )
+    CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
+        Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
+            // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
+            Column(Modifier.fillMaxSize().windowInsetsPadding(DashboardInsets)) {
+                TopBar(
+                    access = access,
+                    accessOpen = accessOpen,
+                    onStatusClick = {
+                        if (access.armed) {
+                            accessOpen = !accessOpen
+                        } else {
+                            scope.launch { pager.animateScrollToPage(DashboardTab.ACCESS.ordinal) }
+                        }
+                    },
+                )
 
-            if (access.armed) {
-                // Everything granted: setup is done, so the app is just its styling page.
-                // Access lives behind the ARMED pill.
-                PageColumn(Modifier.weight(1f)) {
-                    AnimatedVisibility(
-                        visible = accessOpen,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically(),
-                    ) {
-                        AccessSummary(access, actions)
+                if (access.armed) {
+                    // Everything granted: setup is done, so the app is just its styling page.
+                    // Access lives behind the ARMED pill.
+                    PageColumn(Modifier.weight(1f)) {
+                        AnimatedVisibility(
+                            visible = accessOpen,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically(),
+                        ) {
+                            AccessSummary(access, actions)
+                        }
+                        stylePage()
                     }
-                    stylePage()
-                }
-            } else {
-                Box(Modifier.padding(horizontal = PageGutter)) {
-                    GlowTabBar(
-                        pager = pager,
-                        pendingAccess = access.required - access.granted,
-                        onSelect = { tab -> scope.launch { pager.animateScrollToPage(tab.ordinal) } },
-                    )
-                }
-                HorizontalPager(
-                    state = pager,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    beyondViewportPageCount = 1,
-                ) { page ->
-                    PageColumn(Modifier.fillMaxSize()) {
-                        when (DashboardTab.entries[page]) {
-                            DashboardTab.ACCESS -> AccessPage(access, actions)
-                            DashboardTab.STYLE -> stylePage()
+                } else {
+                    Box(Modifier.padding(horizontal = PageGutter)) {
+                        GlowTabBar(
+                            pager = pager,
+                            pendingAccess = access.required - access.granted,
+                            onSelect = { tab -> scope.launch { pager.animateScrollToPage(tab.ordinal) } },
+                        )
+                    }
+                    HorizontalPager(
+                        state = pager,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        beyondViewportPageCount = 1,
+                    ) { page ->
+                        PageColumn(Modifier.fillMaxSize()) {
+                            when (DashboardTab.entries[page]) {
+                                DashboardTab.ACCESS -> AccessPage(access, actions)
+                                DashboardTab.STYLE -> stylePage()
+                            }
                         }
                     }
                 }
+
+                TestDock()
             }
 
-            TestDock()
-        }
-
-        // Each effect change plays once at real size over the whole screen, as a real message
-        // would. It only draws, so taps go through to the options underneath while it plays.
-        if (showcasing) {
-            key(showcaseRun) {
-                ArrivalEffect(
+            // Each effect change plays once at real size over the whole screen, as a real message
+            // would. It only draws, so taps go through to the options underneath while it plays.
+            if (showcasing) {
+                key(showcaseRun) {
+                    ArrivalEffect(
+                        settings = settings,
+                        color = SAMPLE_COLORS[sample].color.toArgb(),
+                        geometry = geometry,
+                        onDone = { showcasing = false },
+                    )
+                }
+            }
+            if (ledShowing) {
+                LedShowcase(
                     settings = settings,
-                    color = SAMPLE_COLORS[sample].color.toArgb(),
+                    color = SAMPLE_COLORS[sample].color,
                     geometry = geometry,
-                    onDone = { showcasing = false },
+                    run = ledRun,
+                    holding = ledHolding,
+                    onDone = { ledShowing = false },
                 )
             }
         }
@@ -573,6 +624,7 @@ private fun StylePage(
     onChange: (GlowSettings) -> Unit,
     onSample: (Int) -> Unit,
     onShowcase: () -> Unit,
+    onLed: (holding: Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     // Latest value for slider commit callbacks, which fire after several onMove updates.
@@ -613,20 +665,36 @@ private fun StylePage(
     SettingsGroup(index = "02", title = R.string.group_led_title, body = R.string.group_led_body) {
         LedCard(
             settings = settings,
-            onMove = { x, y ->
-                latest = latest.copy(dotX = x, dotY = y)
+            // While it moves, the real LED follows on screen; it blinks once when let go.
+            onMove = { x, y, onCamera ->
+                latest = latest.copy(dotX = x, dotY = y, ledOnCamera = onCamera)
                 onChange(latest)
+                onLed(true)
             },
-            onCommit = { GlowPrefs.saveDot(context, latest.dotX, latest.dotY) },
+            onCommit = {
+                GlowPrefs.saveDot(context, latest.dotX, latest.dotY, latest.ledOnCamera)
+                onLed(false)
+            },
             onSize = { size ->
                 latest = latest.copy(dotSize = size)
                 onChange(latest)
                 GlowPrefs.saveDotSize(context, size)
+                onLed(false)
             },
             onBrightness = { level ->
                 latest = latest.copy(ledBrightness = level)
                 onChange(latest)
                 GlowPrefs.saveLedBrightness(context, level)
+                onLed(false)
+            },
+            onLensFit = { fit ->
+                latest = fit(latest)
+                onChange(latest)
+                onLed(true)
+            },
+            onLensFitDone = {
+                GlowPrefs.saveLensFit(context, latest.lensOffsetXDp, latest.lensOffsetDp, latest.lensGrowDp)
+                onLed(false)
             },
         )
     }
@@ -1144,7 +1212,7 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                     shape = RoundedCornerShape(PickerPhoneCorner),
                 ) { mockGeometry ->
                     GlowGraphic(
-                        style = style,
+                        style = if (style == GlowStyle.CUSTOM_DOT) settings.ledStyle else style,
                         color = if (selected) accent else GlowPalette.TextFaint,
                         alpha = { 1f },
                         dotX = settings.dotX,
@@ -1279,12 +1347,13 @@ private fun EffectPreview(settings: GlowSettings, color: Color) {
                 }
             }
             GlowGraphic(
-                style = GlowStyle.CUSTOM_DOT,
+                style = settings.ledStyle,
                 color = color,
                 alpha = { led.value },
                 dotX = settings.dotX,
                 dotY = settings.dotY,
                 metrics = GlowMetrics.Panel,
+                geometry = mockGeometry,
                 dotRadius = previewDotRadius(settings.dotSize, scale),
                 modifier = Modifier.fillMaxSize(),
             )
@@ -1525,9 +1594,18 @@ private fun snapDot(x: Float, y: Float, spots: List<DotSpot>): Snapped {
     return Snapped(sx ?: x, sy ?: y, target)
 }
 
-/** A one-tap LED position; [onCameraLine] spots sit at the exact height of the lens centre. */
+/**
+ * A one-tap LED position; [onCameraLine] spots sit at the exact height of the lens centre.
+ * The [camera] spot is the lens itself: the LED there lights as a ring around it.
+ */
 @Immutable
-private data class DotSpot(@param:StringRes val label: Int, val x: Float, val y: Float, val onCameraLine: Boolean) {
+private data class DotSpot(
+    @param:StringRes val label: Int,
+    val x: Float,
+    val y: Float,
+    val onCameraLine: Boolean,
+    val camera: Boolean = false,
+) {
     fun matches(x: Float, y: Float) = abs(this.x - x) < 0.001f && abs(this.y - y) < 0.001f
 }
 
@@ -1535,9 +1613,9 @@ private val SPOT_EDGE = 18.dp
 private val SPOT_CAMERA_GAP = 10.dp
 
 /**
- * LED spots built from this phone's real camera: four on the camera's horizontal line (screen
- * edges and either side of the lens), one straight below it, plus the classic corners and
- * bottom. Positions are converted with the same margin the full-screen LED uses, so a spot
+ * LED spots built from this phone's real camera: the lens itself (the ring), four on the
+ * camera's horizontal line (screen edges and either side of the lens), one straight below it,
+ * plus the classic corners and bottom. Positions are converted with the same margin the full-screen LED uses, so a spot
  * picked here lands exactly there.
  */
 @Composable
@@ -1560,6 +1638,7 @@ private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
             val edge = SPOT_EDGE.toPx()
             val line = fy(camY)
             listOf(
+                DotSpot(R.string.dot_spot_ring, fx(camX), line, onCameraLine = false, camera = true),
                 DotSpot(R.string.dot_spot_edge_left, fx(edge), line, onCameraLine = true),
                 DotSpot(R.string.dot_spot_cam_left, fx(camX - clear), line, onCameraLine = true),
                 DotSpot(R.string.dot_spot_cam_right, fx(camX + clear), line, onCameraLine = true),
@@ -1573,13 +1652,93 @@ private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
     }
 }
 
+/** How dark the dashboard goes behind the LED preview: nearly the LED's black panel, controls still visible. */
+private const val LED_SCRIM = 0.85f
+private const val LED_SCRIM_IN_MS = 200
+private const val LED_SCRIM_OUT_MS = 300
+private const val LED_FOLLOW_IN_MS = 150
+
+/**
+ * The real LED over the darkened dashboard: its own drawing ([LedDot]) at its real size and
+ * position, with the window at the chosen LED brightness, since on an AMOLED panel that is what
+ * sets how bright the dot is. While [holding] (the dot is being moved) it stays lit and follows;
+ * otherwise it blinks once with the LED's timing and fades away. A new [run] blinks again.
+ * Only draws, so the controls underneath keep working.
+ */
+@Composable
+private fun LedShowcase(
+    settings: GlowSettings,
+    color: Color,
+    geometry: ScreenGeometry,
+    run: Int,
+    holding: Boolean,
+    onDone: () -> Unit,
+) {
+    val scrim = remember { Animatable(0f) }
+    val glow = remember { Animatable(0f) }
+    val done by rememberUpdatedState(onDone)
+    LaunchedEffect(run, holding) {
+        launch { scrim.animateTo(LED_SCRIM, tween(LED_SCRIM_IN_MS)) }
+        if (holding) {
+            glow.animateTo(1f, tween(LED_FOLLOW_IN_MS))
+            return@LaunchedEffect
+        }
+        glow.animateTo(1f, tween(LED_FADE_IN_MS, easing = FastOutSlowInEasing))
+        delay(LED_HOLD_MS)
+        glow.animateTo(0f, tween(LED_FADE_OUT_MS, easing = LinearOutSlowInEasing))
+        scrim.animateTo(0f, tween(LED_SCRIM_OUT_MS))
+        done()
+    }
+    val window = LocalActivity.current?.window
+    val level = settings.ledBrightness.level
+    DisposableEffect(window, level) {
+        window?.setBrightness(level)
+        onDispose { window?.setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) }
+    }
+    // The clock, battery and gesture handle draw above the app, so hide them as the LED screen
+    // does; dark while they slide out, so they vanish into the black at once.
+    DisposableEffect(window) {
+        val bars = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        bars?.apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            bars?.apply {
+                show(WindowInsetsCompat.Type.systemBars())
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
+        }
+    }
+    Spacer(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = scrim.value) })
+    LedDot(
+        color = color,
+        alpha = { glow.value },
+        dotX = settings.dotX,
+        dotY = settings.dotY,
+        radius = settings.dotSize.radius,
+        onCamera = settings.ledOnCamera,
+        geometry = geometry,
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+private fun Window.setBrightness(level: Float) {
+    attributes = attributes.apply { screenBrightness = level }
+}
+
 @Composable
 private fun LedCard(
     settings: GlowSettings,
-    onMove: (Float, Float) -> Unit,
+    onMove: (x: Float, y: Float, onCamera: Boolean) -> Unit,
     onCommit: () -> Unit,
     onSize: (DotSize) -> Unit,
     onBrightness: (LedBrightness) -> Unit,
+    onLensFit: (fit: (GlowSettings) -> GlowSettings) -> Unit,
+    onLensFitDone: () -> Unit,
 ) {
     val dotX = settings.dotX
     val dotY = settings.dotY
@@ -1589,14 +1748,34 @@ private fun LedCard(
     var lastSnap by remember { mutableStateOf<Any?>(null) }
     val spots = rememberDotSpots(settings.dotSize)
 
-    // Every input path (drag, tap, both sliders) goes through the same magnetic snap.
+    // Every input path (drag, tap, both sliders) goes through the same magnetic snap. Snapping
+    // onto the lens turns the LED into the ring; moving off it makes it a dot again.
     val move: (Float, Float) -> Unit = { x, y ->
         val snapped = snapDot(x, y, spots)
         if (snapped.target != null && snapped.target != lastSnap) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
         lastSnap = snapped.target
-        onMove(snapped.x, snapped.y)
+        onMove(snapped.x, snapped.y, (snapped.target as? DotSpot)?.camera == true)
+    }
+
+    // The − / + steps: 1 dp per tap, past the snap so small steps are not pulled back. The LED
+    // stays lit while tapping and settles once the taps stop.
+    val window = LocalWindowInfo.current.containerSize
+    val margin = with(density) { settings.dotSize.radius.toPx() } * DOT_HALO_FACTOR
+    val stepX = density.density / (window.width - margin * 2f).coerceAtLeast(1f)
+    val stepY = density.density / (window.height - margin * 2f).coerceAtLeast(1f)
+    var dotSteps by remember { mutableIntStateOf(0) }
+    val step: (Float, Float) -> Unit = { dx, dy ->
+        lastSnap = null
+        onMove((dotX + dx).coerceIn(0f, 1f), (dotY + dy).coerceIn(0f, 1f), false)
+        dotSteps++
+    }
+    val commit by rememberUpdatedState(onCommit)
+    LaunchedEffect(dotSteps) {
+        if (dotSteps == 0) return@LaunchedEffect
+        delay(STEP_SETTLE_MS)
+        commit()
     }
 
     // Scale the real dot into the mock-up so LED vs L reads honestly.
@@ -1622,7 +1801,7 @@ private fun LedCard(
                     .fillMaxHeight()
                     .aspectRatio(0.48f)
                     .semantics { contentDescription = previewLabel },
-            ) {
+            ) { mockGeometry ->
                 DotRuler(
                     dotX = dotX,
                     dotY = dotY,
@@ -1631,12 +1810,13 @@ private fun LedCard(
                     modifier = Modifier.fillMaxSize(),
                 )
                 GlowGraphic(
-                    style = GlowStyle.CUSTOM_DOT,
+                    style = settings.ledStyle,
                     color = GlowPalette.Cyan,
                     alpha = { 1f },
                     dotX = dotX,
                     dotY = dotY,
                     metrics = GlowMetrics.Panel,
+                    geometry = mockGeometry,
                     dotRadius = previewRadius,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1662,17 +1842,26 @@ private fun LedCard(
             }
             Spacer(Modifier.width(8.dp))
             val verticalLabel = stringResource(R.string.dot_vertical)
-            // Rotated so the top of the slider is the top of the screen.
-            VerticalSlider(
-                value = 1f - dotY,
-                onValueChange = { move(dotX, 1f - it) },
-                onValueChangeFinished = onCommit,
-                colors = sliderColors,
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(44.dp)
-                    .semantics { contentDescription = verticalLabel },
-            )
+            Column(
+                modifier = Modifier.fillMaxHeight().width(44.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                // Same sense as the Y readout: − up, + down.
+                StepButton(plus = false, description = stringResource(R.string.dot_step_up), onStep = { step(0f, -stepY) })
+                // Rotated so the top of the slider is the top of the screen.
+                VerticalSlider(
+                    value = 1f - dotY,
+                    onValueChange = { move(dotX, 1f - it) },
+                    onValueChangeFinished = onCommit,
+                    colors = sliderColors,
+                    modifier = Modifier
+                        .weight(1f)
+                        .width(44.dp)
+                        .semantics { contentDescription = verticalLabel },
+                )
+                StepButton(plus = true, description = stringResource(R.string.dot_step_down), onStep = { step(0f, stepY) })
+            }
             Spacer(Modifier.width(8.dp))
             Column(
                 modifier = Modifier.weight(1f),
@@ -1685,30 +1874,59 @@ private fun LedCard(
 
         val horizontalLabel = stringResource(R.string.dot_horizontal)
         OptionGroup(horizontalLabel) {
-            Slider(
-                value = dotX,
-                onValueChange = { move(it, dotY) },
-                onValueChangeFinished = onCommit,
-                colors = sliderColors,
-                modifier = Modifier.fillMaxWidth().semantics { contentDescription = horizontalLabel },
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StepButton(plus = false, description = stringResource(R.string.dot_step_left), onStep = { step(-stepX, 0f) })
+                Slider(
+                    value = dotX,
+                    onValueChange = { move(it, dotY) },
+                    onValueChangeFinished = onCommit,
+                    colors = sliderColors,
+                    modifier = Modifier.weight(1f).semantics { contentDescription = horizontalLabel },
+                )
+                StepButton(plus = true, description = stringResource(R.string.dot_step_right), onStep = { step(stepX, 0f) })
+            }
         }
 
         val pick: (DotSpot) -> Unit = { spot ->
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             lastSnap = spot
-            onMove(spot.x, spot.y)
+            onMove(spot.x, spot.y, spot.camera)
             onCommit()
+        }
+        spots.firstOrNull { it.camera }?.let { ring ->
+            OptionGroup(stringResource(R.string.dot_spots_lens)) {
+                BladeChip(
+                    label = stringResource(ring.label),
+                    selected = settings.ledOnCamera,
+                    onClick = { pick(ring) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Canvas(Modifier.size(14.dp)) {
+                        val line = 2.dp.toPx()
+                        drawCircle(GlowPalette.SurfaceHighest, radius = size.minDimension / 2f - line * 1.5f)
+                        drawCircle(GlowPalette.Cyan, radius = size.minDimension / 2f - line / 2f, style = Stroke(line))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                }
+            }
+        }
+        AnimatedVisibility(
+            visible = settings.ledOnCamera,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            LensFit(settings, onLensFit, onLensFitDone)
         }
         OptionGroup(stringResource(R.string.dot_spots_camera_line)) {
             SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
         }
         OptionGroup(stringResource(R.string.dot_spots_other)) {
-            SpotRow(spots.filterNot { it.onCameraLine }, dotX, dotY, pick)
+            SpotRow(spots.filterNot { it.onCameraLine || it.camera }, dotX, dotY, pick)
         }
 
         CardDivider()
-        OptionGroup(stringResource(R.string.dot_size)) {
+        // On the camera, size is how thick the ring is.
+        OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
             Row(
                 modifier = Modifier.fillMaxWidth().selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1744,6 +1962,151 @@ private fun LedCard(
                 }
             }
         }
+    }
+}
+
+private const val STEP_REPEAT_DELAY_MS = 400L
+private const val STEP_REPEAT_MS = 60L
+
+/** After the last − / + tap, how long the LED stays lit before it is saved and blinks out. */
+private const val STEP_SETTLE_MS = 1_200L
+
+/** How far the camera fit can go either way, in physical pixels. */
+private const val LENS_FIT_MAX_PX = 40
+
+/** A − or + step; holding it repeats. */
+@Composable
+private fun StepButton(plus: Boolean, description: String, onStep: () -> Unit, modifier: Modifier = Modifier) {
+    val step by rememberUpdatedState(onStep)
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(GlowShapes.Pill)
+            .background(GlowPalette.SurfaceRaised)
+            .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Pill)
+            .semantics {
+                role = Role.Button
+                contentDescription = description
+                onClick {
+                    step()
+                    true
+                }
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown().consume()
+                    step()
+                    var wait = STEP_REPEAT_DELAY_MS
+                    // Null only on timeout: still held, so step again, faster.
+                    while (withTimeoutOrNull(wait) { waitForUpOrCancellation(); true } == null) {
+                        step()
+                        wait = STEP_REPEAT_MS
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(10.dp)) {
+            val line = 1.5.dp.toPx()
+            drawLine(GlowPalette.TextPrimary, Offset(0f, center.y), Offset(size.width, center.y), line, StrokeCap.Round)
+            if (plus) drawLine(GlowPalette.TextPrimary, Offset(center.x, 0f), Offset(center.x, size.height), line, StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * Lines the ring up with the real lens, one physical pixel per tap: the cutout some phones
+ * report is only a rectangle from the top edge. The ring stays lit on screen while tapping.
+ */
+@Composable
+private fun LensFit(settings: GlowSettings, onFit: (fit: (GlowSettings) -> GlowSettings) -> Unit, onDone: () -> Unit) {
+    val density = LocalDensity.current.density
+    fun px(dp: Float) = (dp * density).roundToInt()
+    fun dp(px: Int) = px.coerceIn(-LENS_FIT_MAX_PX, LENS_FIT_MAX_PX) / density
+    val offsetXPx = px(settings.lensOffsetXDp)
+    val offsetPx = px(settings.lensOffsetDp)
+    val growPx = px(settings.lensGrowDp)
+    var steps by remember { mutableIntStateOf(0) }
+    val done by rememberUpdatedState(onDone)
+    LaunchedEffect(steps) {
+        if (steps == 0) return@LaunchedEffect
+        delay(STEP_SETTLE_MS)
+        done()
+    }
+    val fit: (Int, Int, Int) -> Unit = { x, y, grow ->
+        onFit { it.copy(lensOffsetXDp = dp(x), lensOffsetDp = dp(y), lensGrowDp = dp(grow)) }
+        steps++
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GlowShapes.Tile)
+            .background(GlowPalette.SurfaceRaised)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(stringResource(R.string.lens_fit), GlowPalette.Cyan)
+            Spacer(Modifier.weight(1f))
+            if (offsetXPx != 0 || offsetPx != 0 || growPx != 0) {
+                Text(
+                    text = stringResource(R.string.lens_fit_reset),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GlowPalette.Cyan,
+                    modifier = Modifier
+                        .clip(GlowShapes.Pill)
+                        .clickable(role = Role.Button) { fit(0, 0, 0) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.lens_fit_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = GlowPalette.TextMuted,
+        )
+        FitRow(
+            label = stringResource(R.string.lens_fit_height),
+            valuePx = offsetPx,
+            minus = stringResource(R.string.lens_fit_up),
+            plus = stringResource(R.string.lens_fit_down),
+            onStep = { fit(offsetXPx, offsetPx + it, growPx) },
+        )
+        FitRow(
+            label = stringResource(R.string.lens_fit_side),
+            valuePx = offsetXPx,
+            minus = stringResource(R.string.lens_fit_left),
+            plus = stringResource(R.string.lens_fit_right),
+            onStep = { fit(offsetXPx + it, offsetPx, growPx) },
+        )
+        FitRow(
+            label = stringResource(R.string.lens_fit_radius),
+            valuePx = growPx,
+            minus = stringResource(R.string.lens_fit_smaller),
+            plus = stringResource(R.string.lens_fit_bigger),
+            onStep = { fit(offsetXPx, offsetPx, growPx + it) },
+        )
+    }
+}
+
+@Composable
+private fun FitRow(label: String, valuePx: Int, minus: String, plus: String, onStep: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = GlowPalette.TextMuted,
+            modifier = Modifier.weight(1f),
+        )
+        StepButton(plus = false, description = minus, onStep = { onStep(-1) })
+        Text(
+            text = stringResource(R.string.lens_fit_px, valuePx),
+            style = MaterialTheme.typography.labelMedium,
+            color = GlowPalette.TextPrimary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(72.dp),
+        )
+        StepButton(plus = true, description = plus, onStep = { onStep(1) })
     }
 }
 

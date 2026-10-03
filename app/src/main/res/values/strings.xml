@@ -97,7 +97,7 @@
     <string name="style_ring_title">Camera Ring</string>
     <string name="style_dot_title">Custom Dot</string>
 
-    <string name="dot_body">Only these pixels light up. Drag the dot or use the sliders; it snaps to the spots below and the ruler marks.</string>
+    <string name="dot_body">Only these pixels light up. Drag the dot or use the sliders; it snaps to the spots below and the ruler marks. The real LED shows on this screen as you change it.</string>
     <string name="dot_size">SIZE</string>
     <string name="dot_size_led">LED</string>
     <string name="dot_size_s">S</string>
@@ -105,6 +105,26 @@
     <string name="dot_size_l">L</string>
     <string name="dot_spots_camera_line">CAMERA LINE</string>
     <string name="dot_spots_other">OTHER SPOTS</string>
+    <string name="dot_spots_lens">ON THE CAMERA</string>
+    <string name="dot_spot_ring">RING AROUND THE CAMERA</string>
+    <string name="dot_ring_thickness">RING THICKNESS</string>
+    <string name="dot_step_left">Move left</string>
+    <string name="dot_step_right">Move right</string>
+    <string name="dot_step_up">Move up</string>
+    <string name="dot_step_down">Move down</string>
+    <string name="lens_fit">FIT TO YOUR CAMERA</string>
+    <string name="lens_fit_body">Line the ring up with your camera lens. It lights on screen while you tap.</string>
+    <string name="lens_fit_height">VERTICAL</string>
+    <string name="lens_fit_side">HORIZONTAL</string>
+    <string name="lens_fit_left">Move ring left</string>
+    <string name="lens_fit_right">Move ring right</string>
+    <string name="lens_fit_radius">RADIUS</string>
+    <string name="lens_fit_px">%1$+d px</string>
+    <string name="lens_fit_up">Move ring up</string>
+    <string name="lens_fit_down">Move ring down</string>
+    <string name="lens_fit_smaller">Make ring smaller</string>
+    <string name="lens_fit_bigger">Make ring bigger</string>
+    <string name="lens_fit_reset">RESET</string>
     <string name="dot_spot_edge_left">EDGE L</string>
     <string name="dot_spot_cam_left">CAM L</string>
     <string name="dot_spot_cam_right">CAM R</string>

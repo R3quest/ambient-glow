@@ -47,10 +47,12 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.ViewCompat
@@ -305,7 +307,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 arriving = arriving.value,
                 arrivalSeq = arrivalSeq.intValue,
                 settings = settings.value,
-                geometry = geometry.value,
+                geometry = geometry.value.fitted(settings.value, resources.displayMetrics.density),
                 onTap = ::onUserDismiss,
                 onTouch = ::onLedTouch,
                 onArrivalDone = ::onArrivalDone,
@@ -947,6 +949,9 @@ internal object RealTimeMotion : MotionDurationScale {
 /** Burn-in guard: the glow steps through a 2 px square, one corner per blink. */
 private val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f), Offset(0f, 2f))
 
+/** The ring's burn-in guard: it breathes 1 px in and out instead, so it stays centred on the lens. */
+private val RING_SHIFTS = listOf(0f, 1f, 0f, -1f)
+
 @Composable
 private fun GlowScreen(
     face: Face,
@@ -998,7 +1003,7 @@ private fun GlowScreen(
                 } else if (arriving) {
                     ArrivalEffect(settings, colors.first(), geometry, onDone = onArrivalDone)
                 } else {
-                    LedLayer(settings, colors, onBlink)
+                    LedLayer(settings, colors, geometry, onBlink)
                 }
             }
         }
@@ -1025,7 +1030,7 @@ private fun MessagePopUp(onShow: () -> Unit, onDone: () -> Unit) {
  * chosen style is only the new-message effect ([ArrivalEffect]).
  */
 @Composable
-private fun LedLayer(settings: GlowSettings, colors: List<Int>, onBlink: () -> Unit) {
+private fun LedLayer(settings: GlowSettings, colors: List<Int>, geometry: ScreenGeometry, onBlink: () -> Unit) {
     val glow = remember { Animatable(0f) }
     val blink by rememberUpdatedState(onBlink)
     var cycle by remember { mutableIntStateOf(0) }
@@ -1043,13 +1048,17 @@ private fun LedLayer(settings: GlowSettings, colors: List<Int>, onBlink: () -> U
             }
         }
     }
-    val shift = PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
+    val onCamera = settings.ledOnCamera
+    val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
     LedDot(
         color = Color(colors[cycle % colors.size]),
         alpha = { glow.value },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
+        onCamera = onCamera,
+        geometry = geometry,
+        ringGrowPx = if (onCamera) RING_SHIFTS[cycle % RING_SHIFTS.size] else 0f,
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
@@ -1059,24 +1068,64 @@ private fun LedLayer(settings: GlowSettings, colors: List<Int>, onBlink: () -> U
     )
 }
 
+/** Ring LED: line thickness as a share of the dot radius, and its clearance from the lens. */
+private const val LED_RING_STROKE_FACTOR = 0.6f
+private val LED_RING_GAP = 1.5.dp
+
 /**
  * A bright core, a hot white centre and a soft radial bloom. The brush is built once per
  * colour/size change in drawWithCache; each blink frame only changes the layer alpha.
+ * The dashboard draws its real-size LED preview with this too.
+ *
+ * [onCamera]: the same light as a ring hugging the punch-hole, whose pixels cannot light;
+ * [radius] then sets the ring's thickness.
  */
 @Composable
-private fun LedDot(
+internal fun LedDot(
     color: Color,
     alpha: () -> Float,
     dotX: Float,
     dotY: Float,
     radius: Dp,
     modifier: Modifier = Modifier,
+    onCamera: Boolean = false,
+    geometry: ScreenGeometry = ScreenGeometry.Unknown,
+    ringGrowPx: Float = 0f,
 ) {
     Spacer(
         modifier
             .graphicsLayer { this.alpha = alpha() }
             .drawWithCache {
                 val core = radius.toPx()
+                val hot = lerp(color, Color.White, 0.45f)
+                if (onCamera) {
+                    val metrics = GlowMetrics.FullScreen
+                    val lens = geometry.cutout ?: CutoutSpot(
+                        centerX = size.width / 2f,
+                        centerY = metrics.fallbackCameraCenterY.toPx(),
+                        radius = metrics.fallbackCameraRadius.toPx(),
+                    )
+                    val center = Offset(lens.centerX, lens.centerY)
+                    val line = core * LED_RING_STROKE_FACTOR
+                    val ring = lens.radius + LED_RING_GAP.toPx() + line / 2f + ringGrowPx
+                    val bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f)
+                    val halo = Brush.radialGradient(
+                        0f to Color.Transparent,
+                        lens.radius / bloom to Color.Transparent,
+                        ring / bloom to color.copy(alpha = 0.65f),
+                        (ring + (bloom - ring) * 0.35f) / bloom to color.copy(alpha = 0.22f),
+                        1f to Color.Transparent,
+                        center = center,
+                        radius = bloom,
+                    )
+                    val coreStroke = Stroke(line)
+                    val hotStroke = Stroke(line * 0.4f)
+                    return@drawWithCache onDrawBehind {
+                        drawCircle(halo, radius = bloom, center = center)
+                        drawCircle(color, radius = ring, center = center, style = coreStroke)
+                        drawCircle(hot, radius = ring, center = center, style = hotStroke)
+                    }
+                }
                 val bloom = core * LED_HALO_FACTOR
                 // Same margin as GlowGraphic, so the LED sits exactly where the dashboard showed it.
                 val center = dotCenter(dotX, dotY, size, core * DOT_HALO_FACTOR)
@@ -1087,7 +1136,6 @@ private fun LedDot(
                     center = center,
                     radius = bloom,
                 )
-                val hot = lerp(color, Color.White, 0.45f)
                 onDrawBehind {
                     drawCircle(halo, radius = bloom, center = center)
                     drawCircle(color, radius = core, center = center)

@@ -146,6 +146,15 @@ data class GlowSettings(
     val dotX: Float = DEFAULT_DOT_X,
     val dotY: Float = DEFAULT_DOT_Y,
     val dotSize: DotSize = DotSize.LED,
+    /** The LED lights as a ring around the punch-hole camera instead of a dot; [dotSize] sets its thickness. */
+    val ledOnCamera: Boolean = false,
+    /**
+     * The user's fit of the camera hole, applied to the reported cutout ([ScreenGeometry.fitted]):
+     * some OEMs (Samsung) report only a rectangle from the top edge, not where the lens is.
+     */
+    val lensOffsetDp: Float = 0f,
+    val lensOffsetXDp: Float = 0f,
+    val lensGrowDp: Float = 0f,
     val ledBrightness: LedBrightness = LedBrightness.MAX,
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
@@ -155,6 +164,9 @@ data class GlowSettings(
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
     val edgeColor: EdgeColor = EdgeColor.APP,
 ) {
+    /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
+    val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT
+
     companion object {
         const val DEFAULT_DOT_X = 0.06f
         const val DEFAULT_DOT_Y = 0.008f
@@ -168,6 +180,10 @@ object GlowPrefs {
     private const val KEY_DOT_X = "dot_x"
     private const val KEY_DOT_Y = "dot_y"
     private const val KEY_DOT_SIZE = "dot_size"
+    private const val KEY_LED_CAMERA = "led_camera"
+    private const val KEY_LENS_OFFSET = "lens_offset_dp"
+    private const val KEY_LENS_OFFSET_X = "lens_offset_x_dp"
+    private const val KEY_LENS_GROW = "lens_grow_dp"
     private const val KEY_LED_BRIGHTNESS = "led_brightness"
     private const val KEY_ARRIVAL = "arrival"
     private const val KEY_SPAWN = "spawn"
@@ -186,6 +202,10 @@ object GlowPrefs {
             dotX = prefs.getFloat(KEY_DOT_X, GlowSettings.DEFAULT_DOT_X).coerceIn(0f, 1f),
             dotY = prefs.getFloat(KEY_DOT_Y, GlowSettings.DEFAULT_DOT_Y).coerceIn(0f, 1f),
             dotSize = DotSize.fromName(prefs.getString(KEY_DOT_SIZE, null)),
+            ledOnCamera = prefs.getBoolean(KEY_LED_CAMERA, false),
+            lensOffsetDp = prefs.getFloat(KEY_LENS_OFFSET, 0f),
+            lensOffsetXDp = prefs.getFloat(KEY_LENS_OFFSET_X, 0f),
+            lensGrowDp = prefs.getFloat(KEY_LENS_GROW, 0f),
             ledBrightness = LedBrightness.fromName(prefs.getString(KEY_LED_BRIGHTNESS, null)),
             arrival = ArrivalMode.fromName(prefs.getString(KEY_ARRIVAL, null)),
             spawn = prefs.getBoolean(KEY_SPAWN, true),
@@ -211,10 +231,19 @@ object GlowPrefs {
         prefs(context).edit { putString(KEY_STYLE, style.name) }
     }
 
-    fun saveDot(context: Context, x: Float, y: Float) {
+    fun saveDot(context: Context, x: Float, y: Float, onCamera: Boolean) {
         prefs(context).edit {
             putFloat(KEY_DOT_X, x.coerceIn(0f, 1f))
             putFloat(KEY_DOT_Y, y.coerceIn(0f, 1f))
+            putBoolean(KEY_LED_CAMERA, onCamera)
+        }
+    }
+
+    fun saveLensFit(context: Context, offsetXDp: Float, offsetDp: Float, growDp: Float) {
+        prefs(context).edit {
+            putFloat(KEY_LENS_OFFSET_X, offsetXDp)
+            putFloat(KEY_LENS_OFFSET, offsetDp)
+            putFloat(KEY_LENS_GROW, growDp)
         }
     }
 

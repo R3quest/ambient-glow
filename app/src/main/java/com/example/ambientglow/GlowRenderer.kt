@@ -1,5 +1,8 @@
 package com.example.ambientglow
 
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Build
 import android.view.RoundedCorner
 import androidx.compose.foundation.Canvas
@@ -71,6 +74,19 @@ data class CutoutSpot(val centerX: Float, val centerY: Float, val radius: Float)
 /** Real display geometry, known only inside the wake window; previews use [Unknown]. */
 @Immutable
 data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
+    /** The camera hole moved and resized by the user's fit ([GlowSettings.lensOffsetDp]). */
+    fun fitted(settings: GlowSettings, density: Float): ScreenGeometry {
+        val spot = cutout ?: return this
+        if (settings.lensOffsetXDp == 0f && settings.lensOffsetDp == 0f && settings.lensGrowDp == 0f) return this
+        return copy(
+            cutout = spot.copy(
+                centerX = spot.centerX + settings.lensOffsetXDp * density,
+                centerY = spot.centerY + settings.lensOffsetDp * density,
+                radius = (spot.radius + settings.lensGrowDp * density).coerceAtLeast(1f),
+            ),
+        )
+    }
+
     companion object {
         val Unknown = ScreenGeometry(cutout = null, cornerRadiusPx = null)
 
@@ -79,13 +95,7 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
                 ?.boundingRects
                 ?.filterNot { it.isEmpty }
                 ?.minByOrNull { it.top }
-            val spot = topRect?.let {
-                CutoutSpot(
-                    centerX = it.exactCenterX(),
-                    centerY = it.exactCenterY(),
-                    radius = min(it.width(), it.height()) / 2f,
-                )
-            }
+            val spot = topRect?.let { lensIn(it, insets) }
             val corner = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 insets.toWindowInsets()
                     ?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
@@ -96,6 +106,26 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
                 null
             }
             return ScreenGeometry(cutout = spot, cornerRadiusPx = corner)
+        }
+
+        /**
+         * The punch-hole inside the top cutout's bounding rect, which runs up to the screen edge.
+         * Where the cutout's own outline (Android 12+) is the round hole, that is exact. Some
+         * OEMs (Samsung) outline only a rectangle from the top edge, which says nothing about
+         * where the lens sits in it; its centre is the guess, and the user's fit corrects it.
+         */
+        private fun lensIn(rect: Rect, insets: WindowInsetsCompat): CutoutSpot {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                insets.toWindowInsets()?.displayCutout?.cutoutPath?.let { outline ->
+                    // Only the part in this rect, in case the display has other cutouts too.
+                    val hole = Path(outline).apply { op(Path().apply { addRect(RectF(rect), Path.Direction.CW) }, Path.Op.INTERSECT) }
+                    val bounds = RectF().also { hole.computeBounds(it, true) }
+                    if (!bounds.isEmpty) {
+                        return CutoutSpot(bounds.centerX(), bounds.centerY(), min(bounds.width(), bounds.height()) / 2f)
+                    }
+                }
+            }
+            return CutoutSpot(rect.exactCenterX(), rect.exactCenterY(), min(rect.width(), rect.height()) / 2f)
         }
     }
 }

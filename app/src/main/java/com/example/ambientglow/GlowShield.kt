@@ -102,7 +102,8 @@ class GlowShield : AccessibilityService() {
             setViewTreeLifecycleOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             setContent {
-                ArrivalEffect(settings, color, geometry.value, onDone = { removeArrival() })
+                val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
+                ArrivalEffect(settings, color, lens, onDone = { removeArrival() })
             }
         }
         ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->

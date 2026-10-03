@@ -519,7 +519,8 @@ private fun CacheDrawScope.cometMask(motion: EdgeMotion): MovingShaderBrush? {
 @Composable
 private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
     val spawn = settings.spawn
-    val ring = settings.style == GlowStyle.CAMERA_RING
+    // Custom Dot plays where the LED sits, so with the LED on the camera it is the ring too.
+    val ring = settings.style == GlowStyle.CAMERA_RING || settings.ledOnCamera
     Spacer(
         Modifier
             .fillMaxSize()
