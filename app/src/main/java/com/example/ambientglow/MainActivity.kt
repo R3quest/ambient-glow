@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -188,6 +189,24 @@ private fun isShieldEnabled(context: Context): Boolean {
         ?: return false
     val shield = ComponentName(context, GlowShield::class.java)
     return enabled.split(':').any { ComponentName.unflattenFromString(it) == shield }
+}
+
+// Android 13+ blocks notification access and accessibility ("Restricted setting") for apps
+// installed from an APK file, until the user allows it from the app's info page. Store and adb
+// installs are exempt, so only file and download installs need the hint.
+private fun isRestrictedInstall(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+    val source = try {
+        context.packageManager.getInstallSourceInfo(context.packageName).packageSource
+    } catch (_: Exception) {
+        return false
+    }
+    return source == PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE ||
+        source == PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE
+}
+
+private fun Context.openAppInfo() {
+    launchFirstAvailable(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
 }
 
 private fun Context.launchFirstAvailable(vararg intents: Intent) {
@@ -391,6 +410,15 @@ private fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
 
 @Composable
 private fun AccessPage(access: AccessState, actions: AccessActions) {
+    val context = LocalContext.current
+    val restricted = remember(context) { isRestrictedInstall(context) }
+    val restrictedNotice: @Composable () -> Unit = {
+        NoticeRow(
+            text = stringResource(R.string.access_restricted_body),
+            action = stringResource(R.string.access_restricted_action),
+            onAction = context::openAppInfo,
+        )
+    }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         AccessCard(
             index = "01",
@@ -400,6 +428,7 @@ private fun AccessPage(access: AccessState, actions: AccessActions) {
             grantLabel = stringResource(R.string.access_listener_grant),
             manageLabel = stringResource(R.string.access_listener_manage),
             onAction = actions.listener,
+            notice = restrictedNotice.takeIf { restricted && !access.listener },
         )
         AccessCard(
             index = "02",
@@ -429,6 +458,7 @@ private fun AccessPage(access: AccessState, actions: AccessActions) {
             grantLabel = stringResource(R.string.access_shield_grant),
             manageLabel = stringResource(R.string.access_shield_manage),
             onAction = actions.shield,
+            notice = restrictedNotice.takeIf { restricted && !access.shield },
         )
         Text(
             text = stringResource(R.string.footer_privacy),
@@ -893,6 +923,7 @@ private fun AccessCard(
     grantLabel: String,
     manageLabel: String,
     onAction: () -> Unit,
+    notice: (@Composable () -> Unit)? = null,
 ) {
     val borderBrush: Brush = if (active) SolidColor(GlowPalette.OutlineSoft) else GlowBrushes.Warning
     Column(
@@ -925,6 +956,7 @@ private fun AccessCard(
             emphasized = !active,
             onClick = onAction,
         )
+        notice?.invoke()
     }
 }
 

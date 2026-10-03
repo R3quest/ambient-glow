@@ -79,6 +79,9 @@
     <string name="access_shield_grant">Turn on</string>
     <string name="access_shield_manage">Accessibility settings</string>
 
+    <string name="access_restricted_body">Android says \"Restricted setting\"? Open App info, tap ⋮ in the top corner, choose Allow restricted settings, then come back and try again.</string>
+    <string name="access_restricted_action">App info</string>
+
     <string name="style_edge_title">Edge Frame</string>
     <string name="style_ring_title">Camera Ring</string>
     <string name="style_dot_title">Custom Dot</string>

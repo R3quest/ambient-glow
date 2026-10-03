@@ -24,3 +24,4 @@ keystore.properties
 # Editors
 .vscode/
 .claude/settings.local.json
+dist/
