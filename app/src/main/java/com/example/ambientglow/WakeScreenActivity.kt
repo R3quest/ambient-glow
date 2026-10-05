@@ -86,6 +86,8 @@ internal enum class Face {
  *   the black LED face, play the effect there (with Message, also the system's pop-up of only
  *   the new message), then the dot. While the user is looking at the lock screen, the effect
  *   plays over it instead.
+ * - A new message ([ArrivalMode.LED_ONLY]): the same, without the effect: straight into the
+ *   dot, and nothing at all while the user is looking at the lock screen.
  * - Unlock: step behind the user's apps (see-through, so no black frame). Only then can a later
  *   relight show the lock screen for a moment, because Android starts every wake on the lock
  *   screen until we are back on top.
@@ -396,17 +398,18 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                     wakeAfter(0)
                 }
             }
-            ArrivalMode.BLACK, ArrivalMode.MESSAGE -> {
+            ArrivalMode.BLACK, ArrivalMode.MESSAGE, ArrivalMode.LED_ONLY -> {
+                val effect = settings.value.arrival.playsEffect
                 // The lock screen is only lit and in front when the user woke it themselves: they
                 // are looking at it (maybe typing a PIN), so don't cover it; play the effect over it
-                // instead, and the dot takes over when it sleeps.
+                // instead (if there is one), and the dot takes over when it sleeps.
                 if (face.value == Face.LOCK_SCREEN && power.isInteractive) {
-                    announce()
+                    if (effect) announce()
                     return
                 }
                 val dark = !power.isInteractive
                 if (dark) DarkHold.acquire(this)
-                showLed(arrival = true)
+                showLed(arrival = effect)
                 // Arranged while dark: give the cover a moment to commit, then light straight into it.
                 if (dark) wakeAfter(RELIGHT_DELAY_MS)
             }
@@ -449,7 +452,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             // over it, no automatic cover.
             WakeMode.WAKE -> {
                 showLockScreen(auto = settings.value.arrival == ArrivalMode.LOCK_SCREEN)
-                announce()
+                if (settings.value.arrival.playsEffect) announce()
             }
             WakeMode.LED -> showLed()
             WakeMode.ARRIVAL -> showLed(arrival = true)

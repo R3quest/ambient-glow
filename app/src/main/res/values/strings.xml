@@ -17,7 +17,7 @@
     <string name="state_pending">PENDING</string>
 
     <string name="section_dot">LED DOT</string>
-    <string name="group_arrival_title">New message</string>
+    <string name="group_arrival_title">The effect</string>
     <string name="group_arrival_body">What plays the moment a message arrives, in the app\'s colour.</string>
     <string name="group_led_title">Waiting LED</string>
     <string name="group_led_body">Afterwards the screen goes black and only this dot blinks, one blink per waiting app, until you read or dismiss the messages.</string>
@@ -25,12 +25,10 @@
     <string name="effect_spawn_title">AirDrop spawn</string>
     <string name="effect_spawn_body">A wave of light bursts out of the camera and lights the glow as it passes.</string>
     <string name="element">ELEMENT</string>
-    <string name="element_none">NONE</string>
     <string name="element_fire">FIRE</string>
     <string name="element_water">WATER</string>
     <string name="element_air">AIR</string>
     <string name="element_earth">EARTH</string>
-    <string name="element_none_body">The plain wave of light, with no element.</string>
     <string name="element_fire_body">Flames flicker up from the camera and set the glow alight.</string>
     <string name="element_water_body">The wave rolls in like water over glass: a soft, shimmering crest of light with a gentle ripple behind it.</string>
     <string name="element_air_body">A gust sweeps the light across the screen in drifting streaks.</string>
@@ -39,7 +37,10 @@
     <string name="element_premium_mark">Premium</string>
     <string name="element_needs_spawn">Elements play in the spawn wave, which is off.</string>
     <string name="element_spawn_on">Turn on</string>
-    <string name="element_soon">Coming soon: it plays as the plain wave for now.</string>
+    <string name="element_soon">Coming soon: it plays as the bare wave for now.</string>
+    <string name="effects_off_title">Effects are off</string>
+    <string name="effects_off_body">With Just the LED, new messages skip the effect and go straight to the dot. Pick a screen that plays an effect to style it here.</string>
+    <string name="effects_off_action">Choose a screen</string>
     <string name="glass_blur">BLUR UNDERNEATH</string>
     <string name="glass_blur_off">OFF</string>
     <string name="glass_blur_light">LIGHT</string>
@@ -91,12 +92,14 @@
     <string name="edge_color_app">APP</string>
     <string name="edge_color_duo">DUO</string>
     <string name="edge_color_spectrum">SPECTRUM</string>
-    <string name="arrival_mode">WHERE IT PLAYS</string>
+    <string name="arrival_mode">THE SCREEN SHOWS</string>
     <string name="arrival_lock_screen">Lock screen</string>
     <string name="arrival_black">Black screen</string>
     <string name="arrival_message">Black screen + message</string>
     <string name="arrival_lock_screen_body">The lock screen lights up with all your notifications and the effect plays over it.</string>
     <string name="arrival_black_body">The screen comes on black and plays only the effect.</string>
+    <string name="arrival_led_only">Just the LED</string>
+    <string name="arrival_led_only_body">No effect: the screen comes on black and only the LED dot lights. The least battery of all.</string>
     <string name="arrival_message_body">Black screen, the effect, and a pop-up of only the new message. Your lock-screen privacy settings decide how much shows.</string>
     <string name="led_brightness">BRIGHTNESS</string>
     <string name="led_brightness_soft">SOFT</string>
@@ -177,8 +180,8 @@
     <string name="tab_screen">SCREEN</string>
     <string name="tab_led">LED</string>
 
-    <string name="group_screen_title">Where it plays</string>
-    <string name="group_screen_body">What the screen shows while the effect plays.</string>
+    <string name="group_screen_title">When a message arrives</string>
+    <string name="group_screen_body">What the screen shows before the LED takes over.</string>
 
     <string name="fold_open">Expanded</string>
     <string name="fold_closed">Collapsed</string>

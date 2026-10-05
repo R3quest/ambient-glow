@@ -66,7 +66,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -135,7 +137,7 @@ private val RowBleed = 12.dp
 /**
  * Widens a full-width row by [RowBleed] each side while its content stays in line with the
  * card's: the tile's rounded corners, and the press highlight, then sit clear of the text.
- * Applied before the row's clip; [rowBleedPadding] puts the text back.
+ * Applied before the row's clip; the row pads its content back in by [RowBleed].
  */
 private fun Modifier.rowBleed(): Modifier = layout { measurable, constraints ->
     val bleed = RowBleed.roundToPx()
@@ -146,8 +148,6 @@ private fun Modifier.rowBleed(): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(wide)
     layout(placeable.width - bleed * 2, placeable.height) { placeable.place(-bleed, 0) }
 }
-
-private fun Modifier.rowBleedPadding(vertical: Dp): Modifier = padding(horizontal = RowBleed, vertical = vertical)
 
 @Composable
 internal fun CardDivider() {
@@ -193,7 +193,7 @@ internal fun ToggleRow(title: String, body: String, checked: Boolean, onChange: 
                 haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
                 onChange(it)
             }
-            .rowBleedPadding(vertical = 6.dp),
+            .padding(horizontal = RowBleed, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -220,9 +220,14 @@ internal fun ToggleRow(title: String, body: String, checked: Boolean, onChange: 
     }
 }
 
+/** Half the height of a capital in the app's sans-serif (Roboto's is 0.71 em). */
+private const val CAP_MIDDLE_EM = 0.355f
+
 /**
- * One choice of a list, with a line saying what it does. One eased value turns the fill, ring,
- * dot and title together; it is read in draw, so a pick doesn't recompose the row.
+ * One choice of a list, with a line saying what it does (or none, when that is said below the
+ * list). One eased value turns the fill, ring, dot and title together; it is read in draw, so a
+ * pick doesn't recompose the row. The ring sits on the title's first line, centred on its
+ * capitals: centred on the line box it reads low, since that box keeps room for descenders.
  */
 @Composable
 internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: () -> Unit) {
@@ -232,6 +237,9 @@ internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: 
         label = "radio",
     )
     val haptics = LocalHapticFeedback.current
+    val titleStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+    // From the ring's centre down to the title's baseline: the capitals' middle sits that far up.
+    val capMiddle = with(LocalDensity.current) { (titleStyle.fontSize * CAP_MIDDLE_EM).roundToPx() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -245,7 +253,7 @@ internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: 
     ) {
         Spacer(
             Modifier
-                .padding(top = 2.dp)
+                .alignBy { it.measuredHeight / 2 + capMiddle }
                 .size(16.dp)
                 .drawWithCache {
                     val stroke = Stroke(1.5.dp.toPx())
@@ -259,10 +267,10 @@ internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: 
                 },
         )
         Spacer(Modifier.width(12.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.alignBy(FirstBaseline), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             BasicText(
                 text = title,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                style = titleStyle,
                 color = { lerp(GlowPalette.TextMuted, GlowPalette.TextPrimary, on.value) },
             )
             if (body != null) Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
@@ -390,8 +398,7 @@ internal fun Disclosure(visible: Boolean, content: @Composable AnimatedVisibilit
 @Composable
 internal fun Fold(title: String, summary: String, content: @Composable () -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
-    // Same springs as the space each way (DisclosureEnter / DisclosureExit), so the chevron lands with it.
-    val turn by animateFloatAsState(if (open) 180f else 0f, spring(1f, if (open) 500f else 700f), label = "fold")
+    val turn by animateFloatAsState(if (open) 180f else 0f, GlowMotion.chevronTurn(open), label = "fold")
     val state = stringResource(if (open) R.string.fold_open else R.string.fold_closed)
     Column {
         Row(
@@ -401,7 +408,7 @@ internal fun Fold(title: String, summary: String, content: @Composable () -> Uni
                 .clip(GlowShapes.Tile)
                 .clickable(role = Role.Button) { open = !open }
                 .semantics { stateDescription = state }
-                .rowBleedPadding(vertical = 10.dp),
+                .padding(horizontal = RowBleed, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

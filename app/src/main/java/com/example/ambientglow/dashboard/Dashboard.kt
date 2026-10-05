@@ -7,7 +7,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
@@ -113,13 +112,27 @@ import kotlinx.coroutines.launch
 // every change starts.
 // ---------------------------------------------------------------------------------------------
 
-/** The style tabs follow a message: the effect, the screen it plays on, then the LED that waits. */
-private enum class DashboardTab(val label: Int) {
+/**
+ * The style tabs follow a message: what the screen shows, the effect, then the LED that waits.
+ * The screen comes first because it decides whether there is an effect at all (Just the LED).
+ */
+internal enum class DashboardTab(val label: Int) {
     ACCESS(R.string.tab_access),
-    EFFECT(R.string.tab_effect),
     SCREEN(R.string.tab_screen),
+    EFFECT(R.string.tab_effect),
     LED(R.string.tab_led),
 }
+
+/** Access is a tab until everything is granted; after that it lives behind the ARMED pill. */
+internal fun dashboardTabs(armed: Boolean): List<DashboardTab> =
+    if (armed) DashboardTab.entries - DashboardTab.ACCESS else DashboardTab.entries
+
+/**
+ * When Access comes or goes the pages shift: the page that keeps [shown] showing, or null when
+ * the pager is already on it or the tab is gone (then the pager's own page stands).
+ */
+internal fun List<DashboardTab>.pageKeeping(shown: DashboardTab, current: Int): Int? =
+    indexOf(shown).takeIf { it >= 0 && it != current }
 
 /** Outer margins and the gap between sections: generous, so each block reads on its own. */
 private val PageGutter = 24.dp
@@ -152,15 +165,12 @@ internal fun Dashboard(reported: ScreenGeometry) {
     // inline preview, once. Read again on resume, since it is changed in Settings.
     var reduceMotion by remember { mutableStateOf(!ValueAnimator.areAnimatorsEnabled()) }
 
-    // Access is a tab until everything is granted; after that it lives behind the ARMED pill.
-    val tabs = remember(access.armed) {
-        if (access.armed) DashboardTab.entries - DashboardTab.ACCESS else DashboardTab.entries
-    }
+    val tabs = remember(access.armed) { dashboardTabs(access.armed) }
     val pager = rememberPagerState(pageCount = { tabs.size })
     // Access coming or going shifts the pages: stay on the tab that was showing.
     var shownTab by rememberSaveable { mutableStateOf(tabs.first()) }
     LaunchedEffect(tabs) {
-        tabs.indexOf(shownTab).takeIf { it >= 0 && it != pager.currentPage }?.let { pager.scrollToPage(it) }
+        tabs.pageKeeping(shownTab, pager.currentPage)?.let { pager.scrollToPage(it) }
         snapshotFlow { pager.currentPage }.collect { shownTab = tabs[it.coerceAtMost(tabs.lastIndex)] }
     }
     val scope = rememberCoroutineScope()
@@ -249,11 +259,16 @@ internal fun Dashboard(reported: ScreenGeometry) {
         }
     }
 
-    // Every change shows at once; [save] also stores it. A drag or a run of taps is stored once,
-    // as it settles. Callbacks read [settings] as they fire, so each builds on the latest.
-    val update = { next: GlowSettings, save: Boolean ->
-        settings = next
-        if (save) GlowPrefs.save(context, next)
+    // Every change shows at once and, with save, is stored; a drag or a run of taps is stored
+    // once, as it settles. Each applies to the settings as they are when it fires.
+    val edit = remember(context) {
+        SettingsEdit { save, change ->
+            settings = change(settings)
+            if (save) GlowPrefs.save(context, settings)
+        }
+    }
+    val openScreenTab: () -> Unit = {
+        scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.SCREEN)) }
     }
     // The step the real-size preview shows (the newer one during a hand-off), or null.
     val previewHeld = when {
@@ -306,90 +321,29 @@ internal fun Dashboard(reported: ScreenGeometry) {
                     PageColumn(Modifier.fillMaxSize()) {
                         when (tabs[page]) {
                             DashboardTab.ACCESS -> AccessPage(access, actions)
-                            DashboardTab.EFFECT -> SettingsGroup(
-                                index = "01",
-                                title = R.string.group_arrival_title,
-                                body = R.string.group_arrival_body,
-                            ) {
-                                // Main choices first, fine-tuning last: the look and its preview, the
-                                // element, the wave it rides, then Edge Frame's own options.
-                                val onEffect = { next: GlowSettings ->
-                                    update(next, true)
+                            DashboardTab.SCREEN -> ScreenPage(
+                                settings = settings,
+                                sample = sample,
+                                previewHeld = previewHeld,
+                                loop = !reduceMotion,
+                                shieldOn = access.shield,
+                                onShield = actions.shield,
+                                edit = edit,
+                            )
+                            DashboardTab.EFFECT -> EffectPage(
+                                settings = settings,
+                                sample = sample,
+                                previewHeld = previewHeld,
+                                loop = !reduceMotion,
+                                edit = edit,
+                                onSample = { index ->
+                                    sample = index
                                     showcase()
-                                }
-                                EffectCard(
-                                    settings = settings,
-                                    sample = sample,
-                                    previewHeld = previewHeld,
-                                    loop = !reduceMotion,
-                                    onStyle = { style -> onEffect(settings.copy(style = style)) },
-                                    onSample = { index ->
-                                        sample = index
-                                        showcase()
-                                    },
-                                )
-                                ElementCard(settings, onEffect)
-                                // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
-                                Column {
-                                    SpawnCard(settings, onEffect)
-                                    Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
-                                        Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
-                                    }
-                                }
-                            }
-                            DashboardTab.SCREEN -> SettingsGroup(
-                                index = "02",
-                                title = R.string.group_screen_title,
-                                body = R.string.group_screen_body,
-                            ) {
-                                ScreenCard(
-                                    settings = settings,
-                                    sample = sample,
-                                    previewHeld = previewHeld,
-                                    loop = !reduceMotion,
-                                    shieldOn = access.shield,
-                                    onShield = actions.shield,
-                                    onSelect = { mode -> update(settings.copy(arrival = mode), true) },
-                                )
-                            }
-                            // The waiting LED is always the dot, whatever arrival style is chosen.
-                            DashboardTab.LED -> SettingsGroup(
-                                index = "03",
-                                title = R.string.group_led_title,
-                                body = R.string.group_led_body,
-                            ) {
-                                LedCard(
-                                    settings = settings,
-                                    // While it moves, the real LED follows on screen; it breathes once when let go.
-                                    onMove = { x, y, onCamera ->
-                                        update(settings.copy(dotX = x, dotY = y, ledOnCamera = onCamera), false)
-                                        showLed(true)
-                                    },
-                                    onCommit = {
-                                        GlowPrefs.save(context, settings)
-                                        showLed(false)
-                                    },
-                                    onLensFit = { fit ->
-                                        update(fit(settings), false)
-                                        showLed(true)
-                                    },
-                                    onLensFitDone = {
-                                        GlowPrefs.save(context, settings)
-                                        showLed(false)
-                                    },
-                                )
-                                LedLookCard(
-                                    settings = settings,
-                                    onSize = { size ->
-                                        update(settings.copy(dotSize = size), true)
-                                        showLed(false)
-                                    },
-                                    onBrightness = { level ->
-                                        update(settings.copy(ledBrightness = level), true)
-                                        showLed(false)
-                                    },
-                                )
-                            }
+                                },
+                                onShowcase = showcase,
+                                onChooseScreen = openScreenTab,
+                            )
+                            DashboardTab.LED -> LedPage(settings, edit, onLed = showLed)
                         }
                     }
                 }
@@ -450,15 +404,125 @@ private fun PageColumn(modifier: Modifier = Modifier, content: @Composable () ->
     }
 }
 
+/** Changes the settings as they are when it is called: shown at once, and stored when [save]. */
+internal fun interface SettingsEdit {
+    operator fun invoke(save: Boolean, change: (GlowSettings) -> GlowSettings)
+}
+
+@Composable
+private fun ScreenPage(
+    settings: GlowSettings,
+    sample: Int,
+    previewHeld: PreviewPhase?,
+    loop: Boolean,
+    shieldOn: Boolean,
+    onShield: () -> Unit,
+    edit: SettingsEdit,
+) {
+    SettingsGroup(index = "01", title = R.string.group_screen_title, body = R.string.group_screen_body) {
+        ScreenCard(
+            settings = settings,
+            sample = sample,
+            previewHeld = previewHeld,
+            loop = loop,
+            shieldOn = shieldOn,
+            onShield = onShield,
+            onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
+        )
+    }
+}
+
+/**
+ * Main choices first, fine-tuning last: the look and its preview, the element, the wave it rides,
+ * then Edge Frame's own options. Each change plays at real size ([onShowcase]). With Just the LED
+ * nothing here would do anything, so the options give way to a card that says so and leads back
+ * to the screen choice; each side carries its own gap, so the swap is one movement.
+ */
+@Composable
+private fun EffectPage(
+    settings: GlowSettings,
+    sample: Int,
+    previewHeld: PreviewPhase?,
+    loop: Boolean,
+    edit: SettingsEdit,
+    onSample: (Int) -> Unit,
+    onShowcase: () -> Unit,
+    onChooseScreen: () -> Unit,
+) {
+    val onEffect = { next: GlowSettings ->
+        edit(save = true) { next }
+        onShowcase()
+    }
+    val effectOn = settings.arrival.playsEffect
+    SettingsGroup(index = "02", title = R.string.group_arrival_title, body = R.string.group_arrival_body) {
+        Column {
+            Disclosure(visible = !effectOn) { EffectsOffCard(onChooseScreen) }
+            Disclosure(visible = effectOn) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    EffectCard(
+                        settings = settings,
+                        sample = sample,
+                        previewHeld = previewHeld,
+                        loop = loop,
+                        onStyle = { style -> onEffect(settings.copy(style = style)) },
+                        onSample = onSample,
+                    )
+                    ElementCard(settings, onEffect)
+                    // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
+                    Column {
+                        SpawnCard(settings, onEffect)
+                        Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
+                            Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The waiting LED is always the dot (or ring), whatever arrival style is chosen. While it moves the
+ * real LED follows on screen ([onLed] holding); it breathes once when let go, and is stored then.
+ */
+@Composable
+private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding: Boolean) -> Unit) {
+    SettingsGroup(index = "03", title = R.string.group_led_title, body = R.string.group_led_body) {
+        val settle = {
+            edit(save = true) { it }
+            onLed(false)
+        }
+        LedCard(
+            settings = settings,
+            onMove = { x, y, onCamera ->
+                edit(save = false) { it.copy(dotX = x, dotY = y, ledOnCamera = onCamera) }
+                onLed(true)
+            },
+            onCommit = settle,
+            onLensFit = { fit ->
+                edit(save = false, fit)
+                onLed(true)
+            },
+            onLensFitDone = settle,
+        )
+        LedLookCard(
+            settings = settings,
+            onSize = { size ->
+                edit(save = true) { it.copy(dotSize = size) }
+                onLed(false)
+            },
+            onBrightness = { level ->
+                edit(save = true) { it.copy(ledBrightness = level) }
+                onLed(false)
+            },
+        )
+    }
+}
+
 /** One compact line: mark, name, and a status pill that opens access (or jumps to setup). */
 @Composable
 private fun TopBar(access: AccessState, accessOpen: Boolean, onStatusClick: () -> Unit) {
-    // Same springs as the panel's size each way (DisclosureEnter / DisclosureExit), so the chevron lands with it.
-    val chevronTurn by animateFloatAsState(
-        if (accessOpen) 180f else 0f,
-        spring(1f, if (accessOpen) 500f else 700f),
-        label = "chevron",
-    )
+    val chevronTurn by animateFloatAsState(if (accessOpen) 180f else 0f, GlowMotion.chevronTurn(accessOpen), label = "chevron")
     Row(
         modifier = Modifier
             .fillMaxWidth()

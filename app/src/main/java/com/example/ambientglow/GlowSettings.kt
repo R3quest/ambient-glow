@@ -11,16 +11,13 @@ const val WAKE_DEBOUNCE_MS = 3_500L
 /** Brand accent used when an app icon yields no usable colour, and the default preview colour. */
 const val DEFAULT_GLOW_COLOR = 0xFF00E5FF.toInt()
 
-/** An option the dashboard lists by its name. */
+/**
+ * An option the dashboard lists by its name. Options a folded summary describes also carry a
+ * `phrase`, which reads inside a sentence ("thin line").
+ */
 interface Labeled {
     @get:StringRes
     val label: Int
-}
-
-/** An option a folded summary describes in words: [phrase] reads inside a sentence ("thin line"). */
-interface Phrased {
-    @get:StringRes
-    val phrase: Int
 }
 
 enum class GlowStyle(@param:StringRes override val label: Int) : Labeled {
@@ -51,8 +48,8 @@ enum class LedBrightness(val level: Float, @param:StringRes override val label: 
 enum class EdgeWidth(
     val stroke: Dp,
     @param:StringRes override val label: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     HAIRLINE(2.dp, R.string.edge_width_hair, R.string.edge_width_hair_phrase),
     THIN(4.dp, R.string.edge_width_thin, R.string.edge_width_thin_phrase),
     BOLD(7.dp, R.string.edge_width_bold, R.string.edge_width_bold_phrase),
@@ -69,8 +66,8 @@ enum class EdgeGlow(
     val reach: Dp,
     val peak: Float,
     @param:StringRes override val label: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     OFF(0.dp, 0f, R.string.edge_glow_off, R.string.edge_glow_off_phrase),
     SOFT(12.dp, 0.34f, R.string.edge_glow_soft, R.string.edge_glow_soft_phrase),
     STRONG(24.dp, 0.42f, R.string.edge_glow_strong, R.string.edge_glow_strong_phrase),
@@ -85,8 +82,8 @@ enum class EdgeGlow(
 enum class EdgeMotion(
     @param:StringRes override val label: Int,
     @param:StringRes val body: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     PULSE(R.string.edge_motion_pulse, R.string.edge_motion_pulse_body, R.string.edge_motion_pulse_phrase),
     COMET(R.string.edge_motion_comet, R.string.edge_motion_comet_body, R.string.edge_motion_comet_phrase),
     TWIN(R.string.edge_motion_twin, R.string.edge_motion_twin_body, R.string.edge_motion_twin_phrase),
@@ -101,17 +98,17 @@ enum class EdgeMotion(
 enum class EdgeColor(
     @param:StringRes override val label: Int,
     @param:StringRes val body: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     APP(R.string.edge_color_app, R.string.edge_color_app_body, R.string.edge_color_app_phrase),
     DUO(R.string.edge_color_duo, R.string.edge_color_duo_body, R.string.edge_color_duo_phrase),
     SPECTRUM(R.string.edge_color_spectrum, R.string.edge_color_spectrum_body, R.string.edge_color_spectrum_phrase),
 }
 
 /**
- * The element the spawn wave takes after. Water is the glass wave; the others have no look of
- * their own yet ([ready] is false) and play the plain wave until they do. [premium] ones are
- * marked as such but free to try for now: nothing checks a purchase yet.
+ * The element the spawn wave takes after; the wave always has one. Water is the glass wave; the
+ * others have no look of their own yet ([ready] is false) and play the bare wave until they do.
+ * [premium] ones are marked as such but free to try for now: nothing checks a purchase yet.
  */
 enum class SpawnElement(
     @param:StringRes override val label: Int,
@@ -119,7 +116,6 @@ enum class SpawnElement(
     val ready: Boolean,
     val premium: Boolean,
 ) : Labeled {
-    NONE(R.string.element_none, R.string.element_none_body, ready = true, premium = false),
     FIRE(R.string.element_fire, R.string.element_fire_body, ready = false, premium = true),
     WATER(R.string.element_water, R.string.element_water_body, ready = true, premium = false),
     AIR(R.string.element_air, R.string.element_air_body, ready = false, premium = true),
@@ -133,8 +129,8 @@ enum class SpawnElement(
 enum class GlassBlur(
     val radius: Dp,
     @param:StringRes override val label: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     OFF(0.dp, R.string.glass_blur_off, R.string.glass_blur_off_phrase),
     LIGHT(6.dp, R.string.glass_blur_light, R.string.glass_blur_light_phrase),
     MEDIUM(10.dp, R.string.glass_blur_medium, R.string.glass_blur_medium_phrase),
@@ -152,8 +148,8 @@ enum class GlassBlur(
 enum class GlassArea(
     @param:StringRes override val label: Int,
     @param:StringRes val body: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     REVEAL(R.string.glass_area_reveal, R.string.glass_area_reveal_body, R.string.glass_area_reveal_phrase),
     WAVE(R.string.glass_area_wave, R.string.glass_area_wave_body, R.string.glass_area_wave_phrase),
     SCREEN(R.string.glass_area_screen, R.string.glass_area_screen_body, R.string.glass_area_screen_phrase),
@@ -166,8 +162,8 @@ enum class GlassArea(
 enum class GlassFrost(
     val alpha: Float,
     @param:StringRes override val label: Int,
-    @param:StringRes override val phrase: Int,
-) : Labeled, Phrased {
+    @param:StringRes val phrase: Int,
+) : Labeled {
     OFF(0f, R.string.glass_frost_off, R.string.glass_frost_off_phrase),
     SOFT(0.16f, R.string.glass_frost_soft, R.string.glass_frost_soft_phrase),
     MILKY(0.30f, R.string.glass_frost_milky, R.string.glass_frost_milky_phrase),
@@ -180,14 +176,19 @@ enum class GlassFrost(
  * - BLACK: the screen comes on black and only the effect plays, then the LED dot.
  * - MESSAGE: the screen comes on black, the effect plays and the system pops up only the new
  *   message (its own heads-up, so its own layout and lock-screen privacy), then the LED dot.
+ * - LED_ONLY: no effect: the screen comes on black straight into the LED dot.
  */
 enum class ArrivalMode(@param:StringRes override val label: Int, @param:StringRes val body: Int) : Labeled {
     LOCK_SCREEN(R.string.arrival_lock_screen, R.string.arrival_lock_screen_body),
     BLACK(R.string.arrival_black, R.string.arrival_black_body),
-    MESSAGE(R.string.arrival_message, R.string.arrival_message_body);
+    MESSAGE(R.string.arrival_message, R.string.arrival_message_body),
+    LED_ONLY(R.string.arrival_led_only, R.string.arrival_led_only_body);
 
     /** Lights the black LED face for the arrival rather than the system lock screen. */
     val onBlack: Boolean get() = this != LOCK_SCREEN
+
+    /** A new message plays the effect before the LED; without it, the dot is all there is. */
+    val playsEffect: Boolean get() = this != LED_ONLY
 }
 
 /**
@@ -215,8 +216,8 @@ data class GlowSettings(
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
     val spawn: Boolean = true,
-    /** The element the spawn wave takes after; Water is the glass wave. */
-    val element: SpawnElement = SpawnElement.NONE,
+    /** The element the spawn wave takes after; Water, the glass wave, is the free one. */
+    val element: SpawnElement = SpawnElement.WATER,
     val glassBlur: GlassBlur = GlassBlur.MEDIUM,
     val glassArea: GlassArea = GlassArea.REVEAL,
     val glassFrost: GlassFrost = GlassFrost.SOFT,
@@ -236,6 +237,9 @@ data class GlowSettings(
         const val DEFAULT_DOT_Y = 0.008f
     }
 }
+
+/** Every element is a look of the spawn wave, so picking one turns the wave on. */
+fun GlowSettings.withElement(element: SpawnElement): GlowSettings = copy(element = element, spawn = true)
 
 /**
  * This look as the arrival effect sees it: LED-only fields reset, so moving or sizing the LED

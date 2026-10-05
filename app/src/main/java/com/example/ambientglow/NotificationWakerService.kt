@@ -127,11 +127,9 @@ class NotificationWakerService : NotificationListenerService() {
         if (power.isInteractive && !keyguard.isKeyguardLocked) return
         if (audio.inCall) return
         if (SystemClock.elapsedRealtime() - lastWakeAt < WAKE_DEBOUNCE_MS) return
-        // Put the glow screen on top of the lock screen without covering it (and light the
-        // panel if it is off), so every later switch can happen in place. With a black arrival
-        // and the screen off, light it straight into the black panel instead.
-        val black = !power.isInteractive && arrival.onBlack
-        if (launch(if (black) WakeMode.ARRIVAL else WakeMode.WAKE, color)) lastWakeAt = SystemClock.elapsedRealtime()
+        // Put the glow screen on top of the lock screen (lighting the panel if it is off), or
+        // with a black arrival and the screen off, straight into the black panel.
+        if (launch(wakeModeFor(arrival, power.isInteractive), color)) lastWakeAt = SystemClock.elapsedRealtime()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap?, reason: Int) {

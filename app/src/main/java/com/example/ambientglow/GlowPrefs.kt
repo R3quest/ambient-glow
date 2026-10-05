@@ -23,7 +23,7 @@ object GlowPrefs {
     private const val KEY_SPAWN = "spawn"
     private const val KEY_ELEMENT = "element"
 
-    /** Before elements, the glass wave was a switch; on, it is Water now. */
+    /** Before elements, the glass wave was a switch: no longer read, only cleared. */
     private const val KEY_GLASS = "glass"
     private const val KEY_GLASS_BLUR = "glass_blur"
     private const val KEY_GLASS_AREA = "glass_area"
@@ -38,7 +38,12 @@ object GlowPrefs {
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    fun load(context: Context): GlowSettings = with(prefs(context)) {
+    fun load(context: Context): GlowSettings = load(prefs(context))
+
+    /** Writes every choice at once: a handful of keys, applied asynchronously. */
+    fun save(context: Context, settings: GlowSettings) = save(prefs(context), settings)
+
+    internal fun load(prefs: SharedPreferences): GlowSettings = with(prefs) {
         GlowSettings(
             style = getEnum(KEY_STYLE, defaults.style),
             dotX = getFloat(KEY_DOT_X, defaults.dotX).coerceIn(0f, 1f),
@@ -51,7 +56,8 @@ object GlowPrefs {
             ledBrightness = getEnum(KEY_LED_BRIGHTNESS, defaults.ledBrightness),
             arrival = getEnum(KEY_ARRIVAL, defaults.arrival),
             spawn = getBoolean(KEY_SPAWN, defaults.spawn),
-            element = getEnum(KEY_ELEMENT, if (getBoolean(KEY_GLASS, false)) SpawnElement.WATER else defaults.element),
+            // An element that no longer exists (the plain wave) falls back to Water.
+            element = getEnum(KEY_ELEMENT, defaults.element),
             glassBlur = getEnum(KEY_GLASS_BLUR, defaults.glassBlur),
             glassArea = getEnum(KEY_GLASS_AREA, defaults.glassArea),
             glassFrost = getEnum(KEY_GLASS_FROST, defaults.glassFrost),
@@ -62,9 +68,8 @@ object GlowPrefs {
         )
     }
 
-    /** Writes every choice at once: a handful of keys, applied asynchronously. */
-    fun save(context: Context, settings: GlowSettings) {
-        prefs(context).edit {
+    internal fun save(prefs: SharedPreferences, settings: GlowSettings) {
+        prefs.edit {
             putString(KEY_STYLE, settings.style.name)
             putFloat(KEY_DOT_X, settings.dotX.coerceIn(0f, 1f))
             putFloat(KEY_DOT_Y, settings.dotY.coerceIn(0f, 1f))

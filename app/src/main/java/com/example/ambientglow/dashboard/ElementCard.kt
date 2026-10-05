@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -28,15 +30,30 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.example.ambientglow.GlassArea
+import com.example.ambientglow.GlassBlur
+import com.example.ambientglow.GlassFrost
+import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.R
 import com.example.ambientglow.SpawnElement
+import com.example.ambientglow.withElement
+import com.example.ambientglow.ui.components.CardDivider
 import com.example.ambientglow.ui.components.ChipLabel
+import com.example.ambientglow.ui.components.ChipRow
+import com.example.ambientglow.ui.components.Disclosure
+import com.example.ambientglow.ui.components.Fold
+import com.example.ambientglow.ui.components.NoticeRow
+import com.example.ambientglow.ui.components.OptionBody
+import com.example.ambientglow.ui.components.OptionGroup
+import com.example.ambientglow.ui.components.OptionNote
+import com.example.ambientglow.ui.components.SectionLabel
 import com.example.ambientglow.ui.components.SelectionRow
+import com.example.ambientglow.ui.components.glowCard
 import com.example.ambientglow.ui.theme.GlowPalette
 
 // ---------------------------------------------------------------------------------------------
-// The element the effect takes after: a row of tiles, each a line-drawn glyph over its name, a
-// sparkle on the premium ones.
+// The element the effect takes after: a row of tiles, each a line-drawn glyph over its name (a
+// sparkle on the premium ones), what the chosen one does, and its own options (Water's glass).
 // ---------------------------------------------------------------------------------------------
 
 private val TILE_HEIGHT = 64.dp
@@ -46,9 +63,111 @@ private val SPARKLE_SIZE = 9.dp
 /** Premium's mark: the brand magenta, kept apart from the amber the app warns in. */
 private val PremiumTint = GlowPalette.Magenta
 
+/**
+ * The element the effect takes after, under the preview that shows it. Each element folds its
+ * own options under the picker, so adding one adds a fold, not a wall of chips. Every element is
+ * a look of the spawn wave: picking one turns the wave on, and with it off the card says so.
+ */
+@Composable
+internal fun ElementCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    val element = settings.element
+    // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
+    Column(Modifier.glowCard()) {
+        SectionLabel(stringResource(R.string.element), GlowPalette.Cyan)
+        Spacer(Modifier.height(16.dp))
+        ElementPicker(element) { picked ->
+            onEffect(settings.withElement(picked))
+        }
+        Spacer(Modifier.height(10.dp))
+        OptionBody(element) { shown ->
+            val body = stringResource(shown.body)
+            if (shown.ready) body else body + " " + stringResource(R.string.element_soon)
+        }
+        Disclosure(visible = element.premium) {
+            Box(Modifier.padding(top = 10.dp)) { PremiumLine() }
+        }
+        Disclosure(visible = !settings.spawn) {
+            Box(Modifier.padding(top = 14.dp)) {
+                NoticeRow(
+                    text = stringResource(R.string.element_needs_spawn),
+                    action = stringResource(R.string.element_spawn_on),
+                    onAction = { onEffect(settings.copy(spawn = true)) },
+                )
+            }
+        }
+        // Only Water has options so far; the other elements get a fold here as they get a look.
+        Disclosure(visible = element == SpawnElement.WATER) {
+            Column(Modifier.padding(top = 12.dp)) {
+                CardDivider()
+                Spacer(Modifier.height(10.dp))
+                Fold(title = stringResource(R.string.fold_glass), summary = glassPhrasing(settings).text()) {
+                    GlassOptions(settings, onEffect)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Glass wave: how much the screen under it blurs, how frosted, and where. The area shapes both,
+ * so it shows whenever either is on. On a black screen there is nothing to blur and only one way
+ * for frost to show, so neither blur nor area is offered there.
+ */
+@Composable
+private fun GlassOptions(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    val onBlack = settings.arrival.onBlack
+    Column {
+        Disclosure(visible = !onBlack) {
+            Box(Modifier.padding(bottom = 14.dp)) {
+                OptionGroup(stringResource(R.string.glass_blur)) {
+                    ChipRow(GlassBlur.entries, settings.glassBlur) { onEffect(settings.copy(glassBlur = it)) }
+                }
+            }
+        }
+        OptionGroup(stringResource(R.string.glass_frost)) {
+            ChipRow(GlassFrost.entries, settings.glassFrost) { onEffect(settings.copy(glassFrost = it)) }
+        }
+        Disclosure(visible = onBlack) {
+            Box(Modifier.padding(top = 14.dp)) {
+                OptionNote(stringResource(R.string.glass_on_black))
+            }
+        }
+        Disclosure(visible = !onBlack && (settings.glassBlur != GlassBlur.OFF || settings.glassFrost != GlassFrost.OFF)) {
+            Box(Modifier.padding(top = 14.dp)) {
+                OptionGroup(stringResource(R.string.glass_area)) {
+                    ChipRow(GlassArea.entries, settings.glassArea) { onEffect(settings.copy(glassArea = it)) }
+                    // The fallback only concerns a blur that follows the wave; frost is drawn, so it always can.
+                    val fallback = settings.glassBlur != GlassBlur.OFF
+                    OptionBody(settings.glassArea) { area ->
+                        val body = stringResource(area.body)
+                        if (area == GlassArea.SCREEN || !fallback) body else body + " " + stringResource(R.string.glass_area_fallback)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** What the glass options are set to, in one sentence, leaving out what is off or not offered. */
+internal fun glassPhrasing(settings: GlowSettings): Phrasing {
+    val onBlack = settings.arrival.onBlack
+    // On a black screen there is nothing to blur, so only the frost is said.
+    val parts = listOfNotNull(
+        settings.glassBlur.phrase.takeIf { !onBlack && settings.glassBlur != GlassBlur.OFF },
+        settings.glassFrost.phrase.takeIf { settings.glassFrost != GlassFrost.OFF },
+    )
+    val area = settings.glassArea.phrase
+    return when {
+        parts.isEmpty() -> Phrasing(R.string.glass_summary_none)
+        onBlack -> Phrasing(R.string.glass_summary_black, parts)
+        parts.size == 2 -> Phrasing(R.string.glass_summary_both, parts + area)
+        else -> Phrasing(R.string.glass_summary_one, parts + area)
+    }
+}
+
 /** One tile per element; the blade slides to the chosen one and its glyph lights in its colour. */
 @Composable
-internal fun ElementPicker(selected: SpawnElement, onSelect: (SpawnElement) -> Unit) {
+private fun ElementPicker(selected: SpawnElement, onSelect: (SpawnElement) -> Unit) {
     SelectionRow(
         count = SpawnElement.entries.size,
         selected = selected.ordinal,
@@ -84,7 +203,7 @@ internal fun ElementPicker(selected: SpawnElement, onSelect: (SpawnElement) -> U
 
 /** Says a premium element is one, and that it is free to try for now. */
 @Composable
-internal fun PremiumLine() {
+private fun PremiumLine() {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Sparkle(PremiumTint, Modifier.size(SPARKLE_SIZE))
         Spacer(Modifier.width(8.dp))
@@ -111,7 +230,6 @@ private fun Sparkle(color: Color, modifier: Modifier) {
 /** The colour an element's glyph lights in when chosen. */
 private val SpawnElement.accent: Color
     get() = when (this) {
-        SpawnElement.NONE -> GlowPalette.TextPrimary
         SpawnElement.FIRE -> Color(0xFFFF7A2F)
         SpawnElement.WATER -> GlowPalette.Cyan
         SpawnElement.AIR -> Color(0xFFB8D4E3)
@@ -120,11 +238,6 @@ private val SpawnElement.accent: Color
 
 /** Glyph outlines on a 24-unit grid, stroked rather than filled, as the app's other marks are. */
 private val GLYPHS: Map<SpawnElement, List<Path>> = mapOf(
-    // A circle struck through.
-    SpawnElement.NONE to listOf(
-        "M12 4.5 A7.5 7.5 0 1 1 11.99 4.5 Z",
-        "M6.7 17.3 L17.3 6.7",
-    ),
     // A flame with a smaller one inside.
     SpawnElement.FIRE to listOf(
         "M12 2.5 C13 6.5 18 8.5 18 14.2 C18 18 15.3 21 12 21 C8.7 21 6 18 6 14.2 " +

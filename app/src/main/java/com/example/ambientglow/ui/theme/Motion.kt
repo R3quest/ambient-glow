@@ -52,6 +52,9 @@ object GlowMotion {
     /** A state turning (selection, tint, dim): eased both ways, read in draw where it can be. */
     fun <T> stateChange(): TweenSpec<T> = tween(STATE_MS, easing = FastOutSlowInEasing)
 
+    /** A chevron turning as its disclosure opens or closes: the same springs as the space, so they land together. */
+    fun chevronTurn(open: Boolean): SpringSpec<Float> = spring(1f, if (open) 500f else 700f)
+
     /** Selection that slides (chips, swatches): near-critical, so long hops barely overshoot. */
     val Slide: SpringSpec<Float> = spring(dampingRatio = 0.85f, stiffness = 600f)
 }

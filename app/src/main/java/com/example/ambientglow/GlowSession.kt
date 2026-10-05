@@ -63,6 +63,18 @@ object GlowPending {
 enum class WakeMode { WAKE, LED, ARRIVAL }
 
 /**
+ * How a new message opens the glow screen when none is on top: on the lock screen without
+ * covering it, so every later switch can happen in place. With a black arrival and the screen
+ * off it lights straight into the black panel instead: into the effect, or with no effect, into
+ * the LED itself.
+ */
+internal fun wakeModeFor(arrival: ArrivalMode, screenOn: Boolean): WakeMode = when {
+    screenOn || !arrival.onBlack -> WakeMode.WAKE
+    arrival.playsEffect -> WakeMode.ARRIVAL
+    else -> WakeMode.LED
+}
+
+/**
  * In-process link between the listener and a live glow screen (both on the main thread of
  * one process). While the glow screen is on top of the lock screen it handles every lock-flow
  * change itself; the listener only takes over when there is no glow screen on top.
