@@ -44,6 +44,11 @@ android {
         buildConfig = false
     }
 
+    testOptions {
+        // Pure-Kotlin logic only; any android.* call returns a default instead of throwing.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += setOf(
@@ -68,4 +73,6 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.material3)
+
+    testImplementation(libs.junit)
 }

@@ -7,10 +7,11 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.Choreographer
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.animation.DecelerateInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ class GlowShield : AccessibilityService() {
     private val hideNow = Runnable { removeCover() }
     private val stopArrivalNow = Runnable { removeArrival() }
     private var cover: View? = null
+    private var dim: Dim? = null
     private var arrival: FrameLayout? = null
     private var arrivalOwner: OverlayOwner? = null
     private var arrivalParams: WindowManager.LayoutParams? = null
@@ -112,19 +114,39 @@ class GlowShield : AccessibilityService() {
         addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
         cover = view
         GlowLog.d("shield dimming")
-        view.animate()
-            .alpha(1f)
-            .setDuration(durationMs)
-            .setInterpolator(DIM_EASE)
-            .withEndAction { if (cover === view) removeArrival() }
+        dim = Dim(view, durationMs).also { Choreographer.getInstance().postFrameCallback(it) }
+    }
+
+    /**
+     * The takeover dim, frame by frame on real time: a view animator follows the system animator
+     * scale, so at 0.5x the dim would be half as long and at 0 a cut to black. An S-curve, since
+     * alpha blends gamma-encoded values: an eased-in start and a long settle read as even dimming,
+     * where a decelerate drops most of the light in the first frames. Bounded: it ends by itself.
+     */
+    private inner class Dim(private val view: View, private val durationMs: Long) : Choreographer.FrameCallback {
+        private var startNanos = -1L
+
+        override fun doFrame(frameTimeNanos: Long) {
+            if (cover !== view) return
+            if (startNanos < 0L) startNanos = frameTimeNanos
+            val f = ((frameTimeNanos - startNanos) / 1_000_000f / durationMs).coerceIn(0f, 1f)
+            view.alpha = DIM_EASE.getInterpolation(f)
+            if (f < 1f) {
+                Choreographer.getInstance().postFrameCallback(this)
+            } else {
+                dim = null
+                removeArrival()
+            }
+        }
     }
 
     private fun removeCover() {
         timers.removeCallbacks(hideNow)
         val view = cover ?: return
         cover = null
-        // A cancelled dim skips its end action, so it can never remove a newer arrival.
-        view.animate().cancel()
+        // A cancelled dim never reaches its end, so it can never remove a newer arrival.
+        dim?.let { Choreographer.getInstance().removeFrameCallback(it) }
+        dim = null
         runCatching { windowManager.removeViewImmediate(view) }
         GlowLog.d("shield down")
     }
@@ -317,7 +339,7 @@ class GlowShield : AccessibilityService() {
         // Alpha eases out so the remaining light falls about evenly to the eye (perceived lightness
         // is roughly the cube root of luminance); a linear or accelerating alpha holds the screen
         // bright and then snaps to black.
-        private val DIM_EASE = DecelerateInterpolator()
+        private val DIM_EASE = PathInterpolator(0.33f, 0f, 0.2f, 1f)
 
         // Set only while the system has the service bound; cleared in onUnbind/onDestroy.
         @SuppressLint("StaticFieldLeak")

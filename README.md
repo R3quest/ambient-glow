@@ -19,4 +19,4 @@ Ambient Glow is an ultra-lightweight, high-performance, and privacy-first Androi
 1. Clone the repository.
 2. Open the project inside Android Studio.
 3. Build and deploy to your device.
-4. Open the app and tap **"Authorize Ambient Glow"** to grand Notification Listener permissions.
+4. Open the app and tap **"Authorize Ambient Glow"** to grant Notification Listener permissions.

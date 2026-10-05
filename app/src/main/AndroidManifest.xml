@@ -29,19 +29,28 @@
         android:theme="@style/Theme.AmbientGlow"
         tools:targetApi="35">
 
+        <!-- Portrait: LED positions, spots and the camera fit are saved as fractions of the
+             portrait screen; worked out in landscape they would land elsewhere on the panel.
+             Phones keep honouring it; only large screens may ignore it (Android 16+). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            tools:ignore="DiscouragedApi,LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- Never recreated: a recreate would replay its launch intent mid-session (uncover the
+             lock screen, replay the effect). It draws only black and the LED, so it takes every
+             change in place. No fixed orientation: its theme is translucent, and Android 8.0
+             refuses translucent activities that fix one. -->
         <activity
             android:name=".WakeScreenActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|touchscreen|uiMode|density|fontScale|fontWeightAdjustment|locale|layoutDirection|colorMode|mcc|mnc"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"

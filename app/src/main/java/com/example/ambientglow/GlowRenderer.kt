@@ -69,7 +69,9 @@ const val DOT_HALO_FACTOR = 2f
 
 /** Punch-hole position in window pixels. */
 @Immutable
-data class CutoutSpot(val centerX: Float, val centerY: Float, val radius: Float)
+data class CutoutSpot(val centerX: Float, val centerY: Float, val radius: Float) {
+    val center: Offset get() = Offset(centerX, centerY)
+}
 
 /** Real display geometry, known only inside the wake window; previews use [Unknown]. */
 @Immutable
@@ -86,6 +88,17 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
             ),
         )
     }
+
+    /**
+     * The camera hole, or where one usually is when the display reports none (previews, phones
+     * without a punch-hole): top centre, at [metrics]' fallback size times [scale].
+     */
+    fun lens(width: Float, density: Float, scale: Float = 1f, metrics: GlowMetrics = GlowMetrics.FullScreen): CutoutSpot =
+        cutout ?: CutoutSpot(
+            centerX = width / 2f,
+            centerY = metrics.fallbackCameraCenterY.value * density * scale,
+            radius = metrics.fallbackCameraRadius.value * density * scale,
+        )
 
     companion object {
         val Unknown = ScreenGeometry(cutout = null, cornerRadiusPx = null)
@@ -158,8 +171,6 @@ fun GlowGraphic(
                 haloDotRadius = dotRadius.toPx() * DOT_HALO_FACTOR,
                 ringGap = metrics.ringGap.toPx(),
                 cornerRadius = metrics.fallbackCornerRadius.toPx(),
-                cameraCenterY = metrics.fallbackCameraCenterY.toPx(),
-                cameraRadius = metrics.fallbackCameraRadius.toPx(),
             )
         }
     }
@@ -190,13 +201,9 @@ fun GlowGraphic(
             }
 
             GlowStyle.CAMERA_RING -> {
-                val spot = geometry.cutout
-                val center = if (spot != null) {
-                    Offset(spot.centerX, spot.centerY)
-                } else {
-                    Offset(size.width / 2f, px.cameraCenterY)
-                }
-                val ringRadius = (spot?.radius ?: px.cameraRadius) + px.ringGap + px.stroke / 2f
+                val lens = geometry.lens(size.width, this.density, metrics = metrics)
+                val center = lens.center
+                val ringRadius = lens.radius + px.ringGap + px.stroke / 2f
                 drawCircle(
                     color = halo,
                     radius = ringRadius + px.stroke / 2f + px.haloStroke / 2f,
@@ -235,6 +242,4 @@ private data class ResolvedMetrics(
     val haloDotRadius: Float,
     val ringGap: Float,
     val cornerRadius: Float,
-    val cameraCenterY: Float,
-    val cameraRadius: Float,
 )

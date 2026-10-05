@@ -15,7 +15,7 @@ LINT_REPORT := app/build/reports/lint-results-debug.txt
 SDK_PACKAGES := "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 
 .DEFAULT_GOAL := help
-.PHONY: help debug release bundle lint check install install-release launch \
+.PHONY: help debug release bundle lint test check install install-release launch \
         uninstall devices apks clean stop sdk
 
 help: ## List available targets
@@ -34,7 +34,10 @@ lint: ## Run Android lint and print the summary
 	$(GRADLE) lintDebug
 	@tail -n 1 $(LINT_REPORT)
 
-check: lint debug release ## Lint + debug + release: the full pre-deploy gate
+test: ## Run the JVM unit tests
+	$(GRADLE) testDebugUnitTest
+
+check: lint test debug release ## Lint + tests + debug + release: the full pre-deploy gate
 
 install: debug ## Build and install the debug APK on the connected device
 	$(ADB) install -r $(DEBUG_APK)

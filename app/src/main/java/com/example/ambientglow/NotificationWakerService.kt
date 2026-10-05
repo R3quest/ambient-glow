@@ -7,14 +7,6 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Rect
-import android.graphics.drawable.Drawable
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
@@ -24,11 +16,7 @@ import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import androidx.core.graphics.ColorUtils
-import androidx.core.graphics.createBitmap
 import androidx.core.os.BundleCompat
-import androidx.palette.graphics.Palette
 
 /**
  * Purely reactive: it runs only when the system calls onNotificationPosted/Removed or the
@@ -50,11 +38,8 @@ class NotificationWakerService : NotificationListenerService() {
         power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply { setReferenceCounted(false) }
     }
 
-    // One small bitmap, allocated per listener connection and reused for every icon, so
-    // colour extraction triggers no per-notification bitmap allocation or GC pressure.
-    private var iconBitmap: Bitmap? = null
-    private var iconCanvas: Canvas? = null
-    private val savedBounds = Rect()
+    // Its icon bitmap is allocated per listener connection and reused for every message.
+    private val brandColors by lazy(LazyThreadSafetyMode.NONE) { BrandColors(this) }
     private val ranking = Ranking()
 
     private var lastWakeAt = 0L
@@ -84,27 +69,17 @@ class NotificationWakerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         GlowLauncher.ensureChannel(this)
-        obtainIconCanvas()
+        brandColors.prepare()
         pruneStalePending()
         if (!screenReceiverRegistered) {
-            ContextCompat.registerReceiver(
-                this,
-                screenEvents,
-                IntentFilter().apply {
-                    addAction(Intent.ACTION_SCREEN_OFF)
-                    addAction(Intent.ACTION_SCREEN_ON)
-                },
-                ContextCompat.RECEIVER_NOT_EXPORTED,
-            )
+            registerScreenEvents(screenEvents)
             screenReceiverRegistered = true
         }
     }
 
     override fun onListenerDisconnected() {
         releaseScreenReceiver()
-        iconBitmap?.recycle()
-        iconBitmap = null
-        iconCanvas = null
+        brandColors.release()
         requestRebind(ComponentName(this, NotificationWakerService::class.java))
     }
 
@@ -125,8 +100,7 @@ class NotificationWakerService : NotificationListenerService() {
         val quietUpdate = sbn.notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 &&
             previous != null && newestAt <= previous.newestAt
 
-        val icon = applicationInfoFor(sbn)?.let { loadIcon(it) }
-        val color = extractBrandColor(sbn, icon)
+        val color = brandColors.of(sbn)
         GlowPending.put(PendingGlow(key = sbn.key, color = color, newestAt = newestAt))
         val host = GlowSession.host
         GlowLog.d(
@@ -151,7 +125,7 @@ class NotificationWakerService : NotificationListenerService() {
         }
         // Unlocked and in use: the heads-up is enough; the LED waits for screen-off.
         if (power.isInteractive && !keyguard.isKeyguardLocked) return
-        if (inCall()) return
+        if (audio.inCall) return
         if (SystemClock.elapsedRealtime() - lastWakeAt < WAKE_DEBOUNCE_MS) return
         // Put the glow screen on top of the lock screen without covering it (and light the
         // panel if it is off), so every later switch can happen in place. With a black arrival
@@ -168,7 +142,7 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     private fun relightIfWaiting() {
-        if (power.isInteractive || inCall() || GlowPending.isEmpty) return
+        if (power.isInteractive || audio.inCall || GlowPending.isEmpty) return
         if (GlowSession.host?.isAway == false) return // it came back on top in the meantime
         // With a delayed auto-lock the phone is still unlocked here; the glow screen would only
         // step aside again. The next wake or message (on the lock screen) brings it back.
@@ -181,11 +155,16 @@ class NotificationWakerService : NotificationListenerService() {
         launch(WakeMode.LED, newest.color)
     }
 
-    /** Drops entries whose notification is gone, in case a removal was missed (e.g. during a rebind). */
+    /**
+     * Drops entries whose notification is gone, in case a removal was missed (e.g. during a rebind).
+     * Asks only for the waiting keys: the full list would parcel every notification in the shade,
+     * pictures included, on each relight.
+     */
     private fun pruneStalePending() {
         if (GlowPending.isEmpty) return
+        val keys = Array(GlowPending.entries.size) { GlowPending.entries[it].key }
         val active = try {
-            activeNotifications?.mapTo(HashSet()) { it.key } ?: return
+            getActiveNotifications(keys)?.mapTo(HashSet()) { it.key } ?: return
         } catch (_: SecurityException) {
             return // not connected yet
         }
@@ -198,9 +177,6 @@ class NotificationWakerService : NotificationListenerService() {
         if (!launched) wakeLock.release()
         return launched
     }
-
-    /** Proximity blanks the screen during calls; never light up over a call. */
-    private fun inCall(): Boolean = audio.mode != AudioManager.MODE_NORMAL
 
     private fun releaseScreenReceiver() {
         mainHandler.removeCallbacks(relightLed)
@@ -245,88 +221,11 @@ class NotificationWakerService : NotificationListenerService() {
         return if (newest > 0L) newest else notification.`when`
     }
 
-    // ------------------------------------------------------------------------------------
-    // Brand colour
-    // ------------------------------------------------------------------------------------
-
-    /**
-     * The posting app's ApplicationInfo. Notification.Builder embeds it in the extras, which
-     * works without package visibility; the <queries> launcher entry covers the rest.
-     */
-    private fun applicationInfoFor(sbn: StatusBarNotification): ApplicationInfo? =
-        BundleCompat.getParcelable(sbn.notification.extras, EXTRA_APP_INFO, ApplicationInfo::class.java)
-            ?: try {
-                packageManager.getApplicationInfo(sbn.packageName, 0)
-            } catch (_: PackageManager.NameNotFoundException) {
-                null
-            }
-
-    private fun loadIcon(appInfo: ApplicationInfo): Drawable? = try {
-        packageManager.getApplicationIcon(appInfo)
-    } catch (_: Exception) {
-        null
-    }
-
-    /** Dominant brand colour of the sender's app icon, adjusted so it reads on a black panel. */
-    private fun extractBrandColor(sbn: StatusBarNotification, icon: Drawable?): Int {
-        val accent = sbn.notification.color.takeIf { it != Notification.COLOR_DEFAULT && Color.alpha(it) != 0 }
-        // Test messages carry their own colour so the locked test shows the colour loop.
-        if (sbn.packageName == packageName && accent != null) return accent
-        if (icon == null) return legibleOnBlack(accent ?: DEFAULT_GLOW_COLOR)
-        val bitmap = renderIcon(icon)
-
-        val palette = Palette.from(bitmap)
-            .resizeBitmapArea(ICON_SIZE_PX * ICON_SIZE_PX) // already small: skip the internal rescale copy
-            .maximumColorCount(PALETTE_COLORS)
-            .generate()
-        val swatch = palette.vibrantSwatch
-            ?: palette.lightVibrantSwatch
-            ?: palette.dominantSwatch
-            ?: palette.mutedSwatch
-
-        return legibleOnBlack(swatch?.rgb ?: accent ?: DEFAULT_GLOW_COLOR)
-    }
-
-    /** Draws [icon] into the shared icon bitmap (no allocation) and returns that bitmap. */
-    private fun renderIcon(icon: Drawable): Bitmap {
-        val canvas = obtainIconCanvas()
-        val bitmap = checkNotNull(iconBitmap)
-        bitmap.eraseColor(Color.TRANSPARENT)
-        icon.copyBounds(savedBounds)
-        icon.setBounds(0, 0, ICON_SIZE_PX, ICON_SIZE_PX)
-        icon.draw(canvas)
-        icon.bounds = savedBounds
-        return bitmap
-    }
-
-    private fun obtainIconCanvas(): Canvas {
-        iconCanvas?.let { return it }
-        val bitmap = createBitmap(ICON_SIZE_PX, ICON_SIZE_PX)
-        iconBitmap = bitmap
-        return Canvas(bitmap).also { iconCanvas = it }
-    }
-
-    private fun legibleOnBlack(color: Int): Int {
-        val opaque = ColorUtils.setAlphaComponent(color, 0xFF)
-        return if (ColorUtils.calculateLuminance(opaque) < MIN_LUMINANCE) {
-            ColorUtils.blendARGB(opaque, Color.WHITE, DARK_LIFT)
-        } else {
-            opaque
-        }
-    }
-
     private companion object {
         const val WAKE_LOCK_TAG = "AmbientGlow:wake"
         const val WAKE_LOCK_TIMEOUT_MS = 4_000L
         /** Lets the sleep transition (and keyguard lock) finish before waking the panel again. */
         const val RELIGHT_DELAY_MS = 400L
-        const val ICON_SIZE_PX = 96
-        const val PALETTE_COLORS = 12
-        const val MIN_LUMINANCE = 0.12
-        const val DARK_LIFT = 0.42f
-
-        /** Notification.EXTRA_BUILDER_APPLICATION_INFO (hidden constant, stable since API 24). */
-        const val EXTRA_APP_INFO = "android.appInfo"
 
         /** Notification.MessagingStyle.Message's timestamp key inside each EXTRA_MESSAGES bundle. */
         const val KEY_MESSAGE_TIME = "time"

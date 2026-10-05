@@ -84,7 +84,7 @@ internal fun hazeAt(ms: Float, area: GlassArea): Float {
 /** When the haze has cleared, in ms into the effect (for the swim-out frost, a cap). */
 internal fun hazeEndMs(area: GlassArea): Float = when (area) {
     GlassArea.SCREEN -> SPAWN_GATHER_MS + SCREEN_CLEAR_TO_MS
-    GlassArea.WAVE -> SPAWN_GATHER_MS + 0.85f * SPAWN_MS
+    GlassArea.WAVE -> SPAWN_GATHER_MS + 0.88f * SPAWN_MS
     GlassArea.REVEAL -> SPAWN_GATHER_MS + SPAWN_MS
 }
 
@@ -98,7 +98,7 @@ fun interface GlassHazeTarget {
 }
 
 /**
- * Where the blur is, as a soft mask in [color] to scale by the wave (drawn blurs and frost), or
+ * Where the blur is, as a soft mask in [color] to scale by the wave (drawn blurs, and the frost's base), or
  * null for the whole screen. The swim-out mask runs past the gradient's end, so all the screen
  * the wave hasn't reached yet is covered.
  */
