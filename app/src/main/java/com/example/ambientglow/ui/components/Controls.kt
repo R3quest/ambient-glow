@@ -393,10 +393,11 @@ internal fun Disclosure(visible: Boolean, content: @Composable AnimatedVisibilit
 /**
  * Options folded away under a titled row until wanted; [summary] says in a sentence what they are
  * set to, so the closed row still reads. Unfolds like a [Disclosure], carrying its own gap, and remembers
- * being open while its page is away.
+ * being open while its page is away. Not [enabled], it shows shut and can't be opened; enabled
+ * again, it is as it was left.
  */
 @Composable
-internal fun Fold(title: String, summary: String, content: @Composable () -> Unit) {
+internal fun Fold(title: String, summary: String, enabled: Boolean = true, content: @Composable () -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
     val turn by animateFloatAsState(if (open) 180f else 0f, GlowMotion.chevronTurn(open), label = "fold")
     val state = stringResource(if (open) R.string.fold_open else R.string.fold_closed)
@@ -406,7 +407,7 @@ internal fun Fold(title: String, summary: String, content: @Composable () -> Uni
                 .fillMaxWidth()
                 .rowBleed()
                 .clip(GlowShapes.Tile)
-                .clickable(role = Role.Button) { open = !open }
+                .clickable(enabled = enabled, role = Role.Button) { open = !open }
                 .semantics { stateDescription = state }
                 .padding(horizontal = RowBleed, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -429,7 +430,7 @@ internal fun Fold(title: String, summary: String, content: @Composable () -> Uni
             Spacer(Modifier.width(16.dp))
             Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = turn })
         }
-        Disclosure(visible = open) {
+        Disclosure(visible = open && enabled) {
             Box(Modifier.padding(top = 14.dp)) { content() }
         }
     }

@@ -35,8 +35,6 @@
     <string name="element_earth_body">The light grows out of the camera like roots and new leaves.</string>
     <string name="element_premium">PREMIUM · FREE TO TRY FOR NOW</string>
     <string name="element_premium_mark">Premium</string>
-    <string name="element_needs_spawn">Elements play in the spawn wave, which is off.</string>
-    <string name="element_spawn_on">Turn on</string>
     <string name="element_soon">Coming soon: it plays as the bare wave for now.</string>
     <string name="effects_off_title">Effects are off</string>
     <string name="effects_off_body">With Just the LED, new messages skip the effect and go straight to the dot. Pick a screen that plays an effect to style it here.</string>

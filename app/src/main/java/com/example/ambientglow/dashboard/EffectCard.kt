@@ -68,7 +68,6 @@ import com.example.ambientglow.ui.components.GhostButton
 import com.example.ambientglow.ui.components.OptionBody
 import com.example.ambientglow.ui.components.OptionGroup
 import com.example.ambientglow.ui.components.SectionLabel
-import com.example.ambientglow.ui.components.ToggleRow
 import com.example.ambientglow.ui.components.glowCard
 import com.example.ambientglow.ui.components.selectionSurface
 import com.example.ambientglow.ui.theme.GlowMotion
@@ -77,8 +76,8 @@ import com.example.ambientglow.ui.theme.GlowShapes
 import kotlin.math.ceil
 
 // ---------------------------------------------------------------------------------------------
-// The EFFECT tab: the look (live preview, style, try-out colour), Edge Frame's options, the spawn
-// wave, and the card that stands in for them all with Just the LED. The element is in ElementCard.
+// The EFFECT tab: the look (live preview, style, try-out colour), Edge Frame's options, and the
+// card that stands in for them all with Just the LED. The spawn wave and its element are in ElementCard.
 // ---------------------------------------------------------------------------------------------
 
 private val PickerPhoneHeight: Dp = 46.dp
@@ -184,19 +183,6 @@ internal fun EffectsOffCard(onChooseScreen: () -> Unit) {
         )
         Spacer(Modifier.height(6.dp))
         GhostButton(text = stringResource(R.string.effects_off_action), emphasized = true, onClick = onChooseScreen)
-    }
-}
-
-/** How the effect starts: an AirDrop-style wave from the camera, which the element rides. */
-@Composable
-internal fun SpawnCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
-    Column(Modifier.glowCard()) {
-        ToggleRow(
-            title = stringResource(R.string.effect_spawn_title),
-            body = stringResource(R.string.effect_spawn_body),
-            checked = settings.spawn,
-            onChange = { onEffect(settings.copy(spawn = it)) },
-        )
     }
 }
 

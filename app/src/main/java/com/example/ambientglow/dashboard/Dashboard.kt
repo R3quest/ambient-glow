@@ -467,10 +467,9 @@ private fun EffectPage(
                         onStyle = { style -> onEffect(settings.copy(style = style)) },
                         onSample = onSample,
                     )
-                    ElementCard(settings, onEffect)
                     // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
                     Column {
-                        SpawnCard(settings, onEffect)
+                        ElementCard(settings, onEffect)
                         Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
                             Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
                         }

@@ -84,7 +84,8 @@ private val CHIP_GAP = 6.dp
  * labels in draw, so it doesn't recompose. [chip] draws a chip's content; [lit] says how much
  * of the blade is under it (1 when it rests there), read in draw, so a label lights as the
  * blade arrives rather than as the pick is made. Taller rows ([height]) hold tiles: an icon over
- * a label, with less [inset] so the label has the width.
+ * a label, with less [inset] so the label has the width. Not [enabled], no chip can be picked;
+ * whoever holds the row dims it.
  */
 @Composable
 internal fun SelectionRow(
@@ -93,6 +94,7 @@ internal fun SelectionRow(
     onSelect: (Int) -> Unit,
     height: Dp = CHIP_HEIGHT,
     inset: Dp = 8.dp,
+    enabled: Boolean = true,
     chip: @Composable RowScope.(index: Int, lit: () -> Float) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -141,7 +143,7 @@ internal fun SelectionRow(
                         .weight(1f)
                         .fillMaxHeight()
                         .clip(GlowShapes.Pill)
-                        .selectable(selected = on, role = Role.RadioButton) {
+                        .selectable(selected = on, enabled = enabled, role = Role.RadioButton) {
                             if (!on) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             onSelect(index)
                         }

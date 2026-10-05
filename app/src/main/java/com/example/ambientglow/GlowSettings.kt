@@ -238,9 +238,6 @@ data class GlowSettings(
     }
 }
 
-/** Every element is a look of the spawn wave, so picking one turns the wave on. */
-fun GlowSettings.withElement(element: SpawnElement): GlowSettings = copy(element = element, spawn = true)
-
 /**
  * This look as the arrival effect sees it: LED-only fields reset, so moving or sizing the LED
  * doesn't restart effect previews. Keep in step with what ArrivalEffect reads: BeaconArrival

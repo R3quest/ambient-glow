@@ -54,13 +54,4 @@ class ArrivalTest {
         assertFalse(defaults.element.premium)
         assertTrue(defaults.element.ready)
     }
-
-    @Test
-    fun pickingAnElementTurnsTheSpawnWaveOn() {
-        val off = GlowSettings(spawn = false, element = SpawnElement.WATER)
-        val picked = off.withElement(SpawnElement.FIRE)
-        assertEquals(SpawnElement.FIRE, picked.element)
-        assertTrue(picked.spawn)
-        assertEquals(off.copy(element = SpawnElement.FIRE, spawn = true), picked)
-    }
 }

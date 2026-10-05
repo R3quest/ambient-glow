@@ -1,5 +1,6 @@
 package com.example.ambientglow.dashboard
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.res.stringResource
@@ -36,72 +38,84 @@ import com.example.ambientglow.GlassFrost
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.R
 import com.example.ambientglow.SpawnElement
-import com.example.ambientglow.withElement
 import com.example.ambientglow.ui.components.CardDivider
 import com.example.ambientglow.ui.components.ChipLabel
 import com.example.ambientglow.ui.components.ChipRow
 import com.example.ambientglow.ui.components.Disclosure
 import com.example.ambientglow.ui.components.Fold
-import com.example.ambientglow.ui.components.NoticeRow
 import com.example.ambientglow.ui.components.OptionBody
 import com.example.ambientglow.ui.components.OptionGroup
 import com.example.ambientglow.ui.components.OptionNote
 import com.example.ambientglow.ui.components.SectionLabel
 import com.example.ambientglow.ui.components.SelectionRow
+import com.example.ambientglow.ui.components.ToggleRow
 import com.example.ambientglow.ui.components.glowCard
+import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
 
 // ---------------------------------------------------------------------------------------------
-// The element the effect takes after: a row of tiles, each a line-drawn glyph over its name (a
-// sparkle on the premium ones), what the chosen one does, and its own options (Water's glass).
+// The spawn wave's switch, then the element it takes after: a row of tiles, each a line-drawn
+// glyph over its name (a sparkle on the premium ones), what the chosen one does, and its own
+// options (Water's glass).
 // ---------------------------------------------------------------------------------------------
 
 private val TILE_HEIGHT = 64.dp
 private val GLYPH_SIZE = 22.dp
 private val SPARKLE_SIZE = 9.dp
 
+/** How far the elements fade while the spawn wave they play in is off. */
+private const val DIMMED = 0.45f
+
 /** Premium's mark: the brand magenta, kept apart from the amber the app warns in. */
 private val PremiumTint = GlowPalette.Magenta
 
 /**
- * The element the effect takes after, under the preview that shows it. Each element folds its
- * own options under the picker, so adding one adds a fold, not a wall of chips. Every element is
- * a look of the spawn wave: picking one turns the wave on, and with it off the card says so.
+ * The spawn wave and the element it takes after, under the preview that shows it. The wave's
+ * switch heads the card since every element is a look of it; with it off the elements and their
+ * options dim and can't be changed. Each element folds its own options under the picker, so
+ * adding one adds a fold, not a wall of chips.
  */
 @Composable
 internal fun ElementCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
     val element = settings.element
+    val presence = animateFloatAsState(if (settings.spawn) 1f else DIMMED, GlowMotion.stateChange(), label = "dim")
     // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
     Column(Modifier.glowCard()) {
         SectionLabel(stringResource(R.string.element), GlowPalette.Cyan)
+        Spacer(Modifier.height(12.dp))
+        ToggleRow(
+            title = stringResource(R.string.effect_spawn_title),
+            body = stringResource(R.string.effect_spawn_body),
+            checked = settings.spawn,
+            onChange = { onEffect(settings.copy(spawn = it)) },
+        )
+        Spacer(Modifier.height(12.dp))
+        CardDivider()
         Spacer(Modifier.height(16.dp))
-        ElementPicker(element) { picked ->
-            onEffect(settings.withElement(picked))
-        }
-        Spacer(Modifier.height(10.dp))
-        OptionBody(element) { shown ->
-            val body = stringResource(shown.body)
-            if (shown.ready) body else body + " " + stringResource(R.string.element_soon)
-        }
-        Disclosure(visible = element.premium) {
-            Box(Modifier.padding(top = 10.dp)) { PremiumLine() }
-        }
-        Disclosure(visible = !settings.spawn) {
-            Box(Modifier.padding(top = 14.dp)) {
-                NoticeRow(
-                    text = stringResource(R.string.element_needs_spawn),
-                    action = stringResource(R.string.element_spawn_on),
-                    onAction = { onEffect(settings.copy(spawn = true)) },
-                )
+        Column(Modifier.graphicsLayer { alpha = presence.value }) {
+            ElementPicker(element, enabled = settings.spawn) { picked ->
+                onEffect(settings.copy(element = picked))
             }
-        }
-        // Only Water has options so far; the other elements get a fold here as they get a look.
-        Disclosure(visible = element == SpawnElement.WATER) {
-            Column(Modifier.padding(top = 12.dp)) {
-                CardDivider()
-                Spacer(Modifier.height(10.dp))
-                Fold(title = stringResource(R.string.fold_glass), summary = glassPhrasing(settings).text()) {
-                    GlassOptions(settings, onEffect)
+            Spacer(Modifier.height(10.dp))
+            OptionBody(element) { shown ->
+                val body = stringResource(shown.body)
+                if (shown.ready) body else body + " " + stringResource(R.string.element_soon)
+            }
+            Disclosure(visible = element.premium) {
+                Box(Modifier.padding(top = 10.dp)) { PremiumLine() }
+            }
+            // Only Water has options so far; the other elements get a fold here as they get a look.
+            Disclosure(visible = element == SpawnElement.WATER) {
+                Column(Modifier.padding(top = 12.dp)) {
+                    CardDivider()
+                    Spacer(Modifier.height(10.dp))
+                    Fold(
+                        title = stringResource(R.string.fold_glass),
+                        summary = glassPhrasing(settings).text(),
+                        enabled = settings.spawn,
+                    ) {
+                        GlassOptions(settings, onEffect)
+                    }
                 }
             }
         }
@@ -167,13 +181,14 @@ internal fun glassPhrasing(settings: GlowSettings): Phrasing {
 
 /** One tile per element; the blade slides to the chosen one and its glyph lights in its colour. */
 @Composable
-private fun ElementPicker(selected: SpawnElement, onSelect: (SpawnElement) -> Unit) {
+private fun ElementPicker(selected: SpawnElement, enabled: Boolean, onSelect: (SpawnElement) -> Unit) {
     SelectionRow(
         count = SpawnElement.entries.size,
         selected = selected.ordinal,
         onSelect = { onSelect(SpawnElement.entries[it]) },
         height = TILE_HEIGHT,
         inset = 2.dp,
+        enabled = enabled,
     ) { index, lit ->
         val element = SpawnElement.entries[index]
         // The tile's top end is its square corner: the sparkle sits there, clear of the glyph.
