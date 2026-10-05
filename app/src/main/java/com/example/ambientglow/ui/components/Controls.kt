@@ -36,7 +36,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderColors
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -46,7 +45,9 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +59,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
@@ -74,15 +74,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.ambientglow.R
 import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
 
 // ---------------------------------------------------------------------------------------------
-// Dashboard building blocks: headings, cards, rows, buttons, steppers, sliders.
+// Dashboard building blocks: headings, cards, rows, folds, buttons, steppers, sliders.
 // ---------------------------------------------------------------------------------------------
 
 /** A numbered heading with one line of context, then its cards. */
@@ -119,12 +121,33 @@ internal fun SettingsGroup(
     }
 }
 
-internal fun Modifier.glowCard(): Modifier = this
+/** [vertical] is less for a card that is one row (a fold), so it sits as tall as a row. */
+internal fun Modifier.glowCard(vertical: Dp = 20.dp): Modifier = this
     .fillMaxWidth()
     .clip(GlowShapes.Card)
     .background(GlowPalette.Surface)
     .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Card)
-    .padding(20.dp)
+    .padding(horizontal = 20.dp, vertical = vertical)
+
+/** How far a tappable row's highlight reaches past its text, into the card's padding. */
+private val RowBleed = 12.dp
+
+/**
+ * Widens a full-width row by [RowBleed] each side while its content stays in line with the
+ * card's: the tile's rounded corners, and the press highlight, then sit clear of the text.
+ * Applied before the row's clip; [rowBleedPadding] puts the text back.
+ */
+private fun Modifier.rowBleed(): Modifier = layout { measurable, constraints ->
+    val bleed = RowBleed.roundToPx()
+    val wide = constraints.copy(
+        minWidth = constraints.minWidth + bleed * 2,
+        maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth + bleed * 2 else constraints.maxWidth,
+    )
+    val placeable = measurable.measure(wide)
+    layout(placeable.width - bleed * 2, placeable.height) { placeable.place(-bleed, 0) }
+}
+
+private fun Modifier.rowBleedPadding(vertical: Dp): Modifier = padding(horizontal = RowBleed, vertical = vertical)
 
 @Composable
 internal fun CardDivider() {
@@ -164,12 +187,13 @@ internal fun ToggleRow(title: String, body: String, checked: Boolean, onChange: 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .rowBleed()
             .clip(GlowShapes.Tile)
             .toggleable(value = checked, role = Role.Switch) {
                 haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
                 onChange(it)
             }
-            .padding(vertical = 6.dp),
+            .rowBleedPadding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -201,7 +225,7 @@ internal fun ToggleRow(title: String, body: String, checked: Boolean, onChange: 
  * dot and title together; it is read in draw, so a pick doesn't recompose the row.
  */
 @Composable
-internal fun RadioRow(title: String, body: String, selected: Boolean, onClick: () -> Unit) {
+internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: () -> Unit) {
     val on = animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = GlowMotion.stateChange(),
@@ -241,7 +265,7 @@ internal fun RadioRow(title: String, body: String, selected: Boolean, onClick: (
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 color = { lerp(GlowPalette.TextMuted, GlowPalette.TextPrimary, on.value) },
             )
-            Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
+            if (body != null) Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
         }
     }
 }
@@ -359,6 +383,52 @@ internal fun Disclosure(visible: Boolean, content: @Composable AnimatedVisibilit
 }
 
 /**
+ * Options folded away under a titled row until wanted; [summary] says in a sentence what they are
+ * set to, so the closed row still reads. Unfolds like a [Disclosure], carrying its own gap, and remembers
+ * being open while its page is away.
+ */
+@Composable
+internal fun Fold(title: String, summary: String, content: @Composable () -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    // Same springs as the space each way (DisclosureEnter / DisclosureExit), so the chevron lands with it.
+    val turn by animateFloatAsState(if (open) 180f else 0f, spring(1f, if (open) 500f else 700f), label = "fold")
+    val state = stringResource(if (open) R.string.fold_open else R.string.fold_closed)
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .rowBleed()
+                .clip(GlowShapes.Tile)
+                .clickable(role = Role.Button) { open = !open }
+                .semantics { stateDescription = state }
+                .rowBleedPadding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    color = GlowPalette.TextPrimary,
+                )
+                AnimatedContent(
+                    targetState = summary,
+                    transitionSpec = { GlowMotion.swap() },
+                    contentAlignment = Alignment.TopStart,
+                    label = "fold-summary",
+                ) { shown ->
+                    Text(text = shown, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
+                }
+            }
+            Spacer(Modifier.width(16.dp))
+            Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = turn })
+        }
+        Disclosure(visible = open) {
+            Box(Modifier.padding(top = 14.dp)) { content() }
+        }
+    }
+}
+
+/**
  * What the chip picked above does: only the selected option's text, crossfaded on a new pick
  * while the space eases to the new height, so the options don't have to be read as a list.
  */
@@ -469,41 +539,6 @@ internal fun Readout(text: String) {
     ) {
         Text(text = text, style = MaterialTheme.typography.labelMedium, color = GlowPalette.TextPrimary)
     }
-}
-
-/** Material Slider rotated 270° with its measured width and height swapped. */
-@Composable
-internal fun VerticalSlider(
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    onValueChangeFinished: () -> Unit,
-    colors: SliderColors,
-    modifier: Modifier = Modifier,
-) {
-    Slider(
-        value = value,
-        onValueChange = onValueChange,
-        onValueChangeFinished = onValueChangeFinished,
-        colors = colors,
-        modifier = modifier
-            .graphicsLayer {
-                rotationZ = 270f
-                transformOrigin = TransformOrigin(0f, 0f)
-            }
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(
-                    Constraints(
-                        minWidth = constraints.minHeight,
-                        maxWidth = constraints.maxHeight,
-                        minHeight = constraints.minWidth,
-                        maxHeight = constraints.maxWidth,
-                    ),
-                )
-                layout(placeable.height, placeable.width) {
-                    placeable.place(-placeable.width, 0)
-                }
-            },
-    )
 }
 
 @Composable

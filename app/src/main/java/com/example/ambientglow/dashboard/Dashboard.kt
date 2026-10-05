@@ -56,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +88,7 @@ import com.example.ambientglow.GlassHazeTarget
 import com.example.ambientglow.GlowLauncher
 import com.example.ambientglow.GlowPrefs
 import com.example.ambientglow.GlowSettings
+import com.example.ambientglow.GlowStyle
 import com.example.ambientglow.R
 import com.example.ambientglow.ScreenGeometry
 import com.example.ambientglow.glassHaze
@@ -106,13 +108,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------------------------------------
-// Dashboard shell: header, tab bar, swipeable pages, the styling page, pinned test dock, and the
-// real-size previews every change starts.
+// Dashboard shell: header, tab bar, swipeable pages (access until it is all granted, then the
+// three steps of a message: effect, screen, LED), pinned test dock, and the real-size previews
+// every change starts.
 // ---------------------------------------------------------------------------------------------
 
+/** The style tabs follow a message: the effect, the screen it plays on, then the LED that waits. */
 private enum class DashboardTab(val label: Int) {
     ACCESS(R.string.tab_access),
-    STYLE(R.string.tab_style),
+    EFFECT(R.string.tab_effect),
+    SCREEN(R.string.tab_screen),
+    LED(R.string.tab_led),
 }
 
 /** Outer margins and the gap between sections: generous, so each block reads on its own. */
@@ -146,10 +152,17 @@ internal fun Dashboard(reported: ScreenGeometry) {
     // inline preview, once. Read again on resume, since it is changed in Settings.
     var reduceMotion by remember { mutableStateOf(!ValueAnimator.areAnimatorsEnabled()) }
 
-    val pager = rememberPagerState(
-        initialPage = DashboardTab.ACCESS.ordinal,
-        pageCount = { DashboardTab.entries.size },
-    )
+    // Access is a tab until everything is granted; after that it lives behind the ARMED pill.
+    val tabs = remember(access.armed) {
+        if (access.armed) DashboardTab.entries - DashboardTab.ACCESS else DashboardTab.entries
+    }
+    val pager = rememberPagerState(pageCount = { tabs.size })
+    // Access coming or going shifts the pages: stay on the tab that was showing.
+    var shownTab by rememberSaveable { mutableStateOf(tabs.first()) }
+    LaunchedEffect(tabs) {
+        tabs.indexOf(shownTab).takeIf { it >= 0 && it != pager.currentPage }?.let { pager.scrollToPage(it) }
+        snapshotFlow { pager.currentPage }.collect { shownTab = tabs[it.coerceAtMost(tabs.lastIndex)] }
+    }
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
@@ -236,25 +249,18 @@ internal fun Dashboard(reported: ScreenGeometry) {
         }
     }
 
-    val stylePage: @Composable () -> Unit = {
-        StylePage(
-            settings = settings,
-            sample = sample,
-            // The step the real-size preview shows (the newer one during a hand-off), or null.
-            previewHeld = when {
-                ledShowing && !ledLeaving -> PreviewPhase.LED
-                showcasing || showcasePending -> PreviewPhase.EFFECT
-                ledShowing -> PreviewPhase.LED
-                else -> null
-            },
-            loop = !reduceMotion,
-            shieldOn = access.shield,
-            onShield = actions.shield,
-            onChange = { settings = it },
-            onSample = { sample = it },
-            onShowcase = showcase,
-            onLed = showLed,
-        )
+    // Every change shows at once; [save] also stores it. A drag or a run of taps is stored once,
+    // as it settles. Callbacks read [settings] as they fire, so each builds on the latest.
+    val update = { next: GlowSettings, save: Boolean ->
+        settings = next
+        if (save) GlowPrefs.save(context, next)
+    }
+    // The step the real-size preview shows (the newer one during a hand-off), or null.
+    val previewHeld = when {
+        ledShowing && !ledLeaving -> PreviewPhase.LED
+        showcasing || showcasePending -> PreviewPhase.EFFECT
+        ledShowing -> PreviewPhase.LED
+        else -> null
     }
 
     CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
@@ -273,40 +279,120 @@ internal fun Dashboard(reported: ScreenGeometry) {
                         if (access.armed) {
                             accessOpen = !accessOpen
                         } else {
-                            scope.launch { pager.animateScrollToPage(DashboardTab.ACCESS.ordinal) }
+                            scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.ACCESS)) }
                         }
                     },
                 )
-
-                if (access.armed) {
-                    // Everything granted: setup is done, so the app is just its styling page.
-                    // Access lives behind the ARMED pill; its summary carries its own gap, so it
-                    // opens and closes without a jump.
-                    PageColumn(Modifier.weight(1f)) {
-                        Column {
-                            Disclosure(visible = accessOpen) {
-                                Box(Modifier.padding(bottom = SectionGap)) { AccessSummary(access, actions) }
+                // Setup done: access opens from the ARMED pill, above the tabs. It carries its own
+                // gap, so it opens and closes without a jump.
+                Disclosure(visible = access.armed && accessOpen) {
+                    Box(Modifier.padding(start = PageGutter, end = PageGutter, bottom = 16.dp)) {
+                        AccessSummary(access, actions)
+                    }
+                }
+                Box(Modifier.padding(horizontal = PageGutter)) {
+                    GlowTabBar(
+                        pager = pager,
+                        tabs = tabs,
+                        accessPending = !access.armed,
+                        onSelect = { index -> scope.launch { pager.animateScrollToPage(index) } },
+                    )
+                }
+                HorizontalPager(
+                    state = pager,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    beyondViewportPageCount = 1,
+                ) { page ->
+                    PageColumn(Modifier.fillMaxSize()) {
+                        when (tabs[page]) {
+                            DashboardTab.ACCESS -> AccessPage(access, actions)
+                            DashboardTab.EFFECT -> SettingsGroup(
+                                index = "01",
+                                title = R.string.group_arrival_title,
+                                body = R.string.group_arrival_body,
+                            ) {
+                                // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
+                                Column {
+                                    EffectCard(
+                                        settings = settings,
+                                        sample = sample,
+                                        previewHeld = previewHeld,
+                                        loop = !reduceMotion,
+                                        onStyle = { style ->
+                                            update(settings.copy(style = style), true)
+                                            showcase()
+                                        },
+                                        onSample = { index ->
+                                            sample = index
+                                            showcase()
+                                        },
+                                    )
+                                    Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
+                                        Box(Modifier.padding(top = 14.dp)) {
+                                            EdgeFrameCard(settings) { next ->
+                                                update(next, true)
+                                                showcase()
+                                            }
+                                        }
+                                    }
+                                }
+                                SpawnCard(settings) { next ->
+                                    update(next, true)
+                                    showcase()
+                                }
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(SectionGap)) { stylePage() }
-                        }
-                    }
-                } else {
-                    Box(Modifier.padding(horizontal = PageGutter)) {
-                        GlowTabBar(
-                            pager = pager,
-                            pendingAccess = access.required - access.granted,
-                            onSelect = { tab -> scope.launch { pager.animateScrollToPage(tab.ordinal) } },
-                        )
-                    }
-                    HorizontalPager(
-                        state = pager,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        beyondViewportPageCount = 1,
-                    ) { page ->
-                        PageColumn(Modifier.fillMaxSize()) {
-                            when (DashboardTab.entries[page]) {
-                                DashboardTab.ACCESS -> AccessPage(access, actions)
-                                DashboardTab.STYLE -> stylePage()
+                            DashboardTab.SCREEN -> SettingsGroup(
+                                index = "02",
+                                title = R.string.group_screen_title,
+                                body = R.string.group_screen_body,
+                            ) {
+                                ScreenCard(
+                                    settings = settings,
+                                    sample = sample,
+                                    previewHeld = previewHeld,
+                                    loop = !reduceMotion,
+                                    shieldOn = access.shield,
+                                    onShield = actions.shield,
+                                    onSelect = { mode -> update(settings.copy(arrival = mode), true) },
+                                )
+                            }
+                            // The waiting LED is always the dot, whatever arrival style is chosen.
+                            DashboardTab.LED -> SettingsGroup(
+                                index = "03",
+                                title = R.string.group_led_title,
+                                body = R.string.group_led_body,
+                            ) {
+                                LedCard(
+                                    settings = settings,
+                                    // While it moves, the real LED follows on screen; it breathes once when let go.
+                                    onMove = { x, y, onCamera ->
+                                        update(settings.copy(dotX = x, dotY = y, ledOnCamera = onCamera), false)
+                                        showLed(true)
+                                    },
+                                    onCommit = {
+                                        GlowPrefs.save(context, settings)
+                                        showLed(false)
+                                    },
+                                    onLensFit = { fit ->
+                                        update(fit(settings), false)
+                                        showLed(true)
+                                    },
+                                    onLensFitDone = {
+                                        GlowPrefs.save(context, settings)
+                                        showLed(false)
+                                    },
+                                )
+                                LedLookCard(
+                                    settings = settings,
+                                    onSize = { size ->
+                                        update(settings.copy(dotSize = size), true)
+                                        showLed(false)
+                                    },
+                                    onBrightness = { level ->
+                                        update(settings.copy(ledBrightness = level), true)
+                                        showLed(false)
+                                    },
+                                )
                             }
                         }
                     }
@@ -365,94 +451,6 @@ private fun PageColumn(modifier: Modifier = Modifier, content: @Composable () ->
     ) {
         content()
         Spacer(Modifier.height(4.dp))
-    }
-}
-
-/**
- * Two groups, in the order things happen: what plays when a message arrives, then the LED that
- * waits until it is read. Each change is saved the moment it is made.
- */
-@Composable
-private fun StylePage(
-    settings: GlowSettings,
-    sample: Int,
-    previewHeld: PreviewPhase?,
-    loop: Boolean,
-    shieldOn: Boolean,
-    onShield: () -> Unit,
-    onChange: (GlowSettings) -> Unit,
-    onSample: (Int) -> Unit,
-    onShowcase: () -> Unit,
-    onLed: (holding: Boolean) -> Unit,
-) {
-    val context = LocalContext.current
-    // Latest value for slider commit callbacks, which fire after several onMove updates.
-    var latest by remember { mutableStateOf(settings) }
-    latest = settings
-    // Every change shows at once; [save] also stores it. A drag or a run of taps is stored once, as it settles.
-    fun update(next: GlowSettings, save: Boolean) {
-        latest = next
-        onChange(next)
-        if (save) GlowPrefs.save(context, next)
-    }
-
-    SettingsGroup(index = "01", title = R.string.group_arrival_title, body = R.string.group_arrival_body) {
-        EffectCard(
-            settings = settings,
-            sample = sample,
-            previewHeld = previewHeld,
-            loop = loop,
-            onStyle = { style ->
-                update(latest.copy(style = style), save = true)
-                onShowcase()
-            },
-            onEffect = { next ->
-                update(next, save = true)
-                onShowcase()
-            },
-            onSample = { index ->
-                onSample(index)
-                onShowcase()
-            },
-        )
-        ArrivalModeCard(
-            selected = settings.arrival,
-            shieldOn = shieldOn,
-            onShield = onShield,
-            onSelect = { mode -> update(latest.copy(arrival = mode), save = true) },
-        )
-    }
-
-    // The waiting LED is always the dot, whatever arrival style is chosen.
-    SettingsGroup(index = "02", title = R.string.group_led_title, body = R.string.group_led_body) {
-        LedCard(
-            settings = settings,
-            // While it moves, the real LED follows on screen; it breathes once when let go.
-            onMove = { x, y, onCamera ->
-                update(latest.copy(dotX = x, dotY = y, ledOnCamera = onCamera), save = false)
-                onLed(true)
-            },
-            onCommit = {
-                GlowPrefs.save(context, latest)
-                onLed(false)
-            },
-            onSize = { size ->
-                update(latest.copy(dotSize = size), save = true)
-                onLed(false)
-            },
-            onBrightness = { level ->
-                update(latest.copy(ledBrightness = level), save = true)
-                onLed(false)
-            },
-            onLensFit = { fit ->
-                update(fit(latest), save = false)
-                onLed(true)
-            },
-            onLensFitDone = {
-                GlowPrefs.save(context, latest)
-                onLed(false)
-            },
-        )
     }
 }
 
@@ -531,10 +529,11 @@ private fun GlowEmblem(modifier: Modifier = Modifier) {
 /**
  * Segmented blade control. The highlighted blade and the label tints track the pager's scroll
  * position as you swipe; that is read in the layout and draw phases, so swiping does not
- * recompose the bar.
+ * recompose the bar. An amber dot on Access while something is still to grant (the header pill
+ * counts it).
  */
 @Composable
-private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (DashboardTab) -> Unit) {
+private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, accessPending: Boolean, onSelect: (Int) -> Unit) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -544,7 +543,7 @@ private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (Dashboa
             .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Tile)
             .padding(4.dp),
     ) {
-        val tabWidth = maxWidth / DashboardTab.entries.size
+        val tabWidth = maxWidth / tabs.size
         Box(
             modifier = Modifier
                 .width(tabWidth)
@@ -558,14 +557,14 @@ private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (Dashboa
                 .border(1.dp, GlowBrushes.Signature, GlowShapes.Tile),
         )
         Row(Modifier.fillMaxSize().selectableGroup()) {
-            DashboardTab.entries.forEach { tab ->
-                val selected = pager.currentPage == tab.ordinal
+            tabs.forEachIndexed { index, tab ->
+                val selected = pager.currentPage == index
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                         .clip(GlowShapes.Tile)
-                        .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(tab) }),
+                        .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(index) }),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -575,23 +574,13 @@ private fun GlowTabBar(pager: PagerState, pendingAccess: Int, onSelect: (Dashboa
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = {
                             val position = pager.currentPage + pager.currentPageOffsetFraction
-                            lerp(GlowPalette.TextPrimary, GlowPalette.TextFaint, abs(position - tab.ordinal).coerceIn(0f, 1f))
+                            lerp(GlowPalette.TextPrimary, GlowPalette.TextFaint, abs(position - index).coerceIn(0f, 1f))
                         },
+                        maxLines = 1,
                     )
-                    if (tab == DashboardTab.ACCESS && pendingAccess > 0) {
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(GlowShapes.Pill)
-                                .background(GlowPalette.Amber)
-                                .padding(horizontal = 6.dp, vertical = 1.dp),
-                        ) {
-                            Text(
-                                text = pendingAccess.toString(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = GlowPalette.Void,
-                            )
-                        }
+                    if (tab == DashboardTab.ACCESS && accessPending) {
+                        Spacer(Modifier.width(6.dp))
+                        Canvas(Modifier.size(6.dp)) { drawCircle(GlowPalette.Amber) }
                     }
                 }
             }

@@ -17,6 +17,12 @@ interface Labeled {
     val label: Int
 }
 
+/** An option a folded summary describes in words: [phrase] reads inside a sentence ("thin line"). */
+interface Phrased {
+    @get:StringRes
+    val phrase: Int
+}
+
 enum class GlowStyle(@param:StringRes override val label: Int) : Labeled {
     EDGE_FRAME(R.string.style_edge_title),
     CAMERA_RING(R.string.style_ring_title),
@@ -42,11 +48,15 @@ enum class LedBrightness(val level: Float, @param:StringRes override val label: 
 }
 
 /** Edge Frame line thickness at full screen. */
-enum class EdgeWidth(val stroke: Dp, @param:StringRes override val label: Int) : Labeled {
-    HAIRLINE(2.dp, R.string.edge_width_hair),
-    THIN(4.dp, R.string.edge_width_thin),
-    BOLD(7.dp, R.string.edge_width_bold),
-    HEAVY(11.dp, R.string.edge_width_heavy),
+enum class EdgeWidth(
+    val stroke: Dp,
+    @param:StringRes override val label: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    HAIRLINE(2.dp, R.string.edge_width_hair, R.string.edge_width_hair_phrase),
+    THIN(4.dp, R.string.edge_width_thin, R.string.edge_width_thin_phrase),
+    BOLD(7.dp, R.string.edge_width_bold, R.string.edge_width_bold_phrase),
+    HEAVY(11.dp, R.string.edge_width_heavy, R.string.edge_width_heavy_phrase),
 }
 
 /**
@@ -55,10 +65,15 @@ enum class EdgeWidth(val stroke: Dp, @param:StringRes override val label: Int) :
  * frame. Fixed reaches rather than multiples of the line: a wide line with a strong glow would
  * otherwise light a band over half the screen, and every effect pass paints that whole band.
  */
-enum class EdgeGlow(val reach: Dp, val peak: Float, @param:StringRes override val label: Int) : Labeled {
-    OFF(0.dp, 0f, R.string.edge_glow_off),
-    SOFT(12.dp, 0.34f, R.string.edge_glow_soft),
-    STRONG(24.dp, 0.42f, R.string.edge_glow_strong),
+enum class EdgeGlow(
+    val reach: Dp,
+    val peak: Float,
+    @param:StringRes override val label: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    OFF(0.dp, 0f, R.string.edge_glow_off, R.string.edge_glow_off_phrase),
+    SOFT(12.dp, 0.34f, R.string.edge_glow_soft, R.string.edge_glow_soft_phrase),
+    STRONG(24.dp, 0.42f, R.string.edge_glow_strong, R.string.edge_glow_strong_phrase),
 }
 
 /**
@@ -67,10 +82,14 @@ enum class EdgeGlow(val reach: Dp, val peak: Float, @param:StringRes override va
  * - COMET: one bright head with a fading tail runs up the left side to the camera.
  * - TWIN: two lights rise from the bottom up both sides and meet at the camera.
  */
-enum class EdgeMotion(@param:StringRes override val label: Int) : Labeled {
-    PULSE(R.string.edge_motion_pulse),
-    COMET(R.string.edge_motion_comet),
-    TWIN(R.string.edge_motion_twin),
+enum class EdgeMotion(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    PULSE(R.string.edge_motion_pulse, R.string.edge_motion_pulse_body, R.string.edge_motion_pulse_phrase),
+    COMET(R.string.edge_motion_comet, R.string.edge_motion_comet_body, R.string.edge_motion_comet_phrase),
+    TWIN(R.string.edge_motion_twin, R.string.edge_motion_twin_body, R.string.edge_motion_twin_phrase),
 }
 
 /**
@@ -79,21 +98,29 @@ enum class EdgeMotion(@param:StringRes override val label: Int) : Labeled {
  * - DUO: the brand colour flowing into a neighbouring hue and back.
  * - SPECTRUM: a turning rainbow that starts at the brand colour.
  */
-enum class EdgeColor(@param:StringRes override val label: Int) : Labeled {
-    APP(R.string.edge_color_app),
-    DUO(R.string.edge_color_duo),
-    SPECTRUM(R.string.edge_color_spectrum),
+enum class EdgeColor(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    APP(R.string.edge_color_app, R.string.edge_color_app_body, R.string.edge_color_app_phrase),
+    DUO(R.string.edge_color_duo, R.string.edge_color_duo_body, R.string.edge_color_duo_phrase),
+    SPECTRUM(R.string.edge_color_spectrum, R.string.edge_color_spectrum_body, R.string.edge_color_spectrum_phrase),
 }
 
 /**
  * Glass wave: how soft the screen under it goes, as the blur radius at full screen. The black
  * panel has nothing under it to blur, so there it is only the drawn wave and frost.
  */
-enum class GlassBlur(val radius: Dp, @param:StringRes override val label: Int) : Labeled {
-    OFF(0.dp, R.string.glass_blur_off),
-    LIGHT(6.dp, R.string.glass_blur_light),
-    MEDIUM(10.dp, R.string.glass_blur_medium),
-    STRONG(16.dp, R.string.glass_blur_strong),
+enum class GlassBlur(
+    val radius: Dp,
+    @param:StringRes override val label: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    OFF(0.dp, R.string.glass_blur_off, R.string.glass_blur_off_phrase),
+    LIGHT(6.dp, R.string.glass_blur_light, R.string.glass_blur_light_phrase),
+    MEDIUM(10.dp, R.string.glass_blur_medium, R.string.glass_blur_medium_phrase),
+    STRONG(16.dp, R.string.glass_blur_strong, R.string.glass_blur_strong_phrase),
 }
 
 /**
@@ -104,20 +131,28 @@ enum class GlassBlur(val radius: Dp, @param:StringRes override val label: Int) :
  * - WAVE: a blurred band rides under the crest; what it passes goes soft, then sharp again.
  * - SCREEN: the whole screen goes soft as the wave rolls in and clears as it leaves.
  */
-enum class GlassArea(@param:StringRes override val label: Int, @param:StringRes val body: Int) : Labeled {
-    REVEAL(R.string.glass_area_reveal, R.string.glass_area_reveal_body),
-    WAVE(R.string.glass_area_wave, R.string.glass_area_wave_body),
-    SCREEN(R.string.glass_area_screen, R.string.glass_area_screen_body),
+enum class GlassArea(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    REVEAL(R.string.glass_area_reveal, R.string.glass_area_reveal_body, R.string.glass_area_reveal_phrase),
+    WAVE(R.string.glass_area_wave, R.string.glass_area_wave_body, R.string.glass_area_wave_phrase),
+    SCREEN(R.string.glass_area_screen, R.string.glass_area_screen_body, R.string.glass_area_screen_phrase),
 }
 
 /**
  * Glass wave: a grey diffusing mist laid over the glass area ([GlassArea]), as on breathed-on
  * glass. Drawn, so it shows everywhere.
  */
-enum class GlassFrost(val alpha: Float, @param:StringRes override val label: Int) : Labeled {
-    OFF(0f, R.string.glass_frost_off),
-    SOFT(0.16f, R.string.glass_frost_soft),
-    MILKY(0.30f, R.string.glass_frost_milky),
+enum class GlassFrost(
+    val alpha: Float,
+    @param:StringRes override val label: Int,
+    @param:StringRes override val phrase: Int,
+) : Labeled, Phrased {
+    OFF(0f, R.string.glass_frost_off, R.string.glass_frost_off_phrase),
+    SOFT(0.16f, R.string.glass_frost_soft, R.string.glass_frost_soft_phrase),
+    MILKY(0.30f, R.string.glass_frost_milky, R.string.glass_frost_milky_phrase),
 }
 
 /**

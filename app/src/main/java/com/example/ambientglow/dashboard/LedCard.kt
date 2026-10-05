@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -68,12 +68,12 @@ import com.example.ambientglow.ui.components.BladeChip
 import com.example.ambientglow.ui.components.CardDivider
 import com.example.ambientglow.ui.components.ChipLabel
 import com.example.ambientglow.ui.components.Disclosure
+import com.example.ambientglow.ui.components.Fold
 import com.example.ambientglow.ui.components.OptionGroup
 import com.example.ambientglow.ui.components.Readout
 import com.example.ambientglow.ui.components.SectionLabel
 import com.example.ambientglow.ui.components.SelectionRow
 import com.example.ambientglow.ui.components.StepButton
-import com.example.ambientglow.ui.components.VerticalSlider
 import com.example.ambientglow.ui.components.glowCard
 import com.example.ambientglow.ui.components.glowSliderColors
 import com.example.ambientglow.ui.theme.GlowPalette
@@ -83,7 +83,8 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------------------------
-// 02 The LED: where it sits (drag, rulers, spots, steps), the camera fit, size and brightness.
+// The LED tab: where it sits (drag, spots, then folded: the camera fit, sliders and steps), and
+// its size and brightness.
 // ---------------------------------------------------------------------------------------------
 
 private val PanelHeight: Dp = 280.dp
@@ -171,14 +172,11 @@ internal fun LedCard(
     settings: GlowSettings,
     onMove: (x: Float, y: Float, onCamera: Boolean) -> Unit,
     onCommit: () -> Unit,
-    onSize: (DotSize) -> Unit,
-    onBrightness: (LedBrightness) -> Unit,
     onLensFit: (fit: (GlowSettings) -> GlowSettings) -> Unit,
     onLensFitDone: () -> Unit,
 ) {
     val dotX = settings.dotX
     val dotY = settings.dotY
-    val sliderColors = glowSliderColors()
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     var lastSnap by remember { mutableStateOf<Any?>(null) }
@@ -215,20 +213,13 @@ internal fun LedCard(
 
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_dot), GlowPalette.Cyan)
-        Text(
-            text = stringResource(R.string.dot_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = GlowPalette.TextMuted,
-        )
 
-        Row(
-            modifier = Modifier.fillMaxWidth().height(PanelHeight).padding(top = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        // Dragging or tapping the mock-up is the main way; the readouts and how-to sit beside it.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val previewLabel = stringResource(R.string.dot_preview_label)
             PhoneMock(
                 modifier = Modifier
-                    .fillMaxHeight()
+                    .height(PanelHeight)
                     .aspectRatio(0.48f)
                     .semantics { contentDescription = previewLabel },
             ) { mockGeometry ->
@@ -270,50 +261,19 @@ internal fun LedCard(
                         },
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            val verticalLabel = stringResource(R.string.dot_vertical)
-            Column(
-                modifier = Modifier.fillMaxHeight().width(44.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                // Same sense as the Y readout: − up, + down.
-                StepButton(plus = false, description = stringResource(R.string.dot_step_up), onStep = { step(0f, -stepY) })
-                // Rotated so the top of the slider is the top of the screen.
-                VerticalSlider(
-                    value = 1f - dotY,
-                    onValueChange = { move(dotX, 1f - it) },
-                    onValueChangeFinished = onCommit,
-                    colors = sliderColors,
-                    modifier = Modifier
-                        .weight(1f)
-                        .width(44.dp)
-                        .semantics { contentDescription = verticalLabel },
-                )
-                StepButton(plus = true, description = stringResource(R.string.dot_step_down), onStep = { step(0f, stepY) })
-            }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(16.dp))
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Readout(stringResource(R.string.dot_readout_x, (dotX * 100).roundToInt()))
                 Readout(stringResource(R.string.dot_readout_y, (dotY * 100).roundToInt()))
-            }
-        }
-
-        val horizontalLabel = stringResource(R.string.dot_horizontal)
-        OptionGroup(horizontalLabel) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                StepButton(plus = false, description = stringResource(R.string.dot_step_left), onStep = { step(-stepX, 0f) })
-                Slider(
-                    value = dotX,
-                    onValueChange = { move(it, dotY) },
-                    onValueChangeFinished = onCommit,
-                    colors = sliderColors,
-                    modifier = Modifier.weight(1f).semantics { contentDescription = horizontalLabel },
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.dot_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlowPalette.TextMuted,
                 )
-                StepButton(plus = true, description = stringResource(R.string.dot_step_right), onStep = { step(stepX, 0f) })
             }
         }
 
@@ -342,7 +302,15 @@ internal fun LedCard(
                     }
                 }
                 Disclosure(visible = settings.ledOnCamera) {
-                    Box(Modifier.padding(top = 16.dp)) { LensFit(settings, onLensFit, onLensFitDone) }
+                    val adjusted = settings.lensOffsetXDp != 0f || settings.lensOffsetDp != 0f || settings.lensGrowDp != 0f
+                    Box(Modifier.padding(top = 10.dp)) {
+                        Fold(
+                            title = stringResource(R.string.fold_lens),
+                            summary = stringResource(if (adjusted) R.string.fold_lens_adjusted else R.string.fold_lens_reported),
+                        ) {
+                            LensFit(settings, onLensFit, onLensFitDone)
+                        }
+                    }
                 }
             }
         }
@@ -354,7 +322,40 @@ internal fun LedCard(
         }
 
         CardDivider()
-        // On the camera, size is how thick the ring is.
+        Fold(title = stringResource(R.string.fold_precise), summary = stringResource(R.string.fold_precise_summary)) {
+            val sliderColors = glowSliderColors()
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                AxisRow(
+                    label = stringResource(R.string.dot_horizontal),
+                    value = dotX,
+                    onValue = { move(it, dotY) },
+                    onDone = onCommit,
+                    minus = stringResource(R.string.dot_step_left),
+                    plus = stringResource(R.string.dot_step_right),
+                    onStep = { step(it * stepX, 0f) },
+                    colors = sliderColors,
+                )
+                // Left to right is top to bottom, as the Y readout counts.
+                AxisRow(
+                    label = stringResource(R.string.dot_vertical),
+                    value = dotY,
+                    onValue = { move(dotX, it) },
+                    onDone = onCommit,
+                    minus = stringResource(R.string.dot_step_up),
+                    plus = stringResource(R.string.dot_step_down),
+                    onStep = { step(0f, it * stepY) },
+                    colors = sliderColors,
+                )
+            }
+        }
+    }
+}
+
+/** How the LED looks wherever it sits: its size (on the camera, the ring's thickness) and brightness. */
+@Composable
+internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit, onBrightness: (LedBrightness) -> Unit) {
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.Cyan)
         OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
             SelectionRow(
                 count = DotSize.entries.size,
@@ -378,6 +379,33 @@ internal fun LedCard(
                 Spacer(Modifier.width(8.dp))
                 ChipLabel(stringResource(level.label), lit)
             }
+        }
+    }
+}
+
+/** One axis of the precise position: a slider between its − / + steps. [onStep] gets −1 or +1. */
+@Composable
+private fun AxisRow(
+    label: String,
+    value: Float,
+    onValue: (Float) -> Unit,
+    onDone: () -> Unit,
+    minus: String,
+    plus: String,
+    onStep: (Float) -> Unit,
+    colors: SliderColors,
+) {
+    OptionGroup(label) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            StepButton(plus = false, description = minus, onStep = { onStep(-1f) })
+            Slider(
+                value = value,
+                onValueChange = onValue,
+                onValueChangeFinished = onDone,
+                colors = colors,
+                modifier = Modifier.weight(1f).semantics { contentDescription = label },
+            )
+            StepButton(plus = true, description = plus, onStep = { onStep(1f) })
         }
     }
 }
@@ -439,10 +467,15 @@ private fun LensFit(settings: GlowSettings, onFit: (fit: (GlowSettings) -> GlowS
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel(stringResource(R.string.lens_fit), GlowPalette.Cyan)
-            Spacer(Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.Top) {
+            Text(
+                text = stringResource(R.string.lens_fit_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = GlowPalette.TextMuted,
+                modifier = Modifier.weight(1f),
+            )
             if (offsetXPx != 0 || offsetPx != 0 || growPx != 0) {
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.lens_fit_reset),
                     style = MaterialTheme.typography.labelSmall,
@@ -454,11 +487,6 @@ private fun LensFit(settings: GlowSettings, onFit: (fit: (GlowSettings) -> GlowS
                 )
             }
         }
-        Text(
-            text = stringResource(R.string.lens_fit_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = GlowPalette.TextMuted,
-        )
         FitRow(
             label = stringResource(R.string.lens_fit_height),
             valuePx = offsetPx,

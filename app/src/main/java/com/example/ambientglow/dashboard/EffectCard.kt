@@ -97,6 +97,7 @@ import com.example.ambientglow.ui.components.CardDivider
 import com.example.ambientglow.ui.components.Chevron
 import com.example.ambientglow.ui.components.ChipRow
 import com.example.ambientglow.ui.components.Disclosure
+import com.example.ambientglow.ui.components.Fold
 import com.example.ambientglow.ui.components.NoticeRow
 import com.example.ambientglow.ui.components.OptionBody
 import com.example.ambientglow.ui.components.OptionGroup
@@ -114,8 +115,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 // ---------------------------------------------------------------------------------------------
-// 01 New message: the effect (live preview, style, try-out colour, spawn and its glass look, Edge
-// Frame options), and where it plays.
+// The EFFECT and SCREEN tabs: the effect (live preview, style, try-out colour, Edge Frame options,
+// spawn and its glass look), and where it plays.
 // ---------------------------------------------------------------------------------------------
 
 private val StudioPreviewHeight: Dp = 250.dp
@@ -148,6 +149,7 @@ internal val SAMPLE_COLORS = listOf(
 )
 
 /**
+ * The look: the live preview beside the style list, and the colour to try it in.
  * [previewHeld]: the step a real-size preview is playing (or about to), so the inline one waits.
  * [loop] is off with Remove animations: the inline preview then plays each change once, and the
  * hint says that changes no longer play at full size.
@@ -159,7 +161,6 @@ internal fun EffectCard(
     previewHeld: PreviewPhase?,
     loop: Boolean,
     onStyle: (GlowStyle) -> Unit,
-    onEffect: (GlowSettings) -> Unit,
     onSample: (Int) -> Unit,
 ) {
     val color = SAMPLE_COLORS[sample].color
@@ -185,45 +186,74 @@ internal fun EffectCard(
                 color = GlowPalette.TextFaint,
             )
         }
-        CardDivider()
-        // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
-        Column {
-            ToggleRow(
-                title = stringResource(R.string.effect_spawn_title),
-                body = stringResource(R.string.effect_spawn_body),
-                checked = settings.spawn,
-                onChange = { onEffect(settings.copy(spawn = it)) },
-            )
-            // A look for the spawn wave, so only offered with it.
-            Disclosure(visible = settings.spawn) {
-                Column(Modifier.padding(top = 16.dp)) {
-                    ToggleRow(
-                        title = stringResource(R.string.effect_glass_title),
-                        body = stringResource(R.string.effect_glass_body),
-                        checked = settings.glass,
-                        onChange = { onEffect(settings.copy(glass = it)) },
-                    )
-                    Disclosure(visible = settings.glass) {
-                        Box(Modifier.padding(top = 14.dp)) { GlassOptions(settings, onEffect) }
-                    }
+    }
+}
+
+/** Edge Frame's own options, folded under what they are set to; the other styles have none. */
+@Composable
+internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    val summary = sentence(
+        stringResource(
+            R.string.edge_summary,
+            stringResource(settings.edgeMotion.phrase),
+            stringResource(settings.edgeColor.phrase),
+            stringResource(settings.edgeWidth.phrase),
+            stringResource(settings.edgeGlow.phrase),
+        ),
+    )
+    Column(Modifier.glowCard(vertical = 10.dp)) {
+        Fold(title = stringResource(R.string.fold_edge), summary = summary) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                // Motion and colour aren't plain from their names: what the picked one does, under it.
+                OptionGroup(stringResource(R.string.edge_motion)) {
+                    ChipRow(EdgeMotion.entries, settings.edgeMotion) { onEffect(settings.copy(edgeMotion = it)) }
+                    OptionBody(settings.edgeMotion) { stringResource(it.body) }
+                }
+                OptionGroup(stringResource(R.string.edge_color)) {
+                    ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
+                    OptionBody(settings.edgeColor) { stringResource(it.body) }
+                }
+                OptionGroup(stringResource(R.string.edge_width)) {
+                    ChipRow(EdgeWidth.entries, settings.edgeWidth) { onEffect(settings.copy(edgeWidth = it)) }
+                }
+                OptionGroup(stringResource(R.string.edge_glow)) {
+                    ChipRow(EdgeGlow.entries, settings.edgeGlow) { onEffect(settings.copy(edgeGlow = it)) }
                 }
             }
-            // The other styles have nothing to tune here; the dot is placed in group 02.
-            Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
-                Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    CardDivider()
-                    SectionLabel(stringResource(R.string.section_edge), GlowPalette.Cyan)
-                    OptionGroup(stringResource(R.string.edge_motion)) {
-                        ChipRow(EdgeMotion.entries, settings.edgeMotion) { onEffect(settings.copy(edgeMotion = it)) }
-                    }
-                    OptionGroup(stringResource(R.string.edge_color)) {
-                        ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
-                    }
-                    OptionGroup(stringResource(R.string.edge_width)) {
-                        ChipRow(EdgeWidth.entries, settings.edgeWidth) { onEffect(settings.copy(edgeWidth = it)) }
-                    }
-                    OptionGroup(stringResource(R.string.edge_glow)) {
-                        ChipRow(EdgeGlow.entries, settings.edgeGlow) { onEffect(settings.copy(edgeGlow = it)) }
+        }
+    }
+}
+
+/**
+ * How the effect starts: the spawn wave from the camera, and the look of that wave. Each look
+ * keeps its options folded, so adding looks adds a toggle or a fold, not a wall of chips.
+ */
+@Composable
+internal fun SpawnCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
+    Column(Modifier.glowCard()) {
+        ToggleRow(
+            title = stringResource(R.string.effect_spawn_title),
+            body = stringResource(R.string.effect_spawn_body),
+            checked = settings.spawn,
+            onChange = { onEffect(settings.copy(spawn = it)) },
+        )
+        // A look for the spawn wave, so only offered with it.
+        Disclosure(visible = settings.spawn) {
+            Column(Modifier.padding(top = 16.dp)) {
+                ToggleRow(
+                    title = stringResource(R.string.effect_glass_title),
+                    body = stringResource(R.string.effect_glass_body),
+                    checked = settings.glass,
+                    onChange = { onEffect(settings.copy(glass = it)) },
+                )
+                Disclosure(visible = settings.glass) {
+                    Column(Modifier.padding(top = 12.dp)) {
+                        CardDivider()
+                        Spacer(Modifier.height(10.dp))
+                        Fold(title = stringResource(R.string.fold_glass), summary = glassSummary(settings)) {
+                            GlassOptions(settings, onEffect)
+                        }
                     }
                 }
             }
@@ -270,6 +300,26 @@ private fun GlassOptions(settings: GlowSettings, onEffect: (GlowSettings) -> Uni
         }
     }
 }
+
+/** What the glass options are set to, in one sentence, leaving out what is off or not offered. */
+@Composable
+private fun glassSummary(settings: GlowSettings): String {
+    val blur = stringResource(settings.glassBlur.phrase).takeIf { !settings.arrival.onBlack && settings.glassBlur != GlassBlur.OFF }
+    val frost = stringResource(settings.glassFrost.phrase).takeIf { settings.glassFrost != GlassFrost.OFF }
+    val area = stringResource(settings.glassArea.phrase)
+    return sentence(
+        when {
+            // On a black screen there is nothing to blur, and frost covers it all.
+            settings.arrival.onBlack && frost != null -> stringResource(R.string.glass_summary_black, frost)
+            blur != null && frost != null -> stringResource(R.string.glass_summary_both, blur, frost, area)
+            blur != null || frost != null -> stringResource(R.string.glass_summary_one, blur ?: frost.orEmpty(), area)
+            else -> stringResource(R.string.glass_summary_none)
+        },
+    )
+}
+
+/** A summary built from phrases, starting with a capital as a sentence does. */
+private fun sentence(text: String): String = text.replaceFirstChar { it.titlecase() }
 
 /**
  * The three styles as rows: a mini phone showing the style in [accent], and its name. A new
@@ -676,29 +726,43 @@ private fun MockPopUp(accent: Color, alpha: () -> Float) {
     }
 }
 
+/**
+ * Where the effect plays, beside the preview that shows it: the options by name, and what the
+ * chosen one does under them, so they don't have to be read as a list.
+ */
 @Composable
-internal fun ArrivalModeCard(
-    selected: ArrivalMode,
+internal fun ScreenCard(
+    settings: GlowSettings,
+    sample: Int,
+    previewHeld: PreviewPhase?,
+    loop: Boolean,
     shieldOn: Boolean,
     onShield: () -> Unit,
     onSelect: (ArrivalMode) -> Unit,
 ) {
-    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val selected = settings.arrival
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.arrival_mode), GlowPalette.Cyan)
-        Column {
-            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            EffectPreview(settings = settings, color = SAMPLE_COLORS[sample].color, heldBy = previewHeld, loop = loop)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f).selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ArrivalMode.entries.forEach { mode ->
                     RadioRow(
                         title = stringResource(mode.label),
-                        body = stringResource(mode.body),
+                        body = null,
                         selected = selected == mode,
                         onClick = { onSelect(mode) },
                     )
                 }
             }
+        }
+        // Each carries its own gap, so the card doesn't jump as the notice comes and goes.
+        Column {
+            OptionBody(selected) { mode -> stringResource(mode.body) }
             // Without the shield, Lock screen only lights the screen: say so where it is chosen.
             Disclosure(visible = selected == ArrivalMode.LOCK_SCREEN && !shieldOn) {
-                Box(Modifier.padding(top = 10.dp)) {
+                Box(Modifier.padding(top = 12.dp)) {
                     NoticeRow(
                         text = stringResource(R.string.arrival_needs_shield),
                         action = stringResource(R.string.access_shield_grant),
