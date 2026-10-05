@@ -23,7 +23,7 @@ object PanelWaker {
     fun wake(context: Context) {
         val power = context.getSystemService(PowerManager::class.java)
         if (power.isInteractive) return
-        GlowLog.d("panel wake")
+        GlowLog.d { "panel wake" }
         power.newWakeLock(
             PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
             "AmbientGlow:panel",

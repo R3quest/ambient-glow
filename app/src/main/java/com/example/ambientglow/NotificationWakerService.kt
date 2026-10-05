@@ -51,11 +51,12 @@ class NotificationWakerService : NotificationListenerService() {
     private var screenReceiverRegistered = false
     private val screenEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            GlowLog.d("svc ${intent.action?.substringAfterLast('.')} pending=${GlowPending.entries.size}")
+            GlowLog.d { "svc ${intent.action?.substringAfterLast('.')} pending=${GlowPending.entries.size}" }
             mainHandler.removeCallbacks(relightLed)
             when (intent.action) {
-                // A glow screen on top of the lock screen handles its own screen-off.
-                Intent.ACTION_SCREEN_OFF -> if (GlowSession.host?.isAway != false) {
+                // A glow screen on top of the lock screen handles its own screen-off. With nothing
+                // waiting there is no LED to relight: let the CPU sleep at once.
+                Intent.ACTION_SCREEN_OFF -> if (!GlowPending.isEmpty && GlowSession.host?.isAway != false) {
                     DarkHold.acquire(context) // keep the CPU up until the relight runs
                     mainHandler.postDelayed(relightLed, RELIGHT_DELAY_MS)
                 }
@@ -103,10 +104,10 @@ class NotificationWakerService : NotificationListenerService() {
         val color = brandColors.of(sbn)
         GlowPending.put(PendingGlow(key = sbn.key, color = color, newestAt = newestAt))
         val host = GlowSession.host
-        GlowLog.d(
+        GlowLog.d {
             "svc posted quiet=$quietUpdate interactive=${power.isInteractive} " +
-                "locked=${keyguard.isKeyguardLocked} host=${host != null} away=${host?.isAway}",
-        )
+                "locked=${keyguard.isKeyguardLocked} host=${host != null} away=${host?.isAway}"
+        }
         if (quietUpdate) return
 
         val arrival = GlowPrefs.load(this).arrival
@@ -149,7 +150,7 @@ class NotificationWakerService : NotificationListenerService() {
         val newest = GlowPending.entries.firstOrNull() ?: return
         // Only reached when the glow screen was not on top (the phone had been unlocked), so
         // Android shows the lock screen for a moment before the LED covers it.
-        GlowLog.d("svc relight LED via full-screen intent")
+        GlowLog.d { "svc relight LED via full-screen intent" }
         launch(WakeMode.LED, newest.color)
     }
 

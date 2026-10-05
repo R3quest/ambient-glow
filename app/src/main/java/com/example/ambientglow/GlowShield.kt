@@ -63,7 +63,7 @@ class GlowShield : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
-        GlowLog.d("shield connected")
+        GlowLog.d { "shield connected" }
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
@@ -95,7 +95,7 @@ class GlowShield : AccessibilityService() {
         val view = View(this).apply { setBackgroundColor(Color.BLACK) }
         if (addOverlay(view, PixelFormat.OPAQUE, "AmbientGlow:shield") != null) {
             cover = view
-            GlowLog.d("shield up")
+            GlowLog.d { "shield up" }
         }
     }
 
@@ -113,7 +113,7 @@ class GlowShield : AccessibilityService() {
         }
         addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
         cover = view
-        GlowLog.d("shield dimming")
+        GlowLog.d { "shield dimming" }
         dim = Dim(view, durationMs).also { Choreographer.getInstance().postFrameCallback(it) }
     }
 
@@ -148,7 +148,7 @@ class GlowShield : AccessibilityService() {
         dim?.let { Choreographer.getInstance().removeFrameCallback(it) }
         dim = null
         runCatching { windowManager.removeViewImmediate(view) }
-        GlowLog.d("shield down")
+        GlowLog.d { "shield down" }
     }
 
     private fun addArrival(color: Int) {
@@ -183,7 +183,7 @@ class GlowShield : AccessibilityService() {
         arrivalOwner = owner
         arrivalParams = params
         timers.postDelayed(stopArrivalNow, MAX_ARRIVAL_MS)
-        GlowLog.d("arrival up style=${settings.style}")
+        GlowLog.d { "arrival up style=${settings.style}" }
     }
 
     private fun removeArrival() {
@@ -194,7 +194,7 @@ class GlowShield : AccessibilityService() {
         arrivalOwner?.destroy()
         arrivalOwner = null
         arrivalParams = null
-        GlowLog.d("arrival down")
+        GlowLog.d { "arrival down" }
     }
 
     /**
@@ -275,7 +275,7 @@ class GlowShield : AccessibilityService() {
                 setArrivalBlur((stepped(level) * peak).roundToInt())
             }
             else -> null
-        }.also { GlowLog.d("haze ${if (it == null) "none" else if (SemBlur.available) "one-ui $area" else "android screen"}") }
+        }.also { GlowLog.d { "haze ${if (it == null) "none" else if (SemBlur.available) "one-ui $area" else "android screen"}" } }
     }
 
     /** An empty view behind the effect, for One UI to turn into a blur. */
@@ -321,7 +321,7 @@ class GlowShield : AccessibilityService() {
             windowManager.addView(view, params)
             params
         } catch (e: RuntimeException) {
-            GlowLog.d("shield refused $name: $e")
+            GlowLog.d { "shield refused $name: $e" }
             null
         }
     }
@@ -420,7 +420,7 @@ private object SemBlur {
                 apply = View::class.java.getMethod("semSetBlurInfo", info),
                 windowMode = info.getField("BLUR_MODE_WINDOW").getInt(null),
             )
-        }.onFailure { GlowLog.d("no One UI blur: $it") }.getOrNull()
+        }.onFailure { GlowLog.d { "no One UI blur: $it" } }.getOrNull()
     }
 
     val available: Boolean get() = api != null
@@ -442,6 +442,6 @@ private object SemBlur {
                 api.setRadius.invoke(builder, radius)
                 api.apply.invoke(view, api.build.invoke(builder))
             }
-        }.onFailure { GlowLog.d("One UI blur failed: $it") }
+        }.onFailure { GlowLog.d { "One UI blur failed: $it" } }
     }
 }

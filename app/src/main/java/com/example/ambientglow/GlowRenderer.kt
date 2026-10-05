@@ -97,8 +97,12 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
         cutout ?: CutoutSpot(
             centerX = width / 2f,
             centerY = metrics.fallbackCameraCenterY.value * density * scale,
-            radius = metrics.fallbackCameraRadius.value * density * scale,
+            radius = lensRadius(density, scale, metrics),
         )
+
+    /** [lens]'s radius alone, which doesn't depend on the screen's size. */
+    fun lensRadius(density: Float, scale: Float = 1f, metrics: GlowMetrics = GlowMetrics.FullScreen): Float =
+        cutout?.radius ?: (metrics.fallbackCameraRadius.value * density * scale)
 
     companion object {
         val Unknown = ScreenGeometry(cutout = null, cornerRadiusPx = null)

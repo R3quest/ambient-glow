@@ -28,7 +28,7 @@ This file serves as the permanent system configuration and architectural authori
 - **Build System:** compileSdk 37, targetSdk 35, minSdk 26, Kotlin DSL (`.gradle.kts`) with a version catalog.
 - **UI Framework:** Jetpack Compose using the modern Bill of Materials (BOM) management.
 - **Color Extraction:** `androidx.palette:palette-ktx` for ultra-fast, high-precision extraction.
-- **R8 Optimization:** ProGuard rules must enforce aggressive shrinking and obfuscation to keep the runtime DEX footprint as tiny as possible. `Log.d` is stripped from release builds.
+- **R8 Optimization:** ProGuard rules must enforce aggressive shrinking and obfuscation to keep the runtime DEX footprint as tiny as possible. Log through `GlowLog.d { "..." }`: the lambda sits behind `BuildConfig.DEBUG`, so release builds never build the message or run the reads (binder calls) inside it.
 
 ## 🗺️ 5. Code Map
 - **Settings:** `GlowSettings.kt` (every option, as `Labeled` enums, and the `GlowSettings` defaults), `GlowPrefs.kt` (storage).

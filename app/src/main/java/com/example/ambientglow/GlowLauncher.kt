@@ -129,10 +129,10 @@ object GlowLauncher {
     fun launchFromBackground(context: Context, mode: WakeMode, color: Int): Boolean {
         ensureChannel(context)
         if (!canPostBridge(context)) {
-            GlowLog.d("bridge blocked mode=$mode")
+            GlowLog.d { "bridge blocked mode=$mode" }
             return false
         }
-        GlowLog.d("bridge post mode=$mode")
+        GlowLog.d { "bridge post mode=$mode" }
 
         lastBridgeTag?.let { NotificationManagerCompat.from(context).cancel(it, BRIDGE_NOTIFICATION_ID) }
         val tag = "bridge-${SystemClock.elapsedRealtime()}"
@@ -179,7 +179,7 @@ object GlowLauncher {
     fun showMessage(context: Context, original: StatusBarNotification) {
         ensureChannel(context)
         if (!canPeek(context, MESSAGE_CHANNEL_ID)) {
-            GlowLog.d("message pop-up blocked")
+            GlowLog.d { "message pop-up blocked" }
             return
         }
         val copy = try {
@@ -196,10 +196,10 @@ object GlowLauncher {
                 .setTimeoutAfter(MESSAGE_TIMEOUT_MS)
                 .build()
         } catch (e: RuntimeException) {
-            GlowLog.d("message pop-up not rebuilt: $e")
+            GlowLog.d { "message pop-up not rebuilt: $e" }
             return
         }
-        GlowLog.d("message pop-up post")
+        GlowLog.d { "message pop-up post" }
         shownMessageKey = original.key
         post(context, MESSAGE_NOTIFICATION_ID, copy)
     }

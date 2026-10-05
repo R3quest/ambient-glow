@@ -5,7 +5,7 @@
 -repackageclasses 'com.example.ambientglow.internal'
 -allowaccessmodification
 
-# Strip debug logging (GlowLog) from release builds
+# Strip any stray Log.d from release builds (GlowLog is already compiled out by BuildConfig.DEBUG)
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);
     public static int v(...);

@@ -3,16 +3,23 @@ package com.example.ambientglow
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.ceil
 
 // One LED breath: a soft rise, then a long exhale into the dark, like a notification LED. One
 // clock (ms into the breath) drives it; the dashboard previews breathe with the same function.
@@ -50,6 +57,10 @@ internal val LED_RING_GAP = 1.5.dp
  * colour/size change in drawWithCache; each breath frame only changes the layer alpha.
  * The dashboard draws its real-size LED preview and the phone mock-up's LED with this too.
  *
+ * The layer is only as big as the light: a breath frame then redraws that square, not the whole
+ * window (and its alpha needs an offscreen buffer only that big). It is centred on the light with
+ * a sub-pixel translation, so the light lands exactly where a full-size layer drew it.
+ *
  * [onCamera]: the same light as a ring hugging the punch-hole, whose pixels cannot light;
  * [radius] then sets the ring's thickness and [ringGap] its clearance from the lens (the mock-up
  * scales it with its lens).
@@ -67,38 +78,57 @@ internal fun LedDot(
     ringGrowPx: Float = 0f,
     ringGap: Dp = LED_RING_GAP,
 ) {
+    val density = LocalDensity.current
+    val light = remember(density, radius, onCamera, geometry, ringGrowPx, ringGap) {
+        with(density) {
+            ledLight(radius.toPx(), onCamera, geometry.lensRadius(this.density), ringGrowPx, ringGap.toPx())
+        }
+    }
     Spacer(
         modifier
-            .graphicsLayer { this.alpha = alpha() }
+            .layout { measurable, constraints ->
+                val width = if (constraints.hasBoundedWidth) constraints.maxWidth else constraints.minWidth
+                val height = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
+                val center = if (onCamera) {
+                    geometry.lens(width.toFloat(), this.density).center
+                } else {
+                    // Same margin as GlowGraphic, so the LED sits exactly where the dashboard showed it.
+                    dotCenter(dotX, dotY, Size(width.toFloat(), height.toFloat()), light.core * DOT_HALO_FACTOR)
+                }
+                val side = light.side
+                val placeable = measurable.measure(Constraints.fixed(side, side))
+                layout(width, height) {
+                    placeable.placeWithLayer(0, 0) {
+                        translationX = center.x - side / 2f
+                        translationY = center.y - side / 2f
+                        this.alpha = alpha()
+                    }
+                }
+            }
             .drawWithCache {
-                val core = radius.toPx()
+                val center = size.center
+                val bloom = light.bloom
                 val hot = lerp(color, Color.White, 0.45f)
                 if (onCamera) {
-                    val lens = geometry.lens(size.width, density)
-                    val center = lens.center
-                    val line = core * LED_RING_STROKE_FACTOR
-                    val ring = lens.radius + ringGap.toPx() + line / 2f + ringGrowPx
-                    val bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f)
+                    val ring = light.ring
                     val halo = Brush.radialGradient(
                         0f to Color.Transparent,
-                        lens.radius / bloom to Color.Transparent,
+                        light.lens / bloom to Color.Transparent,
                         ring / bloom to color.copy(alpha = 0.65f),
                         (ring + (bloom - ring) * 0.35f) / bloom to color.copy(alpha = 0.22f),
                         1f to Color.Transparent,
                         center = center,
                         radius = bloom,
                     )
-                    val coreStroke = Stroke(line)
-                    val hotStroke = Stroke(line * 0.4f)
+                    val coreStroke = Stroke(light.line)
+                    val hotStroke = Stroke(light.line * 0.4f)
                     return@drawWithCache onDrawBehind {
                         drawCircle(halo, radius = bloom, center = center)
                         drawCircle(color, radius = ring, center = center, style = coreStroke)
                         drawCircle(hot, radius = ring, center = center, style = hotStroke)
                     }
                 }
-                val bloom = core * LED_HALO_FACTOR
-                // Same margin as GlowGraphic, so the LED sits exactly where the dashboard showed it.
-                val center = dotCenter(dotX, dotY, size, core * DOT_HALO_FACTOR)
+                val core = light.core
                 val halo = Brush.radialGradient(
                     0f to color.copy(alpha = 0.65f),
                     0.35f to color.copy(alpha = 0.22f),
@@ -113,4 +143,23 @@ internal fun LedDot(
                 }
             },
     )
+}
+
+/**
+ * The LED's light in px: the dot's [core] (the ring's thickness), the [ring] of [line] width
+ * round a [lens] of that radius, and the [bloom] that bounds all of it.
+ */
+@Immutable
+internal class LedLight(val core: Float, val lens: Float, val line: Float, val ring: Float, val bloom: Float) {
+    /** The layer's side: the bloom plus room for antialiasing all round, even so the light sits at its centre. */
+    val side: Int = 2 * ceil(bloom + LED_LAYER_MARGIN_PX).toInt()
+}
+
+private const val LED_LAYER_MARGIN_PX = 2f
+
+internal fun ledLight(core: Float, onCamera: Boolean, lens: Float, ringGrowPx: Float, ringGap: Float): LedLight {
+    if (!onCamera) return LedLight(core, lens = 0f, line = 0f, ring = 0f, bloom = core * LED_HALO_FACTOR)
+    val line = core * LED_RING_STROKE_FACTOR
+    val ring = lens + ringGap + line / 2f + ringGrowPx
+    return LedLight(core, lens, line, ring, bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f))
 }

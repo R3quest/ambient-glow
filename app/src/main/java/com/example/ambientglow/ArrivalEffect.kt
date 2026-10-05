@@ -338,10 +338,11 @@ fun ArrivalEffect(
         try {
             withContext(RealTimeMotion) {
                 coroutineScope {
-                    val trace = launch { traceFrames(settings, preview = scale < 1f) }
+                    // Debug builds only: in release no extra coroutine wakes on every frame.
+                    val trace = if (BuildConfig.DEBUG) launch { traceFrames(settings, preview = scale < 1f) } else null
                     val haze = blur?.let { launch { followHaze(it, settings.glassArea) { clock.value } } }
                     clock.animateTo(ARRIVAL_MS.toFloat(), tween(ARRIVAL_MS, easing = LinearEasing))
-                    trace.cancel()
+                    trace?.cancel()
                     haze?.cancel()
                 }
             }
@@ -407,11 +408,11 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
         } else {
             settings.style.name
         }
-        GlowLog.d(
+        GlowLog.d {
             "effect ${if (preview) "preview" else "live"} $what spawn=${settings.spawn} " +
                 "glass=${settings.glass}/${settings.glassBlur}/${settings.glassArea}/${settings.glassFrost}: " +
-                "${if (seconds > 0f) (frames / seconds).toInt() else 0} fps, $dropped stutters, worst ${worst / 1_000_000} ms",
-        )
+                "${if (seconds > 0f) (frames / seconds).toInt() else 0} fps, $dropped stutters, worst ${worst / 1_000_000} ms"
+        }
     }
 }
 

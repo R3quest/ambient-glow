@@ -41,7 +41,8 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = false
+        // Only for BuildConfig.DEBUG, a constant: GlowLog compiles away in release, and so does the class.
+        buildConfig = true
     }
 
     testOptions {
