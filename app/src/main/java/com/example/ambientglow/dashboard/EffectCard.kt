@@ -90,6 +90,7 @@ import com.example.ambientglow.LED_BREATH_MS
 import com.example.ambientglow.LedDot
 import com.example.ambientglow.R
 import com.example.ambientglow.RealTimeMotion
+import com.example.ambientglow.SpawnElement
 import com.example.ambientglow.forPreview
 import com.example.ambientglow.glassHaze
 import com.example.ambientglow.ledBreathAt
@@ -116,7 +117,7 @@ import kotlinx.coroutines.withContext
 
 // ---------------------------------------------------------------------------------------------
 // The EFFECT and SCREEN tabs: the effect (live preview, style, try-out colour, Edge Frame options,
-// spawn and its glass look), and where it plays.
+// spawn and its element), and where it plays.
 // ---------------------------------------------------------------------------------------------
 
 private val StudioPreviewHeight: Dp = 250.dp
@@ -225,12 +226,53 @@ internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> U
 }
 
 /**
- * How the effect starts: the spawn wave from the camera, and the look of that wave. Each look
- * keeps its options folded, so adding looks adds a toggle or a fold, not a wall of chips.
+ * The element the effect takes after, under the preview that shows it. Each element folds its
+ * own options under the picker, so adding one adds a fold, not a wall of chips. Elements play in
+ * the spawn wave: picking one turns the wave on, and with it off the card says so.
  */
 @Composable
-internal fun SpawnCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+internal fun ElementCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    val element = settings.element
     // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
+    Column(Modifier.glowCard()) {
+        SectionLabel(stringResource(R.string.element), GlowPalette.Cyan)
+        Spacer(Modifier.height(16.dp))
+        ElementPicker(element) { picked ->
+            onEffect(settings.copy(element = picked, spawn = settings.spawn || picked != SpawnElement.NONE))
+        }
+        Spacer(Modifier.height(10.dp))
+        OptionBody(element) { shown ->
+            val body = stringResource(shown.body)
+            if (shown.ready) body else body + " " + stringResource(R.string.element_soon)
+        }
+        Disclosure(visible = element.premium) {
+            Box(Modifier.padding(top = 10.dp)) { PremiumLine() }
+        }
+        Disclosure(visible = !settings.spawn && element != SpawnElement.NONE) {
+            Box(Modifier.padding(top = 14.dp)) {
+                NoticeRow(
+                    text = stringResource(R.string.element_needs_spawn),
+                    action = stringResource(R.string.element_spawn_on),
+                    onAction = { onEffect(settings.copy(spawn = true)) },
+                )
+            }
+        }
+        // Only Water has options so far; the other elements get a fold here as they get a look.
+        Disclosure(visible = element == SpawnElement.WATER) {
+            Column(Modifier.padding(top = 12.dp)) {
+                CardDivider()
+                Spacer(Modifier.height(10.dp))
+                Fold(title = stringResource(R.string.fold_glass), summary = glassSummary(settings)) {
+                    GlassOptions(settings, onEffect)
+                }
+            }
+        }
+    }
+}
+
+/** How the effect starts: an AirDrop-style wave from the camera, which the element rides. */
+@Composable
+internal fun SpawnCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
     Column(Modifier.glowCard()) {
         ToggleRow(
             title = stringResource(R.string.effect_spawn_title),
@@ -238,26 +280,6 @@ internal fun SpawnCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit)
             checked = settings.spawn,
             onChange = { onEffect(settings.copy(spawn = it)) },
         )
-        // A look for the spawn wave, so only offered with it.
-        Disclosure(visible = settings.spawn) {
-            Column(Modifier.padding(top = 16.dp)) {
-                ToggleRow(
-                    title = stringResource(R.string.effect_glass_title),
-                    body = stringResource(R.string.effect_glass_body),
-                    checked = settings.glass,
-                    onChange = { onEffect(settings.copy(glass = it)) },
-                )
-                Disclosure(visible = settings.glass) {
-                    Column(Modifier.padding(top = 12.dp)) {
-                        CardDivider()
-                        Spacer(Modifier.height(10.dp))
-                        Fold(title = stringResource(R.string.fold_glass), summary = glassSummary(settings)) {
-                            GlassOptions(settings, onEffect)
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -311,34 +311,30 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 title = R.string.group_arrival_title,
                                 body = R.string.group_arrival_body,
                             ) {
-                                // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
-                                Column {
-                                    EffectCard(
-                                        settings = settings,
-                                        sample = sample,
-                                        previewHeld = previewHeld,
-                                        loop = !reduceMotion,
-                                        onStyle = { style ->
-                                            update(settings.copy(style = style), true)
-                                            showcase()
-                                        },
-                                        onSample = { index ->
-                                            sample = index
-                                            showcase()
-                                        },
-                                    )
-                                    Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
-                                        Box(Modifier.padding(top = 14.dp)) {
-                                            EdgeFrameCard(settings) { next ->
-                                                update(next, true)
-                                                showcase()
-                                            }
-                                        }
-                                    }
-                                }
-                                SpawnCard(settings) { next ->
+                                // Main choices first, fine-tuning last: the look and its preview, the
+                                // element, the wave it rides, then Edge Frame's own options.
+                                val onEffect = { next: GlowSettings ->
                                     update(next, true)
                                     showcase()
+                                }
+                                EffectCard(
+                                    settings = settings,
+                                    sample = sample,
+                                    previewHeld = previewHeld,
+                                    loop = !reduceMotion,
+                                    onStyle = { style -> onEffect(settings.copy(style = style)) },
+                                    onSample = { index ->
+                                        sample = index
+                                        showcase()
+                                    },
+                                )
+                                ElementCard(settings, onEffect)
+                                // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
+                                Column {
+                                    SpawnCard(settings, onEffect)
+                                    Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
+                                        Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
+                                    }
                                 }
                             }
                             DashboardTab.SCREEN -> SettingsGroup(

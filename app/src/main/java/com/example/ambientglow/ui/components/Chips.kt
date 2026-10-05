@@ -83,20 +83,23 @@ private val CHIP_GAP = 6.dp
  * wells, blade and strokes are built once; a slide moves the blade in layout and tints the
  * labels in draw, so it doesn't recompose. [chip] draws a chip's content; [lit] says how much
  * of the blade is under it (1 when it rests there), read in draw, so a label lights as the
- * blade arrives rather than as the pick is made.
+ * blade arrives rather than as the pick is made. Taller rows ([height]) hold tiles: an icon over
+ * a label, with less [inset] so the label has the width.
  */
 @Composable
 internal fun SelectionRow(
     count: Int,
     selected: Int,
     onSelect: (Int) -> Unit,
+    height: Dp = CHIP_HEIGHT,
+    inset: Dp = 8.dp,
     chip: @Composable RowScope.(index: Int, lit: () -> Float) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
     // Starts in place; a new pick slides there, and a quick re-pick turns it mid-way.
     val slot = remember { Animatable(selected.toFloat()) }
     LaunchedEffect(selected) { slot.animateTo(selected.toFloat(), GlowMotion.Slide) }
-    BoxWithConstraints(Modifier.fillMaxWidth().height(CHIP_HEIGHT).selectableGroup()) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(height).selectableGroup()) {
         val slotWidth = (maxWidth - CHIP_GAP * (count - 1)) / count
         // The empty wells, inset like Modifier.border.
         Spacer(
@@ -142,7 +145,7 @@ internal fun SelectionRow(
                             if (!on) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             onSelect(index)
                         }
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = inset),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

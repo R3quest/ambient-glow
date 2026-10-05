@@ -21,6 +21,9 @@ object GlowPrefs {
     private const val KEY_LED_BRIGHTNESS = "led_brightness"
     private const val KEY_ARRIVAL = "arrival"
     private const val KEY_SPAWN = "spawn"
+    private const val KEY_ELEMENT = "element"
+
+    /** Before elements, the glass wave was a switch; on, it is Water now. */
     private const val KEY_GLASS = "glass"
     private const val KEY_GLASS_BLUR = "glass_blur"
     private const val KEY_GLASS_AREA = "glass_area"
@@ -48,7 +51,7 @@ object GlowPrefs {
             ledBrightness = getEnum(KEY_LED_BRIGHTNESS, defaults.ledBrightness),
             arrival = getEnum(KEY_ARRIVAL, defaults.arrival),
             spawn = getBoolean(KEY_SPAWN, defaults.spawn),
-            glass = getBoolean(KEY_GLASS, defaults.glass),
+            element = getEnum(KEY_ELEMENT, if (getBoolean(KEY_GLASS, false)) SpawnElement.WATER else defaults.element),
             glassBlur = getEnum(KEY_GLASS_BLUR, defaults.glassBlur),
             glassArea = getEnum(KEY_GLASS_AREA, defaults.glassArea),
             glassFrost = getEnum(KEY_GLASS_FROST, defaults.glassFrost),
@@ -73,7 +76,8 @@ object GlowPrefs {
             putString(KEY_LED_BRIGHTNESS, settings.ledBrightness.name)
             putString(KEY_ARRIVAL, settings.arrival.name)
             putBoolean(KEY_SPAWN, settings.spawn)
-            putBoolean(KEY_GLASS, settings.glass)
+            putString(KEY_ELEMENT, settings.element.name)
+            remove(KEY_GLASS)
             putString(KEY_GLASS_BLUR, settings.glassBlur.name)
             putString(KEY_GLASS_AREA, settings.glassArea.name)
             putString(KEY_GLASS_FROST, settings.glassFrost.name)

@@ -109,6 +109,24 @@ enum class EdgeColor(
 }
 
 /**
+ * The element the spawn wave takes after. Water is the glass wave; the others have no look of
+ * their own yet ([ready] is false) and play the plain wave until they do. [premium] ones are
+ * marked as such but free to try for now: nothing checks a purchase yet.
+ */
+enum class SpawnElement(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    val ready: Boolean,
+    val premium: Boolean,
+) : Labeled {
+    NONE(R.string.element_none, R.string.element_none_body, ready = true, premium = false),
+    FIRE(R.string.element_fire, R.string.element_fire_body, ready = false, premium = true),
+    WATER(R.string.element_water, R.string.element_water_body, ready = true, premium = false),
+    AIR(R.string.element_air, R.string.element_air_body, ready = false, premium = true),
+    EARTH(R.string.element_earth, R.string.element_earth_body, ready = false, premium = true),
+}
+
+/**
  * Glass wave: how soft the screen under it goes, as the blur radius at full screen. The black
  * panel has nothing under it to blur, so there it is only the drawn wave and frost.
  */
@@ -197,8 +215,8 @@ data class GlowSettings(
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
     val spawn: Boolean = true,
-    /** The spawn wave rolls in like the iPhone's: a soft, shimmering crest of light and a trailing ripple. */
-    val glass: Boolean = false,
+    /** The element the spawn wave takes after; Water is the glass wave. */
+    val element: SpawnElement = SpawnElement.NONE,
     val glassBlur: GlassBlur = GlassBlur.MEDIUM,
     val glassArea: GlassArea = GlassArea.REVEAL,
     val glassFrost: GlassFrost = GlassFrost.SOFT,
@@ -207,6 +225,9 @@ data class GlowSettings(
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
     val edgeColor: EdgeColor = EdgeColor.APP,
 ) {
+    /** The spawn wave rolls in like the iPhone's: a soft, shimmering crest of light and a trailing ripple. */
+    val glass: Boolean get() = element == SpawnElement.WATER
+
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
     val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT
 
