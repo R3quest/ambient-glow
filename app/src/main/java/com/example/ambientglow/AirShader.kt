@@ -6,13 +6,22 @@ import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.math.ln
 import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 // ---------------------------------------------------------------------------------------------
@@ -22,6 +31,80 @@ import kotlin.math.sqrt
 // over the ring the gust is in (and what it carries); below Android 13 the effect draws
 // gradients instead.
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * The wind's strips: how hard the gust drags the screen at flow angle `psi` (radians, the flow
+ * line's angle as the shaders work it out), 0 in the still gaps to 1 in a strip. A few waves
+ * round the ring, thresholded, so strips come in uneven widths with clear gaps between. The
+ * veil shows them, and the screen under the gust smears in them ([WindSmear], and the lock
+ * screen's blur columns in [GlowShield]). Each wave: amplitude, frequency, phase.
+ */
+private val STRIP_WAVES = floatArrayOf(
+    0.28f, 31f, 1.3f,
+    0.22f, 53f, 4.1f,
+    0.12f, 89f, 2.2f,
+)
+private const val STRIP_FROM = 0.45f
+private const val STRIP_TO = 0.75f
+
+/** How hard the wind drags the screen at flow angle [psi], 0..1; [WIND_STRIP_AGSL] works it out the same way. */
+internal fun windStripAt(psi: Float): Float {
+    var w = 0.5f
+    for (i in STRIP_WAVES.indices step 3) w += STRIP_WAVES[i] * sin(psi * STRIP_WAVES[i + 1] + STRIP_WAVES[i + 2])
+    return smoothstep(STRIP_FROM, STRIP_TO, w)
+}
+
+/** The flow angle at [dx], [dy] from the camera: where on the ring the flow line through it leaves, as the shaders work it out. */
+internal fun flowAngle(dx: Float, dy: Float, pitch: Float): Float = atan2(dx, dy) - pitch * ln(max(hypot(dx, dy), 1f))
+
+private val WIND_STRIP_AGSL = buildString {
+    append("float windStrip(float psi) {\n    float w = 0.5")
+    for (i in STRIP_WAVES.indices step 3) append(" + ${STRIP_WAVES[i]} * sin(psi * ${STRIP_WAVES[i + 1]} + ${STRIP_WAVES[i + 2]})")
+    append(";\n    return smoothstep($STRIP_FROM, $STRIP_TO, w);\n}")
+}
+
+/**
+ * The gust's fingers: a gust is not a ring, so here and there the wind surges on ahead of its
+ * front, in a few broad tongues round the ring that shift as it travels. Only ever ahead: the
+ * front itself still lights the frame and beacons as it reaches them, and a tongue that gets
+ * there first reads as the wind striking before the glow catches. A few whole-number waves round
+ * the ring (so it closes on itself), drifting with the wave, thresholded into tongues with calm
+ * between. Each wave: amplitude, waves round the ring, phase, drift over the trip.
+ */
+private val SURGE_WAVES = floatArrayOf(
+    0.3f, 3f, 0.4f, 2.1f,
+    0.22f, 5f, 2.9f, -3.4f,
+    0.12f, 9f, 5.1f, 5.3f,
+)
+private const val SURGE_FROM = 0.5f
+private const val SURGE_TO = 0.95f
+
+/** The farthest a tongue runs ahead of the front, as a share of its radius. */
+internal const val GUST_SURGE = 0.12f
+
+/** The front leaves the camera round, and breaks up into tongues over this stretch of the wave. */
+private const val SURGE_RISE_FROM = 0.04f
+private const val SURGE_RISE_TO = 0.4f
+
+/**
+ * How far the gust's front runs ahead of round at flow angle [psi] (as [flowAngle] works it out)
+ * with the wave at [wave] of its reach: a share of its radius, 0..[GUST_SURGE]. [GUST_SURGE_AGSL]
+ * works it out the same way, so the lines, the air, the smear and the lock screen's blur all bend
+ * round the same tongues.
+ */
+internal fun gustSurgeAt(psi: Float, wave: Float): Float {
+    var w = 0.5f
+    for (i in SURGE_WAVES.indices step 4) w += SURGE_WAVES[i] * sin(psi * SURGE_WAVES[i + 1] + SURGE_WAVES[i + 2] + SURGE_WAVES[i + 3] * wave)
+    return GUST_SURGE * smoothstep(SURGE_RISE_FROM, SURGE_RISE_TO, wave) * smoothstep(SURGE_FROM, SURGE_TO, w)
+}
+
+private val GUST_SURGE_AGSL = buildString {
+    append("float gustSurge(float psi, float wave) {\n    float w = 0.5")
+    for (i in SURGE_WAVES.indices step 4) {
+        append(" + ${SURGE_WAVES[i]} * sin(psi * ${SURGE_WAVES[i + 1]} + ${SURGE_WAVES[i + 2]} + ${SURGE_WAVES[i + 3]} * wave)")
+    }
+    append(";\n    return $GUST_SURGE * smoothstep($SURGE_RISE_FROM, $SURGE_RISE_TO, wave) * smoothstep($SURGE_FROM, $SURGE_TO, w);\n}")
+}
 
 /**
  * The wind flows along log spirals out of the camera, `pitch` the tangent of their lean: a
@@ -41,13 +124,14 @@ import kotlin.math.sqrt
  * The lines ride on the front; wisps, thinner and shorter, trail them farther back.
  *
  * Layers, bottom up: the puff, a soft ring of air thrown out of the camera as the gust is let go,
- * torn into wisps; the air, a streaky veil trailing the front; the lines' glow, brightest round
+ * torn into wisps; the air, a veil in the wind's strips ([windStripAt]) trailing the front; the lines' glow, brightest round
  * their heads; the lines, cel-shaded in two bands, a white core in a coloured rim, whitening
  * towards the head; and what the gust carries. All are premultiplied and never brighter than their cover.
  */
 private val AIR_AGSL = """
 uniform float2 origin;
 uniform float radius;
+uniform float wave;
 uniform float energy;
 uniform float puff;
 uniform float time;
@@ -88,7 +172,7 @@ const float SHRINK = 0.55;
 const float PHI_MAX = 5.4;
 // The air's veil falls off behind the front over this many line lengths.
 const float BODY_REACH = $AIR_BODY_REACH;
-const float BODY_ALPHA = 0.11;
+const float BODY_ALPHA = 0.14;
 // The lines' glow: its falloff in dp, and how strong it is.
 const float BLOOM_DP = $AIR_BLOOM_DP;
 const float BLOOM = 0.4;
@@ -116,6 +200,10 @@ float noise(float2 p) {
 float4 over(float4 top, float4 under) {
     return top + under * (1.0 - top.a);
 }
+
+$WIND_STRIP_AGSL
+
+$GUST_SURGE_AGSL
 
 // How far along a curl of radius rho the stroke has run at phi radians into it.
 float curlArc(float rho, float phi) {
@@ -238,11 +326,16 @@ float4 carried(float2 xy) {
 half4 main(float2 xy) {
     float2 d = xy - origin;
     float r = length(d);
-    float x = r - radius;
+    // The front, surging on ahead in the gust's tongues; the lines and the air ride it there.
+    float psi = atan(d.x, d.y) - pitch * log(max(r, 1.0));
+    float surge = gustSurge(psi, wave);
+    float x = r - radius * (1.0 + surge);
     float4 col = float4(0.0);
 
     if ((energy > 0.0 || puff > 0.0) && x < ahead && x > -behind) {
-        float psi = atan(d.x, d.y) - pitch * log(max(r, 1.0));
+        // The tongues carry the gust's full strength; the calm between them blows a little softer.
+        float push = surge / $GUST_SURGE;
+        float gust = energy * (0.8 + 0.2 * push);
         float h = -x;
         // The puff: sharp at its leading edge, thinning behind, torn round the ring.
         if (puff > 0.0) {
@@ -251,12 +344,14 @@ half4 main(float2 xy) {
             float pa = puff * PUFF_ALPHA * pr * tear;
             col = float4(mix(float3(glow.rgb), float3(body.rgb), pr) * pa, pa);
         }
-        // The air: a veil streaked along the flow, thickest just behind the front.
+        // The air: a veil in the wind's strips, the ones that smear the screen under it, rushing
+        // out along them, thickest just behind the front.
         float prof = smoothstep(-8.0 * dp, 6.0 * dp, h) * exp(-max(h, 0.0) / (BODY_REACH * len));
         if (prof > 0.01) {
             float n1 = noise(float2(psi * 40.0, r / (0.55 * len) - time * 2.4 * pace));
             float n2 = noise(float2(psi * 87.0 + 3.1, r / (0.27 * len) - time * 3.6 * pace));
-            float va = energy * BODY_ALPHA * prof * smoothstep(0.3, 0.85, 0.65 * n1 + 0.35 * n2);
+            float rush = smoothstep(0.2, 0.8, 0.65 * n1 + 0.35 * n2);
+            float va = gust * BODY_ALPHA * (1.0 + 0.5 * push) * prof * (0.15 + 0.85 * windStrip(psi)) * (0.35 + 0.65 * rush);
             col = over(float4(float3(glow.rgb) * va, va), col);
         }
 
@@ -290,7 +385,7 @@ half4 main(float2 xy) {
                 }
             }
         }
-        float ga = min(1.0, energy * BLOOM * bloom);
+        float ga = min(1.0, gust * BLOOM * bloom);
         if (ga > 0.0) col = over(float4(float3(glow.rgb) * ga, ga), col);
         float cov = clamp(win.x + 0.5, 0.0, 1.0) * min(1.0, 2.0 * win.y);
         if (cov > 0.0) {
@@ -298,7 +393,7 @@ half4 main(float2 xy) {
             float inner = clamp(win.x - 0.45 * win.y + 0.5, 0.0, 1.0);
             float3 rim = mix(float3(shade.rgb), float3(glow.rgb), smoothstep(0.0, 0.6, v));
             float3 hot = mix(float3(body.rgb), float3(core.rgb), smoothstep(0.3, 1.0, v));
-            float la = energy * win.w * cov * (0.5 + 0.5 * v);
+            float la = gust * win.w * cov * (0.5 + 0.5 * v);
             col = over(float4(mix(rim, hot, inner) * la, la), col);
         }
     }
@@ -308,6 +403,137 @@ half4 main(float2 xy) {
     return half4(min(col.rgb, float3(col.a)), col.a);
 }
 """
+
+/**
+ * The gust's smear of what is under it, as an effect on that content (Android 13+): in the
+ * wind's strips each pixel is drawn from along the flow line upwind of it, as if the wind had
+ * dragged the screen out in streaks; between them it is left sharp. `len` is the longest drag.
+ */
+private val WIND_SMEAR_AGSL = """
+uniform shader content;
+uniform float2 origin;
+uniform float pitch;
+uniform float len;
+
+$WIND_STRIP_AGSL
+
+half4 main(float2 xy) {
+    float2 d = xy - origin;
+    float r = max(length(d), 1.0);
+    float drag = len * windStrip(atan(d.x, d.y) - pitch * log(r));
+    if (drag < 0.75) return content.eval(xy);
+    // The wind's way here: straight out, leaning with the flow.
+    float2 away = d / r;
+    float2 flow = normalize(away + pitch * float2(away.y, -away.x));
+    half4 acc = half4(0.0);
+    float sum = 0.0;
+    for (int i = 0; i < $SMEAR_TAPS; i++) {
+        // Mostly from upwind, the nearest strongest: the screen pushed out, trailing.
+        float t = float(i) / ${SMEAR_TAPS - 1}.0;
+        float w = 1.0 - 0.6 * t;
+        acc += content.eval(xy - flow * (drag * (t - 0.2))) * half(w);
+        sum += w;
+    }
+    return acc / half(sum);
+}
+"""
+
+private const val SMEAR_TAPS = 12
+
+/** The smear drags up to this many times a blur's radius along the wind, softened by a blur of this share of it. */
+private const val SMEAR_DRAG = 3f
+private const val SMEAR_SOFT = 0.3f
+
+/**
+ * The gust's smear for the dashboard and its preview, which blur what they draw themselves
+ * ([glassHaze]): built once per size, then one effect per blur step, so a frame only picks one.
+ */
+internal fun interface WindSmear {
+    /**
+     * The smear in place of a blur of [radius] px: dragged [SMEAR_DRAG] times as far along the
+     * wind in its strips, after a light blur. Each effect keeps the drag it was made with.
+     */
+    fun effect(radius: Float): RenderEffect
+}
+
+/** The gust's smear from [origin] for lines leaning [pitch], or null below Android 13 (no runtime shaders). */
+internal fun windSmear(origin: Offset, pitch: Float): WindSmear? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
+    return WindSmearRuntime(origin, pitch)
+}
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class WindSmearRuntime(origin: Offset, pitch: Float) : WindSmear {
+    private val shader = RuntimeShader(WIND_SMEAR_AGSL).apply {
+        setFloatUniform("origin", origin.x, origin.y)
+        setFloatUniform("pitch", pitch)
+    }
+
+    override fun effect(radius: Float): RenderEffect {
+        shader.setFloatUniform("len", SMEAR_DRAG * radius)
+        val soft = SMEAR_SOFT * radius
+        return android.graphics.RenderEffect.createChainEffect(
+            android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content"),
+            android.graphics.RenderEffect.createBlurEffect(soft, soft, android.graphics.Shader.TileMode.CLAMP),
+        ).asComposeRenderEffect()
+    }
+}
+
+/**
+ * The band the gust smears what is under it in, as a mask (white where it smears): the glass
+ * wave's band ([hazeMask]), bent round the gust's tongues ([gustSurgeAt]) so the smear rides
+ * ahead with them instead of ending on a circle.
+ */
+private val WIND_BAND_AGSL = """
+uniform float2 origin;
+uniform float radius;
+uniform float wave;
+uniform float pitch;
+
+$GUST_SURGE_AGSL
+
+half4 main(float2 xy) {
+    float2 d = xy - origin;
+    float r = length(d);
+    float psi = atan(d.x, d.y) - pitch * log(max(r, 1.0));
+    float f = r / max(radius * (1.0 + gustSurge(psi, wave)), 1.0);
+    // The glass band's stops, as its gradient lays them: in to half, to full, then out at its edge.
+    float a = 0.45 * clamp((f - ${HAZE_BAND_INNER - 0.08f}) / 0.1, 0.0, 1.0)
+            + 0.55 * clamp((f - ${HAZE_BAND_INNER + 0.02f}) / ${0.9f - HAZE_BAND_INNER - 0.02f}, 0.0, 1.0);
+    a *= 1.0 - clamp((f - $HAZE_BAND_OUTER) / ${1f - HAZE_BAND_OUTER}, 0.0, 1.0);
+    return half4(a);
+}
+"""
+
+/** The gust's smear band for content the app draws itself, moved every frame through [draw]. */
+internal fun interface WindBand {
+    /** Cuts what is drawn so far to the band, the wave at [wave] of its reach. */
+    fun draw(scope: DrawScope, wave: Float)
+}
+
+/** The gust's smear band from [origin] over [reach], lines leaning [pitch]; null below Android 13. */
+internal fun windBand(origin: Offset, reach: Float, pitch: Float): WindBand? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
+    return WindBandRuntime(origin, reach, pitch)
+}
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class WindBandRuntime(origin: Offset, private val reach: Float, pitch: Float) : WindBand {
+    private val shader = RuntimeShader(WIND_BAND_AGSL).apply {
+        setFloatUniform("origin", origin.x, origin.y)
+        setFloatUniform("pitch", pitch)
+    }
+    private val paint = android.graphics.Paint().apply {
+        this.shader = this@WindBandRuntime.shader
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+    }
+
+    override fun draw(scope: DrawScope, wave: Float) {
+        shader.setFloatUniform("radius", wave * reach)
+        shader.setFloatUniform("wave", wave)
+        scope.drawIntoCanvas { it.nativeCanvas.drawRect(0f, 0f, scope.size.width, scope.size.height, paint) }
+    }
+}
 
 /** Air (shader): one line's life at pace 1, in s. */
 internal const val AIR_LIFE = 0.5f
@@ -438,10 +664,12 @@ internal abstract class AirShader {
     abstract val fallPx: Float
 
     /**
-     * [radius] the front's in px, [energy] the lines' light, [puff] the puff's and [carry] the
-     * share of what the gust carries still in the air, all 0..1; [ms] the effect's clock.
+     * [radius] the front's in px where it is round, [wave] how far out it is (0..1 of its reach,
+     * for the tongues that surge ahead of it, [gustSurgeAt]), [energy] the lines' light, [puff] the
+     * puff's and [carry] the share of what the gust carries still in the air, all 0..1; [ms] the
+     * effect's clock.
      */
-    abstract fun update(radius: Float, energy: Float, puff: Float, carry: Float, ms: Float)
+    abstract fun update(radius: Float, wave: Float, energy: Float, puff: Float, carry: Float, ms: Float)
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -498,7 +726,7 @@ private class AirRuntime(
     override var fallPx = 0f
         private set
 
-    override fun update(radius: Float, energy: Float, puff: Float, carry: Float, ms: Float) {
+    override fun update(radius: Float, wave: Float, energy: Float, puff: Float, carry: Float, ms: Float) {
         // Short lines while the ring is small, so they never reach back past the camera.
         val grow = 0.3f + 0.7f * smoothstep(0f, 3f * len, radius)
         // Columns round the ring at their widest, as a power of two, and how far to the next.
@@ -508,6 +736,7 @@ private class AirRuntime(
         driftPx = airDriftAt(ms) * dp
         fallPx = airFallAt(ms) * dp
         runtime.setFloatUniform("radius", radius)
+        runtime.setFloatUniform("wave", wave)
         runtime.setFloatUniform("energy", energy)
         runtime.setFloatUniform("puff", puff)
         runtime.setFloatUniform("time", ms / 1000f)

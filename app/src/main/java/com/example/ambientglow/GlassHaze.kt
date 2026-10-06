@@ -151,8 +151,9 @@ class GlassHaze : GlassHazeTarget {
 }
 
 /**
- * Blurs this content as the spawn wave passes (Water's glass, Air's gust), the way the lock screen gets it: all of it, or
- * a soft band under the crest. While the wave runs the content is drawn once more, blurred and
+ * Blurs this content as the spawn wave passes (Water's glass, Air's gust), the way the lock
+ * screen gets it: all of it, or a soft band under the crest, which Air's gust smears out in its
+ * strips instead ([WindSmear]). While the wave runs the content is drawn once more, blurred and
  * cut to the band; the rest of the time it is drawn as usual. Android 12+; below, nothing.
  * [geometry] and [scale] place the wave as the effect drawn over this content places it.
  */
@@ -165,8 +166,15 @@ fun Modifier.glassHaze(haze: GlassHaze, settings: GlowSettings, geometry: Screen
         val origin = waveOrigin(geometry, size.width, density, scale)
         val reach = waveReach(origin, size.width, size.height)
         val peak = settings.hazeBlur.radius.toPx() * scale
-        val blurs = Array(GLASS_BLUR_STEPS) { i -> (peak * (i + 1) / GLASS_BLUR_STEPS).let { BlurEffect(it, it) } }
-        val mask = hazeMask(settings.hazeArea, origin, reach, Color.White)
+        // Air's gust drags the screen out in its strips where it can (Android 13+), and blurs it elsewhere.
+        val smear = if (settings.air) windSmear(origin, settings.airFlow.pitch) else null
+        val blurs = Array(GLASS_BLUR_STEPS) { i ->
+            val radius = peak * (i + 1) / GLASS_BLUR_STEPS
+            smear?.effect(radius) ?: BlurEffect(radius, radius)
+        }
+        // Where it smears, the band bends round the gust's tongues; elsewhere it is round.
+        val band = if (smear != null) windBand(origin, reach, settings.airFlow.pitch) else null
+        val mask = if (band == null) hazeMask(settings.hazeArea, origin, reach, Color.White) else null
         val waveOnly = settings.hazeArea == GlassArea.WAVE
         // Offscreen, so the band cuts only this layer's copy of the content.
         soft.compositingStrategy = CompositingStrategy.Offscreen
@@ -182,7 +190,11 @@ fun Modifier.glassHaze(haze: GlassHaze, settings: GlowSettings, geometry: Screen
             soft.renderEffect = blurs[step - 1]
             soft.record {
                 drawLayer(sharp)
-                if (mask != null) fillScaled(mask, wave.coerceAtLeast(MIN_WAVE), origin, blendMode = BlendMode.DstIn)
+                if (band != null) {
+                    band.draw(this, wave.coerceAtLeast(MIN_WAVE))
+                } else if (mask != null) {
+                    fillScaled(mask, wave.coerceAtLeast(MIN_WAVE), origin, blendMode = BlendMode.DstIn)
+                }
             }
             drawLayer(soft)
         }

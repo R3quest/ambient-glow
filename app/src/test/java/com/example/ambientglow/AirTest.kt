@@ -1,6 +1,7 @@
 package com.example.ambientglow
 
 import androidx.compose.ui.graphics.Color
+import kotlin.math.PI
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -81,6 +82,31 @@ class AirTest {
     }
 
     @Test
+    fun theWindSmearsInStripsWithStillGapsBetween() {
+        val samples = (0 until 3_600).map { windStripAt(it / 3_600f * 2f * PI.toFloat() - PI.toFloat()) }
+        val dragged = samples.count { it > 0.5f } / samples.size.toFloat()
+        val still = samples.count { it == 0f } / samples.size.toFloat()
+        assertTrue("dragged $dragged", dragged in 0.25f..0.6f)
+        assertTrue("still $still", still in 0.2f..0.6f)
+        // Strips, not noise: across a few hundred of the samples (a hand's width at mid-screen) it
+        // turns on and off only a few times.
+        val turns = samples.take(300).zipWithNext().count { (a, b) -> (a > 0.5f) != (b > 0.5f) }
+        assertTrue("turns $turns", turns in 1..12)
+    }
+
+    @Test
+    fun theFlowAngleIsTheSameAllAlongAFlowLine() {
+        val pitch = AirFlow.VORTEX.pitch
+        val psi = 0.4f
+        for (r in listOf(50f, 400f, 2_000f)) {
+            val theta = psi + pitch * kotlin.math.ln(r)
+            // The same angle, a whole number of turns apart (the flow line winds round as it goes out).
+            val turns = (flowAngle(r * kotlin.math.sin(theta), r * kotlin.math.cos(theta), pitch) - psi) / (2f * PI.toFloat())
+            assertEquals(kotlin.math.round(turns), turns, 1e-4f)
+        }
+    }
+
+    @Test
     fun thePuffBurstsOutAsTheGustIsLetGoAndThinsAway() {
         assertEquals(0f, puffAt(SPAWN_GATHER_MS), 0f)
         assertTrue((SPAWN_GATHER_MS.toInt()..600).maxOf { puffAt(it.toFloat()) } > 0.9f)
@@ -93,5 +119,32 @@ class AirTest {
         assertTrue(whirlAt(0f) < 0f)
         assertEquals(0f, whirlAt(SPAWN_GATHER_MS), 0f)
         assertTrue(whirlAt(SPAWN_GATHER_MS + 400f) > 1f)
+    }
+
+    @Test
+    fun theGustLeavesRoundThenBreaksIntoTonguesThatOnlyEverRunAhead() {
+        val ring = (0 until 3_600).map { it / 3_600f * 2f * PI.toFloat() - PI.toFloat() }
+        // Round as it leaves the camera, so the whirl and the puff stay round.
+        assertTrue(ring.all { gustSurgeAt(it, 0.03f) == 0f })
+        for (wave in listOf(0.5f, 0.75f, 1f)) {
+            val surge = ring.map { gustSurgeAt(it, wave) }
+            // Never behind the front, which is what lights the frame, and never far ahead of it.
+            assertTrue(surge.all { it in 0f..GUST_SURGE })
+            // A few broad tongues with calm between, not a ragged fringe.
+            val ahead = surge.count { it > 0.5f * GUST_SURGE } / surge.size.toFloat()
+            val calm = surge.count { it == 0f } / surge.size.toFloat()
+            assertTrue("wave $wave ahead $ahead", ahead in 0.1f..0.45f)
+            assertTrue("wave $wave calm $calm", calm in 0.2f..0.75f)
+            val tongues = surge.zipWithNext().count { (a, b) -> a == 0f && b > 0f }
+            assertTrue("wave $wave tongues $tongues", tongues in 2..7)
+        }
+    }
+
+    @Test
+    fun theTonguesCloseRoundTheRing() {
+        // The flow angle jumps a whole turn where atan2 wraps; the tongues mustn't tear there.
+        for (wave in listOf(0.3f, 0.7f, 1f)) {
+            assertEquals(gustSurgeAt(-PI.toFloat(), wave), gustSurgeAt(PI.toFloat(), wave), 1e-5f)
+        }
     }
 }

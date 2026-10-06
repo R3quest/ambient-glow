@@ -41,14 +41,15 @@ import com.example.ambientglow.ui.components.OptionBody
 import com.example.ambientglow.ui.components.OptionGroup
 import com.example.ambientglow.ui.components.SelectionRow
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 // ---------------------------------------------------------------------------------------------
 // Air's options, under the element picker, as pictures like Fire's: the strength as more and
 // longer lines of wind, the lines as speed lines, a curl or a whirl, the colours as chips each
-// holding a curl of that wind, what it carries as dust, petals or leaves, and the blur under it
-// as Water's is drawn. The pictures blow in the wind chosen, and pop as the blade passes under them.
+// holding a curl of that wind, what it carries as dust, petals or leaves, and the screen it
+// smears as a point of light dragged into trails. The pictures blow in the wind chosen, and pop as the blade passes under them.
 // ---------------------------------------------------------------------------------------------
 
 private val SWATCH_SIZE = 14.dp
@@ -95,7 +96,7 @@ internal fun AirOptions(settings: GlowSettings, accent: Color, onEffect: (GlowSe
             Box(Modifier.padding(top = GROUP_GAP)) {
                 OptionGroup(stringResource(R.string.air_blur)) {
                     GlyphTiles(GlassBlur.entries, settings.airBlur, { onEffect(settings.copy(airBlur = it)) }, ::AirLines) { blur, lit, lines ->
-                        blurGlyph(blur, ink(lit, wind.glow), lines.plain)
+                        smearGlyph(blur, ink(lit, wind.glow), lines.plain)
                     }
                     OptionBody(settings.airBlur) { blur ->
                         stringResource(if (blur == GlassBlur.OFF) R.string.air_blur_off_body else R.string.air_blur_body)
@@ -110,18 +111,26 @@ private val GROUP_GAP = 14.dp
 
 /**
  * What the air options are set to, in one sentence: what it carries only when it carries
- * something, and the blur only when there is one and a screen under it to blur.
+ * something, and the smear only when there is one and a screen under it to smear.
  */
 internal fun airPhrasing(settings: GlowSettings): Phrasing {
     val parts = listOf(settings.airGust.phrase, settings.airFlow.phrase, settings.airColor.phrase)
     val carry = settings.airCarry.phrase.takeIf { settings.airCarry != AirCarry.NONE }
-    val blur = settings.airBlur.phrase.takeIf { settings.airBlur != GlassBlur.OFF && !settings.arrival.onBlack }
+    val blur = smearPhrase(settings.airBlur).takeIf { !settings.arrival.onBlack }
     return when {
         carry != null && blur != null -> Phrasing(R.string.air_summary_carry_blur, parts + carry + blur)
         carry != null -> Phrasing(R.string.air_summary_carry, parts + carry)
         blur != null -> Phrasing(R.string.air_summary_blur, parts + blur)
         else -> Phrasing(R.string.air_summary, parts)
     }
+}
+
+/** How the gust smears the screen, said in the summary; none when it doesn't. */
+private fun smearPhrase(blur: GlassBlur): Int? = when (blur) {
+    GlassBlur.OFF -> null
+    GlassBlur.LIGHT -> R.string.air_smear_light_phrase
+    GlassBlur.MEDIUM -> R.string.air_smear_medium_phrase
+    GlassBlur.STRONG -> R.string.air_smear_strong_phrase
 }
 
 /** Air's glyph strokes, built once per size. */
@@ -210,6 +219,32 @@ private fun DrawScope.flowGlyph(flow: AirFlow, wind: AirPalette, lit: Float, lin
         }
         AirFlow.CURLS -> CURLS.forEach { drawPath(it, ink, style = lines.plain) }
         AirFlow.VORTEX -> drawPath(VORTEX, ink, style = lines.plain)
+    }
+}
+
+/** Where the smeared point of light sits, and the way its trails run back up the wind. */
+private val SMEAR_DOT = Offset(15.5f, 15.5f)
+private val UPWIND = Offset(-0.7071f, -0.7071f)
+private val ACROSS = Offset(0.7071f, -0.7071f)
+
+/** The trails behind the point for each strength: how far across the wind each starts, and how long it is. */
+private val SMEAR_TRAILS = mapOf(
+    GlassBlur.LIGHT to floatArrayOf(-1.3f, 5.5f, 1.3f, 4f),
+    GlassBlur.MEDIUM to floatArrayOf(-2f, 7f, 0f, 9.5f, 2f, 6f),
+    GlassBlur.STRONG to floatArrayOf(-2.6f, 8.5f, -0.9f, 12f, 0.9f, 10.5f, 2.6f, 7f),
+)
+
+/**
+ * The screen the gust smears: a point of light struck through for none, else dragged back up
+ * the wind into trails, more and longer the harder it smears.
+ */
+private fun DrawScope.smearGlyph(blur: GlassBlur, color: Color, plain: Stroke) {
+    val trails = SMEAR_TRAILS[blur] ?: return blurGlyph(blur, color, plain)
+    drawCircle(color, 2.6f, SMEAR_DOT)
+    for (i in trails.indices step 2) {
+        val from = SMEAR_DOT + ACROSS * trails[i] + UPWIND * 2.2f
+        val to = from + UPWIND * trails[i + 1]
+        drawLine(color, from, to, strokeWidth = plain.width, cap = StrokeCap.Round, alpha = 1f - 0.12f * abs(trails[i]))
     }
 }
 

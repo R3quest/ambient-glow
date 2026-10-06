@@ -103,8 +103,8 @@
     <string name="air_carry_dust">DUST</string>
     <string name="air_carry_petals">PETALS</string>
     <string name="air_carry_leaves">LEAVES</string>
-    <string name="air_blur">BLUR UNDERNEATH</string>
-    <string name="air_blur_body">What the gust passes over goes soft as its air rushes by, then sharp again behind it.</string>
+    <string name="air_blur">WIND SMEAR</string>
+    <string name="air_blur_body">The gust drags the screen it passes over out in streaks along its wind, then lets it snap back sharp behind it.</string>
     <string name="air_blur_off_body">The screen under the gust stays sharp.</string>
     <string name="arrival_needs_shield">Turn on Effects &amp; clean wake to play the effect over the lock screen. Without it the lock screen only lights up.</string>
     <string name="section_effect">EFFECT</string>
@@ -297,8 +297,8 @@
     <string name="fire_wake_clean_phrase">leaving nothing behind</string>
     <string name="air_summary">%1$s %2$s %3$s.</string>
     <string name="air_summary_carry">%1$s %2$s %3$s, %4$s.</string>
-    <string name="air_summary_blur">%1$s %2$s %3$s, with %4$s.</string>
-    <string name="air_summary_carry_blur">%1$s %2$s %3$s, %4$s, with %5$s.</string>
+    <string name="air_summary_blur">%1$s %2$s %3$s, %4$s.</string>
+    <string name="air_summary_carry_blur">%1$s %2$s %3$s, %4$s, %5$s.</string>
     <string name="air_gust_breeze_phrase">a soft breeze</string>
     <string name="air_gust_gust_phrase">a gust</string>
     <string name="air_gust_gale_phrase">a gale</string>
@@ -312,6 +312,9 @@
     <string name="air_carry_dust_phrase">carrying glinting dust</string>
     <string name="air_carry_petals_phrase">carrying petals</string>
     <string name="air_carry_leaves_phrase">carrying leaves</string>
+    <string name="air_smear_light_phrase">lightly smearing the screen</string>
+    <string name="air_smear_medium_phrase">smearing the screen in streaks</string>
+    <string name="air_smear_strong_phrase">dragging the screen out in streaks</string>
     <string name="section_led_look">LOOK</string>
 
     <string name="test_locked">TEST ON LOCKED PHONE</string>

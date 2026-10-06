@@ -201,7 +201,9 @@ class GlowShield : AccessibilityService() {
      * The spawn wave's blur of the lock screen (Water's glass, Air's gust), or null where there is none to be had:
      * - One UI ([SemBlur]): a row of [BLUR_STRIPS] narrow blur views in [root], each moved every
      *   frame to where the wave crosses its column (One UI won't let apps cut a blur to a shape,
-     *   but it blurs exactly a view's bounds). One full-window view for [GlassArea.SCREEN].
+     *   but it blurs exactly a view's bounds). One full-window view for [GlassArea.SCREEN]. Under
+     *   Air's gust the columns are narrower and reach further back, and each blurs as hard as the
+     *   wind's strip crossing it ([windStripAt]), so the screen goes soft in streaks.
      * - Android's window blur (where the system allows it): the whole window, in steps, since
      *   every change is a relayout. It can't follow the wave, so every area blurs the screen.
      */
@@ -224,8 +226,13 @@ class GlowShield : AccessibilityService() {
                 }
             }
             SemBlur.available -> {
-                val strips = Array(BLUR_STRIPS) { blurView(root, 0) }
-                val last = IntArray(BLUR_STRIPS)
+                // Air's gust blurs in streaks along its wind: narrower columns in a deeper band, each
+                // as hard as the wind's strip crossing it.
+                val wind = settings.air
+                val pitch = settings.airFlow.pitch
+                val count = if (wind) AIR_BLUR_STRIPS else BLUR_STRIPS
+                val strips = Array(count) { blurView(root, 0) }
+                val last = IntArray(count)
                 val reveal = area == GlassArea.REVEAL
                 GlassHazeTarget { level, wave ->
                     if (arrival !== root) return@GlassHazeTarget
@@ -235,9 +242,17 @@ class GlowShield : AccessibilityService() {
                     val radius = wave * waveReach(origin, width.toFloat(), height.toFloat())
                     val blur = (stepped(level) * peak * SemBlur.SCALE).roundToInt()
                     for (i in strips.indices) {
-                        val left = width * i / BLUR_STRIPS
-                        val right = width * (i + 1) / BLUR_STRIPS
-                        val dx = abs((left + right) / 2f - origin.x)
+                        val left = width * i / count
+                        val right = width * (i + 1) / count
+                        val across = (left + right) / 2f - origin.x
+                        val dx = abs(across)
+                        // How hard the wind drags this column, where the front crosses it, and how
+                        // far the gust's tongue there carries the band on ahead.
+                        val front = halfChord(HAZE_BAND_OUTER * radius, dx)
+                        val psi = if (wind && !front.isNaN()) flowAngle(across, front, pitch) else 0f
+                        val drag = if (!wind) 1f else if (front.isNaN()) 0f else AIR_STREAK_FLOOR + (1f - AIR_STREAK_FLOOR) * windStripAt(psi)
+                        val surge = if (wind) 1f + gustSurgeAt(psi, wave) else 1f
+                        val trail = if (wind) AIR_STREAK_INNER else HAZE_BAND_INNER
                         val top: Float
                         val bottom: Float
                         if (reveal) {
@@ -247,8 +262,8 @@ class GlowShield : AccessibilityService() {
                             bottom = height.toFloat()
                         } else {
                             // The band under the crest, where it crosses this column.
-                            val outer = halfChord(HAZE_BAND_OUTER * radius, dx)
-                            val inner = halfChord(HAZE_BAND_INNER * radius, dx)
+                            val outer = halfChord(HAZE_BAND_OUTER * radius * surge, dx)
+                            val inner = halfChord(trail * radius * surge, dx)
                             top = if (outer.isNaN()) 0f else if (inner.isNaN()) origin.y - outer else origin.y + inner
                             bottom = if (outer.isNaN()) 0f else origin.y + outer
                         }
@@ -263,7 +278,11 @@ class GlowShield : AccessibilityService() {
                             topMargin = t
                         }
                         view.layout(left, t, right, b)
-                        val strip = if (b > t) blur else 0
+                        val strip = when {
+                            b <= t -> 0
+                            !wind -> blur
+                            else -> (stepped(level * drag) * peak * SemBlur.SCALE).roundToInt()
+                        }
                         if (strip != last[i]) {
                             last[i] = strip
                             SemBlur.set(view, strip)
@@ -329,6 +348,16 @@ class GlowShield : AccessibilityService() {
     companion object {
         /** Columns the One UI blur follows the wave in; more look smoother and cost more per frame. */
         private const val BLUR_STRIPS = 24
+
+        /**
+         * Air's gust: its columns, narrower, so each is a thin streak along the wind, in a band
+         * reaching back to this share of the wave's radius. All end on the band's arcs: rect blurs
+         * have hard ends, and ends of uneven lengths read as bars, not wind. Even the still gaps
+         * soften a little ([AIR_STREAK_FLOOR]), so no streak stands out against its neighbours.
+         */
+        private const val AIR_BLUR_STRIPS = 48
+        private const val AIR_STREAK_INNER = 0.74f
+        private const val AIR_STREAK_FLOOR = 0.35f
 
         /** Upper bound for one cover; a wake hand-over takes well under a second. */
         private const val MAX_COVER_MS = 2_000L

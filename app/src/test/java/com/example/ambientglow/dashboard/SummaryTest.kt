@@ -148,9 +148,9 @@ class SummaryTest {
     private val airParts = listOf(R.string.air_gust_gust_phrase, R.string.air_flow_curls_phrase, R.string.air_color_clear_phrase)
 
     @Test
-    fun airSaysStrengthLinesColourWhatItCarriesAndTheBlur() {
+    fun airSaysStrengthLinesColourWhatItCarriesAndTheSmear() {
         assertEquals(
-            Phrasing(R.string.air_summary_carry_blur, airParts + R.string.air_carry_petals_phrase + R.string.glass_blur_light_phrase),
+            Phrasing(R.string.air_summary_carry_blur, airParts + R.string.air_carry_petals_phrase + R.string.air_smear_light_phrase),
             airPhrasing(air),
         )
     }
@@ -158,7 +158,7 @@ class SummaryTest {
     @Test
     fun airLeavesOutWhatIsOff() {
         assertEquals(Phrasing(R.string.air_summary_carry, airParts + R.string.air_carry_petals_phrase), airPhrasing(air.copy(airBlur = GlassBlur.OFF)))
-        assertEquals(Phrasing(R.string.air_summary_blur, airParts + R.string.glass_blur_light_phrase), airPhrasing(air.copy(airCarry = AirCarry.NONE)))
+        assertEquals(Phrasing(R.string.air_summary_blur, airParts + R.string.air_smear_light_phrase), airPhrasing(air.copy(airCarry = AirCarry.NONE)))
         assertEquals(
             Phrasing(
                 R.string.air_summary,
@@ -171,7 +171,7 @@ class SummaryTest {
     }
 
     @Test
-    fun airOnABlackScreenHasNothingToBlur() {
+    fun airOnABlackScreenHasNothingToSmear() {
         for (mode in listOf(ArrivalMode.BLACK, ArrivalMode.MESSAGE)) {
             assertEquals(Phrasing(R.string.air_summary_carry, airParts + R.string.air_carry_petals_phrase), airPhrasing(air.copy(arrival = mode)))
         }

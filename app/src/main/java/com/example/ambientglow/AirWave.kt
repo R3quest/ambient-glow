@@ -152,11 +152,12 @@ internal fun AirWave(
                     if (shader != null && paint != null) {
                         if (energy > 0f || puff > 0f || held > 0f) {
                             val radius = CREST_AT * reach * wave
-                            shader.update(radius, energy, puff, held, ms)
-                            // Only the ring the shader can draw in: the lines round the front, and
-                            // what the gust carries, as far as it has drifted and fallen.
+                            shader.update(radius, wave, energy, puff, held, ms)
+                            // Only the ring the shader can draw in: the lines round the front and
+                            // the tongues surging ahead of it, and what the gust carries, as far as
+                            // it has drifted and fallen.
                             var from = radius - shader.behindPx
-                            var to = radius + shader.aheadPx
+                            var to = radius * (1f + GUST_SURGE) + shader.aheadPx
                             if (held > 0f) {
                                 val spread = shader.fallPx + 2f * shader.carrySizePx
                                 from = min(from, AIR_CARRY_FROM * radius + shader.driftPx - spread)
