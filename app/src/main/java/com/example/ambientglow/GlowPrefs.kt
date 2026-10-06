@@ -28,6 +28,10 @@ object GlowPrefs {
     private const val KEY_GLASS_BLUR = "glass_blur"
     private const val KEY_GLASS_AREA = "glass_area"
     private const val KEY_GLASS_FROST = "glass_frost"
+    private const val KEY_FIRE_FLAMES = "fire_flames"
+    private const val KEY_FIRE_COLOR = "fire_color"
+    private const val KEY_FIRE_SPARKS = "fire_sparks"
+    private const val KEY_FIRE_WAKE = "fire_wake"
     private const val KEY_EDGE_WIDTH = "edge_width"
     private const val KEY_EDGE_GLOW = "edge_glow"
     private const val KEY_EDGE_MOTION = "edge_motion"
@@ -61,6 +65,10 @@ object GlowPrefs {
             glassBlur = getEnum(KEY_GLASS_BLUR, defaults.glassBlur),
             glassArea = getEnum(KEY_GLASS_AREA, defaults.glassArea),
             glassFrost = getEnum(KEY_GLASS_FROST, defaults.glassFrost),
+            fireFlames = getEnum(KEY_FIRE_FLAMES, defaults.fireFlames),
+            fireColor = getEnum(KEY_FIRE_COLOR, defaults.fireColor),
+            fireSparks = getEnum(KEY_FIRE_SPARKS, defaults.fireSparks),
+            fireWake = getEnum(KEY_FIRE_WAKE, defaults.fireWake),
             edgeWidth = getEnum(KEY_EDGE_WIDTH, defaults.edgeWidth),
             edgeGlow = getEnum(KEY_EDGE_GLOW, defaults.edgeGlow),
             edgeMotion = getEnum(KEY_EDGE_MOTION, defaults.edgeMotion),
@@ -86,6 +94,10 @@ object GlowPrefs {
             putString(KEY_GLASS_BLUR, settings.glassBlur.name)
             putString(KEY_GLASS_AREA, settings.glassArea.name)
             putString(KEY_GLASS_FROST, settings.glassFrost.name)
+            putString(KEY_FIRE_FLAMES, settings.fireFlames.name)
+            putString(KEY_FIRE_COLOR, settings.fireColor.name)
+            putString(KEY_FIRE_SPARKS, settings.fireSparks.name)
+            putString(KEY_FIRE_WAKE, settings.fireWake.name)
             putString(KEY_EDGE_WIDTH, settings.edgeWidth.name)
             putString(KEY_EDGE_GLOW, settings.edgeGlow.name)
             putString(KEY_EDGE_MOTION, settings.edgeMotion.name)

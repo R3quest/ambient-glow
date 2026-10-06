@@ -469,7 +469,7 @@ private fun EffectPage(
                     )
                     // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
                     Column {
-                        ElementCard(settings, onEffect)
+                        ElementCard(settings, SAMPLE_COLORS[sample].color, onEffect)
                         Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
                             Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
                         }

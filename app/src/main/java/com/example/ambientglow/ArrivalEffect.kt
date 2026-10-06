@@ -128,7 +128,7 @@ private const val CREST_SPREAD_LOSS = 0.3f
  * The crest's light at [ms] with the wave at [wave]: its energy spreads thinner as the ring
  * grows ([CREST_SPREAD_LOSS]), then dissipates with the spawn ([spawnFadeAt]).
  */
-private fun crestEnergyAt(ms: Float, wave: Float): Float =
+internal fun crestEnergyAt(ms: Float, wave: Float): Float =
     (1f - CREST_SPREAD_LOSS * smoothstep(0.1f, 0.9f, wave)) * spawnFadeAt(ms)
 
 /** Wave radius as a fraction of its reach: 0 at the camera (through the gather), 1 past the farthest corner. */
@@ -213,7 +213,7 @@ private val BEACON_GLOW = 26.dp
  * Where the wave's bright crest sits, as a fraction of its reach (the wash rim, the glass crest).
  * The frame and beacons light under it.
  */
-private const val CREST_AT = 0.94f
+internal const val CREST_AT = 0.94f
 
 /** Beacon ignition, on its own clock from the moment the wave's crest reaches it. */
 private const val IGNITE_MS = 140f
@@ -311,6 +311,8 @@ private const val COMET_BASE = 0.15f
  * screen, and lights the chosen style as its rim passes. Then the style plays: the Edge Frame in
  * its chosen motion and colours, the Camera Ring and Custom Dot as a beacon sending out ripples.
  *
+ * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]).
+ *
  * With [GlowSettings.glass] too, [onBlurBehind] is told every frame of the wave how blurred the
  * screen under it should be and where ([GlassHazeTarget]), and 0 when the effect ends or is
  * dropped. The effect can't blur what is under it; whoever owns that screen does.
@@ -354,7 +356,10 @@ fun ArrivalEffect(
     val time = remember(clock) { { clock.value } }
     val glow = Color(color)
     Box(modifier.fillMaxSize()) {
-        if (settings.spawn) SpawnWave(glow, settings, geometry, scale, overBlack, time)
+        if (settings.spawn) {
+            if (settings.fire) FireWave(glow, settings, geometry, scale, overBlack, time)
+            else SpawnWave(glow, settings, geometry, scale, overBlack, time)
+        }
         when (settings.style) {
             GlowStyle.EDGE_FRAME -> EdgeArrival(settings, glow, geometry, scale, time)
             GlowStyle.CAMERA_RING, GlowStyle.CUSTOM_DOT -> BeaconArrival(settings, glow, geometry, scale, time)
@@ -410,7 +415,8 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
         }
         GlowLog.d {
             "effect ${if (preview) "preview" else "live"} $what spawn=${settings.spawn} " +
-                "glass=${settings.glass}/${settings.glassBlur}/${settings.glassArea}/${settings.glassFrost}: " +
+                "${settings.element} glass=${settings.glassBlur}/${settings.glassArea}/${settings.glassFrost} " +
+                "fire=${settings.fireFlames}/${settings.fireColor}/${settings.fireSparks}/${settings.fireWake}: " +
                 "${if (seconds > 0f) (frames / seconds).toInt() else 0} fps, $dropped stutters, worst ${worst / 1_000_000} ms"
         }
     }
@@ -603,43 +609,7 @@ private fun SpawnWave(
                 val frostLight = if (frost > 0f && frostShader == null && frostArea != GlassArea.WAVE) frostLight(origin, reach, frostGlow) else null
                 val frostLightBand = Stroke(reach * (FROST_LIGHT_OUTER - FROST_LIGHT_INNER))
                 val frostLightRadius = reach * (FROST_LIGHT_OUTER + FROST_LIGHT_INNER) / 2f
-                val bloomRadius = BLOOM_RADIUS.toPx() * scale
-                // A light source: a hot core wide enough to show round the lens, then a long
-                // coloured falloff. Round a camera ring it is carved out instead, so the ring
-                // lighting inside it stays readable: the flash surrounds the ring, not covers it.
-                val ringSource = settings.style != GlowStyle.EDGE_FRAME &&
-                    (settings.style == GlowStyle.CAMERA_RING || settings.ledOnCamera)
-                val bloom = if (ringSource) {
-                    val metrics = GlowMetrics.FullScreen
-                    val lens = geometry.lens(size.width, density, scale).radius
-                    val clear = lens + (metrics.ringGap.toPx() + 2f * metrics.stroke.toPx()) * scale
-                    // In the gradient's terms at the flash's smallest (0.22 of its radius).
-                    val hole = (1.2f * clear / (bloomRadius * 0.22f)).coerceIn(0f, 0.7f)
-                    val rest = 1f - hole
-                    Brush.radialGradient(
-                        0f to color.copy(alpha = 0f),
-                        hole to color.copy(alpha = 0f),
-                        hole + 0.06f to lerp(color, Color.White, 0.5f).copy(alpha = 0.5f),
-                        hole + rest * 0.35f to color.copy(alpha = 0.18f),
-                        hole + rest * 0.65f to color.copy(alpha = 0.06f),
-                        hole + rest * 0.85f to color.copy(alpha = 0.02f),
-                        1f to color.copy(alpha = 0f),
-                        center = origin,
-                        radius = bloomRadius,
-                    )
-                } else {
-                    Brush.radialGradient(
-                        0f to Color.White.copy(alpha = 0.95f),
-                        0.12f to lerp(color, Color.White, 0.6f).copy(alpha = 0.85f),
-                        0.24f to lerp(color, Color.White, 0.25f).copy(alpha = 0.55f),
-                        0.42f to color.copy(alpha = 0.26f),
-                        0.65f to color.copy(alpha = 0.09f),
-                        0.85f to color.copy(alpha = 0.025f),
-                        1f to color.copy(alpha = 0f),
-                        center = origin,
-                        radius = bloomRadius,
-                    )
-                }
+                val flash = spawnFlash(color, settings, geometry, scale, origin)
                 onDrawBehind {
                     val ms = time()
                     val wave = waveAt(ms, spawn = true)
@@ -727,15 +697,63 @@ private fun SpawnWave(
                     } else if (wave >= MIN_WAVE && energy > 0f) {
                         drawGlassRipple(wash, wave, 0f, origin, washRadius, washBand, energy)
                     }
-                    val flash = bloomAlphaAt(ms)
-                    if (flash > 0f) {
-                        scale(bloomScaleAt(ms), pivot = origin) {
-                            drawCircle(bloom, bloomRadius, origin, alpha = flash)
-                        }
-                    }
+                    drawSpawnFlash(flash, origin, scale, ms)
                 }
             },
     )
+}
+
+/**
+ * The flash the spawn wave is released from, in [color]: a light source, a hot core wide enough
+ * to show round the lens, then a long coloured falloff. Round a camera ring it is carved out
+ * instead, so the ring lighting inside it stays readable: the flash surrounds the ring, not
+ * covers it. Drawn with [drawSpawnFlash].
+ */
+internal fun CacheDrawScope.spawnFlash(color: Color, settings: GlowSettings, geometry: ScreenGeometry, scale: Float, origin: Offset): Brush {
+    val bloomRadius = BLOOM_RADIUS.toPx() * scale
+    val ringSource = settings.style != GlowStyle.EDGE_FRAME &&
+        (settings.style == GlowStyle.CAMERA_RING || settings.ledOnCamera)
+    return if (ringSource) {
+        val metrics = GlowMetrics.FullScreen
+        val lens = geometry.lens(size.width, density, scale).radius
+        val clear = lens + (metrics.ringGap.toPx() + 2f * metrics.stroke.toPx()) * scale
+        // In the gradient's terms at the flash's smallest (0.22 of its radius).
+        val hole = (1.2f * clear / (bloomRadius * 0.22f)).coerceIn(0f, 0.7f)
+        val rest = 1f - hole
+        Brush.radialGradient(
+            0f to color.copy(alpha = 0f),
+            hole to color.copy(alpha = 0f),
+            hole + 0.06f to lerp(color, Color.White, 0.5f).copy(alpha = 0.5f),
+            hole + rest * 0.35f to color.copy(alpha = 0.18f),
+            hole + rest * 0.65f to color.copy(alpha = 0.06f),
+            hole + rest * 0.85f to color.copy(alpha = 0.02f),
+            1f to color.copy(alpha = 0f),
+            center = origin,
+            radius = bloomRadius,
+        )
+    } else {
+        Brush.radialGradient(
+            0f to Color.White.copy(alpha = 0.95f),
+            0.12f to lerp(color, Color.White, 0.6f).copy(alpha = 0.85f),
+            0.24f to lerp(color, Color.White, 0.25f).copy(alpha = 0.55f),
+            0.42f to color.copy(alpha = 0.26f),
+            0.65f to color.copy(alpha = 0.09f),
+            0.85f to color.copy(alpha = 0.025f),
+            1f to color.copy(alpha = 0f),
+            center = origin,
+            radius = bloomRadius,
+        )
+    }
+}
+
+/** The spawn's flash at [ms]: pooling during the gather, popping open at release, then decaying. */
+internal fun DrawScope.drawSpawnFlash(flash: Brush, origin: Offset, scale: Float, ms: Float) {
+    val alpha = bloomAlphaAt(ms)
+    if (alpha <= 0f) return
+    val radius = BLOOM_RADIUS.toPx() * scale
+    scale(bloomScaleAt(ms), pivot = origin) {
+        drawCircle(flash, radius, origin, alpha = alpha)
+    }
 }
 
 /**

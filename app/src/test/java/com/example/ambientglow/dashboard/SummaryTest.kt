@@ -5,6 +5,10 @@ import com.example.ambientglow.EdgeColor
 import com.example.ambientglow.EdgeGlow
 import com.example.ambientglow.EdgeMotion
 import com.example.ambientglow.EdgeWidth
+import com.example.ambientglow.FireColor
+import com.example.ambientglow.FireFlames
+import com.example.ambientglow.FireSparks
+import com.example.ambientglow.FireWake
 import com.example.ambientglow.GlassArea
 import com.example.ambientglow.GlassBlur
 import com.example.ambientglow.GlassFrost
@@ -81,6 +85,50 @@ class SummaryTest {
                 glassPhrasing(onBlack),
             )
             assertEquals(Phrasing(R.string.glass_summary_none), glassPhrasing(onBlack.copy(glassFrost = GlassFrost.OFF)))
+        }
+    }
+
+    private val fire = GlowSettings(
+        arrival = ArrivalMode.LOCK_SCREEN,
+        fireFlames = FireFlames.BLAZE,
+        fireColor = FireColor.NATURAL,
+        fireSparks = FireSparks.FEW,
+        fireWake = FireWake.BURN,
+    )
+
+    @Test
+    fun fireSaysFlamesColourWakeAndSparks() {
+        assertEquals(
+            Phrasing(
+                R.string.fire_summary_sparks,
+                listOf(
+                    R.string.fire_flames_blaze_phrase,
+                    R.string.fire_color_natural_phrase,
+                    R.string.fire_wake_burn_phrase,
+                    R.string.fire_sparks_few_phrase,
+                ),
+            ),
+            firePhrasing(fire),
+        )
+    }
+
+    @Test
+    fun fireLeavesOutSparksWhenThereAreNone() {
+        assertEquals(
+            Phrasing(
+                R.string.fire_summary,
+                listOf(R.string.fire_flames_inferno_phrase, R.string.fire_color_app_phrase, R.string.fire_wake_coals_phrase),
+            ),
+            firePhrasing(fire.copy(fireFlames = FireFlames.INFERNO, fireColor = FireColor.APP, fireSparks = FireSparks.OFF, fireWake = FireWake.COALS)),
+        )
+    }
+
+    @Test
+    fun fireOnABlackScreenHasNoCharToBurnOpen() {
+        for (mode in listOf(ArrivalMode.BLACK, ArrivalMode.MESSAGE)) {
+            assertEquals(R.string.fire_wake_burn_black_phrase, firePhrasing(fire.copy(arrival = mode)).phrases[2])
+            // Coals and Clean show on black as they do anywhere.
+            assertEquals(R.string.fire_wake_coals_phrase, firePhrasing(fire.copy(arrival = mode, fireWake = FireWake.COALS)).phrases[2])
         }
     }
 

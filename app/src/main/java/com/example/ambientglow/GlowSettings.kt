@@ -106,9 +106,10 @@ enum class EdgeColor(
 }
 
 /**
- * The element the spawn wave takes after; the wave always has one. Water is the glass wave; the
- * others have no look of their own yet ([ready] is false) and play the bare wave until they do.
- * [premium] ones are marked as such but free to try for now: nothing checks a purchase yet.
+ * The element the spawn wave takes after; the wave always has one. Water is the glass wave, Fire
+ * the ring of fire; the others have no look of their own yet ([ready] is false) and play the bare
+ * wave until they do. [premium] ones are marked as such but free to try for now: nothing checks a
+ * purchase yet.
  */
 enum class SpawnElement(
     @param:StringRes override val label: Int,
@@ -116,7 +117,7 @@ enum class SpawnElement(
     val ready: Boolean,
     val premium: Boolean,
 ) : Labeled {
-    FIRE(R.string.element_fire, R.string.element_fire_body, ready = false, premium = true),
+    FIRE(R.string.element_fire, R.string.element_fire_body, ready = true, premium = true),
     WATER(R.string.element_water, R.string.element_water_body, ready = true, premium = false),
     AIR(R.string.element_air, R.string.element_air_body, ready = false, premium = true),
     EARTH(R.string.element_earth, R.string.element_earth_body, ready = false, premium = true),
@@ -167,6 +168,67 @@ enum class GlassFrost(
     OFF(0f, R.string.glass_frost_off, R.string.glass_frost_off_phrase),
     SOFT(0.16f, R.string.glass_frost_soft, R.string.glass_frost_soft_phrase),
     MILKY(0.30f, R.string.glass_frost_milky, R.string.glass_frost_milky_phrase),
+}
+
+/**
+ * Fire: how the flames trailing the burning front burn. [height] is the tallest tongue's length
+ * at full screen, [warp] how far the tongues sway and curl, [rise] how fast they flicker and
+ * throw off wisps.
+ */
+enum class FireFlames(
+    val height: Dp,
+    val warp: Float,
+    val rise: Float,
+    @param:StringRes override val label: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    GENTLE(40.dp, 0.3f, 2.2f, R.string.fire_flames_gentle, R.string.fire_flames_gentle_phrase),
+    BLAZE(72.dp, 0.55f, 3f, R.string.fire_flames_blaze, R.string.fire_flames_blaze_phrase),
+    INFERNO(116.dp, 0.85f, 4f, R.string.fire_flames_inferno, R.string.fire_flames_inferno_phrase),
+}
+
+/**
+ * Fire: the flames' colours, white-hot at the front in all of them ([firePalette]).
+ * - NATURAL: real fire, the same for every app.
+ * - APP: the message's brand colour, from white-hot to deep.
+ * - BLEND: real fire whose tips take the brand colour, as metal salts colour a flame.
+ */
+enum class FireColor(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    NATURAL(R.string.fire_color_natural, R.string.fire_color_natural_body, R.string.fire_color_natural_phrase),
+    APP(R.string.fire_color_app, R.string.fire_color_app_body, R.string.fire_color_app_phrase),
+    BLEND(R.string.fire_color_blend, R.string.fire_color_blend_body, R.string.fire_color_blend_phrase),
+}
+
+/** Fire: sparks thrown up behind the front, as the share of spark cells that hold one. */
+enum class FireSparks(
+    val density: Float,
+    @param:StringRes override val label: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    OFF(0f, R.string.fire_sparks_off, R.string.fire_sparks_off_phrase),
+    FEW(0.12f, R.string.fire_sparks_few, R.string.fire_sparks_few_phrase),
+    SHOWER(0.38f, R.string.fire_sparks_shower, R.string.fire_sparks_shower_phrase),
+}
+
+/**
+ * Fire: what the front leaves behind it.
+ * - BURN: the screen lights up dark as char and the fire burns it open, like burning paper.
+ *   On the black panel there is no char to see, only the embers smouldering at its edge.
+ * - COALS: the ground the fire crossed glows on in cracks, then cools.
+ * - CLEAN: only the wall of flame.
+ */
+enum class FireWake(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    BURN(R.string.fire_wake_burn, R.string.fire_wake_burn_body, R.string.fire_wake_burn_phrase),
+    COALS(R.string.fire_wake_coals, R.string.fire_wake_coals_body, R.string.fire_wake_coals_phrase),
+    CLEAN(R.string.fire_wake_clean, R.string.fire_wake_clean_body, R.string.fire_wake_clean_phrase),
 }
 
 /**
@@ -221,6 +283,10 @@ data class GlowSettings(
     val glassBlur: GlassBlur = GlassBlur.MEDIUM,
     val glassArea: GlassArea = GlassArea.REVEAL,
     val glassFrost: GlassFrost = GlassFrost.SOFT,
+    val fireFlames: FireFlames = FireFlames.BLAZE,
+    val fireColor: FireColor = FireColor.NATURAL,
+    val fireSparks: FireSparks = FireSparks.FEW,
+    val fireWake: FireWake = FireWake.BURN,
     val edgeWidth: EdgeWidth = EdgeWidth.THIN,
     val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
@@ -228,6 +294,9 @@ data class GlowSettings(
 ) {
     /** The spawn wave rolls in like the iPhone's: a soft, shimmering crest of light and a trailing ripple. */
     val glass: Boolean get() = element == SpawnElement.WATER
+
+    /** The spawn wave bursts out as a ring of fire: a burning front trailing tongues of flame. */
+    val fire: Boolean get() = element == SpawnElement.FIRE
 
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
     val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT

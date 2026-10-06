@@ -48,6 +48,14 @@ class ArrivalTest {
     }
 
     @Test
+    fun fireHasALookOfItsOwnAndIsTheOnlyFireWave() {
+        assertTrue(SpawnElement.FIRE.ready)
+        SpawnElement.entries.forEach { element ->
+            assertEquals(element.name, element == SpawnElement.FIRE, GlowSettings(element = element).fire)
+        }
+    }
+
+    @Test
     fun aFreshInstallPlaysTheFreeElement() {
         val defaults = GlowSettings()
         assertEquals(SpawnElement.WATER, defaults.element)
