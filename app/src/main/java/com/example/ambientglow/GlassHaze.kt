@@ -54,6 +54,12 @@ private const val REVEAL_CLEAR_TO = 0.98f
  */
 internal const val HAZE_BAND_INNER = 0.8f
 internal const val HAZE_BAND_OUTER = 0.975f
+
+/** The band's soft inner edge: clear up to [HAZE_BAND_FADE], half as blurred by [HAZE_BAND_HALF], full from [HAZE_BAND_FULL]. */
+internal const val HAZE_BAND_FADE = HAZE_BAND_INNER - 0.08f
+internal const val HAZE_BAND_HALF = HAZE_BAND_INNER + 0.02f
+internal const val HAZE_BAND_FULL = 0.9f
+internal const val HAZE_BAND_HALF_ALPHA = 0.45f
 internal const val HAZE_REVEAL_EDGE = 0.935f
 
 /** The spawn wave blurs what is under it: on, with a blur to show. */
@@ -121,9 +127,9 @@ internal fun hazeMask(area: GlassArea, origin: Offset, reach: Float, color: Colo
     GlassArea.WAVE -> fixedRadial(
         origin,
         reach,
-        (HAZE_BAND_INNER - 0.08f) to color.copy(alpha = 0f),
-        (HAZE_BAND_INNER + 0.02f) to color.copy(alpha = 0.45f),
-        0.9f to color,
+        HAZE_BAND_FADE to color.copy(alpha = 0f),
+        HAZE_BAND_HALF to color.copy(alpha = HAZE_BAND_HALF_ALPHA),
+        HAZE_BAND_FULL to color,
         HAZE_BAND_OUTER to color,
         1f to color.copy(alpha = 0f),
     )

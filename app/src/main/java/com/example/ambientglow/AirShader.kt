@@ -33,51 +33,79 @@ import kotlin.math.sqrt
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The wind's strips: how hard the gust drags the screen at flow angle `psi` (radians, the flow
- * line's angle as the shaders work it out), 0 in the still gaps to 1 in a strip. A few waves
- * round the ring, thresholded, so strips come in uneven widths with clear gaps between. The
- * veil shows them, and the screen under the gust smears in them ([WindSmear], and the lock
- * screen's blur columns in [GlowShield]). Each wave: amplitude, frequency, phase.
+ * A few sine waves round the ring, summed on 0.5 and thresholded between [from] and [to] into
+ * bands with clear gaps between: the wind's strips and the gust's tongues. Whole-number waves
+ * close round the ring, so nothing tears where the flow angle wraps. Each wave: amplitude, waves
+ * round the ring, phase, and drift (how far its phase moves per unit of `t`). The app and the
+ * shaders both work it out from these numbers ([agsl]), so what the shaders draw and what the
+ * lock screen's blur columns follow can't drift apart.
  */
-private val STRIP_WAVES = floatArrayOf(
-    0.28f, 31f, 1.3f,
-    0.22f, 53f, 4.1f,
-    0.12f, 89f, 2.2f,
-)
-private const val STRIP_FROM = 0.45f
-private const val STRIP_TO = 0.75f
+private class RingWaves(private val waves: FloatArray, private val from: Float, private val to: Float) {
+    private val drifts = (3 until waves.size step 4).any { waves[it] != 0f }
 
-/** How hard the wind drags the screen at flow angle [psi], 0..1; [WIND_STRIP_AGSL] works it out the same way. */
-internal fun windStripAt(psi: Float): Float {
-    var w = 0.5f
-    for (i in STRIP_WAVES.indices step 3) w += STRIP_WAVES[i] * sin(psi * STRIP_WAVES[i + 1] + STRIP_WAVES[i + 2])
-    return smoothstep(STRIP_FROM, STRIP_TO, w)
+    fun at(psi: Float, t: Float = 0f): Float {
+        var w = 0.5f
+        for (i in waves.indices step 4) w += waves[i] * sin(psi * waves[i + 1] + waves[i + 2] + waves[i + 3] * t)
+        return smoothstep(from, to, w)
+    }
+
+    /** The same as an AGSL function `float name(float psi)`, or `(float psi, float t)` where it drifts. */
+    fun agsl(name: String): String = buildString {
+        append("float $name(float psi${if (drifts) ", float t" else ""}) {\n    float w = 0.5")
+        for (i in waves.indices step 4) {
+            append(" + ${waves[i]} * sin(psi * ${waves[i + 1]} + ${waves[i + 2]}")
+            if (drifts) append(" + ${waves[i + 3]} * t")
+            append(")")
+        }
+        append(";\n    return smoothstep($from, $to, w);\n}")
+    }
 }
 
 /** The flow angle at [dx], [dy] from the camera: where on the ring the flow line through it leaves, as the shaders work it out. */
 internal fun flowAngle(dx: Float, dy: Float, pitch: Float): Float = atan2(dx, dy) - pitch * ln(max(hypot(dx, dy), 1f))
 
-private val WIND_STRIP_AGSL = buildString {
-    append("float windStrip(float psi) {\n    float w = 0.5")
-    for (i in STRIP_WAVES.indices step 3) append(" + ${STRIP_WAVES[i]} * sin(psi * ${STRIP_WAVES[i + 1]} + ${STRIP_WAVES[i + 2]})")
-    append(";\n    return smoothstep($STRIP_FROM, $STRIP_TO, w);\n}")
+/** [flowAngle] for the shaders: every one that rides the flow works it out here. */
+private const val FLOW_ANGLE_AGSL = """
+float flowAngle(float2 d, float lean) {
+    return atan(d.x, d.y) - lean * log(max(length(d), 1.0));
 }
+"""
 
 /**
- * The gust's fingers: a gust is not a ring, so here and there the wind surges on ahead of its
+ * The wind's strips: how hard the gust drags the screen at a flow angle, 0 in the still gaps to
+ * 1 in a strip, in uneven widths. The veil shows them, and the screen under the gust smears in
+ * them ([WindSmear], and the lock screen's blur columns in [GlowShield]).
+ */
+private val WIND_STRIPS = RingWaves(
+    floatArrayOf(
+        0.28f, 31f, 1.3f, 0f,
+        0.22f, 53f, 4.1f, 0f,
+        0.12f, 89f, 2.2f, 0f,
+    ),
+    from = 0.45f,
+    to = 0.75f,
+)
+
+/** How hard the wind drags the screen at flow angle [psi], 0..1; `windStrip` in the shaders. */
+internal fun windStripAt(psi: Float): Float = WIND_STRIPS.at(psi)
+
+private val WIND_STRIP_AGSL = WIND_STRIPS.agsl("windStrip")
+
+/**
+ * The gust's tongues: a gust is not a ring, so here and there the wind surges on ahead of its
  * front, in a few broad tongues round the ring that shift as it travels. Only ever ahead: the
  * front itself still lights the frame and beacons as it reaches them, and a tongue that gets
- * there first reads as the wind striking before the glow catches. A few whole-number waves round
- * the ring (so it closes on itself), drifting with the wave, thresholded into tongues with calm
- * between. Each wave: amplitude, waves round the ring, phase, drift over the trip.
+ * there first reads as the wind striking before the glow catches. They drift with the wave.
  */
-private val SURGE_WAVES = floatArrayOf(
-    0.3f, 3f, 0.4f, 2.1f,
-    0.22f, 5f, 2.9f, -3.4f,
-    0.12f, 9f, 5.1f, 5.3f,
+private val GUST_TONGUES = RingWaves(
+    floatArrayOf(
+        0.3f, 3f, 0.4f, 2.1f,
+        0.22f, 5f, 2.9f, -3.4f,
+        0.12f, 9f, 5.1f, 5.3f,
+    ),
+    from = 0.5f,
+    to = 0.95f,
 )
-private const val SURGE_FROM = 0.5f
-private const val SURGE_TO = 0.95f
 
 /** The farthest a tongue runs ahead of the front, as a share of its radius. */
 internal const val GUST_SURGE = 0.12f
@@ -87,24 +115,20 @@ private const val SURGE_RISE_FROM = 0.04f
 private const val SURGE_RISE_TO = 0.4f
 
 /**
- * How far the gust's front runs ahead of round at flow angle [psi] (as [flowAngle] works it out)
- * with the wave at [wave] of its reach: a share of its radius, 0..[GUST_SURGE]. [GUST_SURGE_AGSL]
- * works it out the same way, so the lines, the air, the smear and the lock screen's blur all bend
- * round the same tongues.
+ * How far the gust's front runs ahead of round at flow angle [psi] with the wave at [wave] of
+ * its reach: a share of its radius, 0..[GUST_SURGE]; `gustSurge` in the shaders. The lines, the
+ * air, the smear and the lock screen's blur all bend round the same tongues.
  */
-internal fun gustSurgeAt(psi: Float, wave: Float): Float {
-    var w = 0.5f
-    for (i in SURGE_WAVES.indices step 4) w += SURGE_WAVES[i] * sin(psi * SURGE_WAVES[i + 1] + SURGE_WAVES[i + 2] + SURGE_WAVES[i + 3] * wave)
-    return GUST_SURGE * smoothstep(SURGE_RISE_FROM, SURGE_RISE_TO, wave) * smoothstep(SURGE_FROM, SURGE_TO, w)
-}
+internal fun gustSurgeAt(psi: Float, wave: Float): Float =
+    GUST_SURGE * smoothstep(SURGE_RISE_FROM, SURGE_RISE_TO, wave) * GUST_TONGUES.at(psi, wave)
 
-private val GUST_SURGE_AGSL = buildString {
-    append("float gustSurge(float psi, float wave) {\n    float w = 0.5")
-    for (i in SURGE_WAVES.indices step 4) {
-        append(" + ${SURGE_WAVES[i]} * sin(psi * ${SURGE_WAVES[i + 1]} + ${SURGE_WAVES[i + 2]} + ${SURGE_WAVES[i + 3]} * wave)")
-    }
-    append(";\n    return $GUST_SURGE * smoothstep($SURGE_RISE_FROM, $SURGE_RISE_TO, wave) * smoothstep($SURGE_FROM, $SURGE_TO, w);\n}")
+private val GUST_SURGE_AGSL = """
+${GUST_TONGUES.agsl("gustTongues")}
+
+float gustSurge(float psi, float wave) {
+    return $GUST_SURGE * smoothstep($SURGE_RISE_FROM, $SURGE_RISE_TO, wave) * gustTongues(psi, wave);
 }
+"""
 
 /**
  * The wind flows along log spirals out of the camera, `pitch` the tangent of their lean: a
@@ -201,6 +225,8 @@ float4 over(float4 top, float4 under) {
     return top + under * (1.0 - top.a);
 }
 
+$FLOW_ANGLE_AGSL
+
 $WIND_STRIP_AGSL
 
 $GUST_SURGE_AGSL
@@ -282,7 +308,7 @@ float4 carried(float2 xy) {
     float rp = length(p);
     float f = (rp - drift) / max(radius, 1.0);
     if (f < CARRY_FROM || f >= 1.0) return float4(0.0);
-    float cu = (atan(p.x, p.y) - pitch * log(max(rp, 1.0))) / TAU * cols;
+    float cu = flowAngle(p, pitch) / TAU * cols;
     float cv = (f - CARRY_FROM) / row;
     float2 cell = float2(mod(floor(cu), cols), floor(cv));
     float hs = hash(cell + kind * 17.0);
@@ -327,7 +353,7 @@ half4 main(float2 xy) {
     float2 d = xy - origin;
     float r = length(d);
     // The front, surging on ahead in the gust's tongues; the lines and the air ride it there.
-    float psi = atan(d.x, d.y) - pitch * log(max(r, 1.0));
+    float psi = flowAngle(d, pitch);
     float surge = gustSurge(psi, wave);
     float x = r - radius * (1.0 + surge);
     float4 col = float4(0.0);
@@ -415,12 +441,14 @@ uniform float2 origin;
 uniform float pitch;
 uniform float len;
 
+$FLOW_ANGLE_AGSL
+
 $WIND_STRIP_AGSL
 
 half4 main(float2 xy) {
     float2 d = xy - origin;
     float r = max(length(d), 1.0);
-    float drag = len * windStrip(atan(d.x, d.y) - pitch * log(r));
+    float drag = len * windStrip(flowAngle(d, pitch));
     if (drag < 0.75) return content.eval(xy);
     // The wind's way here: straight out, leaning with the flow.
     float2 away = d / r;
@@ -490,16 +518,17 @@ uniform float radius;
 uniform float wave;
 uniform float pitch;
 
+$FLOW_ANGLE_AGSL
+
 $GUST_SURGE_AGSL
 
 half4 main(float2 xy) {
     float2 d = xy - origin;
-    float r = length(d);
-    float psi = atan(d.x, d.y) - pitch * log(max(r, 1.0));
-    float f = r / max(radius * (1.0 + gustSurge(psi, wave)), 1.0);
-    // The glass band's stops, as its gradient lays them: in to half, to full, then out at its edge.
-    float a = 0.45 * clamp((f - ${HAZE_BAND_INNER - 0.08f}) / 0.1, 0.0, 1.0)
-            + 0.55 * clamp((f - ${HAZE_BAND_INNER + 0.02f}) / ${0.9f - HAZE_BAND_INNER - 0.02f}, 0.0, 1.0);
+    float f = length(d) / max(radius * (1.0 + gustSurge(flowAngle(d, pitch), wave)), 1.0);
+    // The glass band's stops, as its gradient lays them ([hazeMask]): in to half, to full, then
+    // out at its edge.
+    float a = $HAZE_BAND_HALF_ALPHA * clamp((f - $HAZE_BAND_FADE) / ${HAZE_BAND_HALF - HAZE_BAND_FADE}, 0.0, 1.0)
+            + ${1f - HAZE_BAND_HALF_ALPHA} * clamp((f - $HAZE_BAND_HALF) / ${HAZE_BAND_FULL - HAZE_BAND_HALF}, 0.0, 1.0);
     a *= 1.0 - clamp((f - $HAZE_BAND_OUTER) / ${1f - HAZE_BAND_OUTER}, 0.0, 1.0);
     return half4(a);
 }
@@ -687,12 +716,12 @@ private class AirRuntime(
     private val curl = min(flow.curl.value, CURL_SHARE * gust.spacing.value) * dp
     private val size = carry.size.value * dp
 
-    private val cols = carry.cells().first
-    private val rows = carry.cells().second
+    private val cells = carry.cells()
+    private val cols = cells.first
+    private val rows = cells.second
 
     /** A cell's smaller side, as a share of the front's radius: across, at the back of the band, or deep. */
     private val cell = min((1f - AIR_CARRY_FROM) / rows, 2f * PI.toFloat() / cols * AIR_CARRY_FROM)
-
 
     override val runtime = RuntimeShader(AIR_AGSL).apply {
         setFloatUniform("origin", origin.x, origin.y)
