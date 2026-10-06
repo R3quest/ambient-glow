@@ -50,7 +50,7 @@ import com.example.ambientglow.ui.theme.GlowPalette
 // ---------------------------------------------------------------------------------------------
 // The spawn wave's switch, then the element it takes after: a row of tiles, each a line-drawn
 // glyph over its name (a sparkle on the premium ones), what the chosen one does, and its own
-// options (Water's glass, Fire's flames).
+// options (Water's glass, Fire's flames, Air's wind).
 // ---------------------------------------------------------------------------------------------
 
 private val TILE_HEIGHT = 64.dp
@@ -67,8 +67,8 @@ private val PremiumTint = GlowPalette.Magenta
  * The spawn wave and the element it takes after, under the preview that shows it. The wave's
  * switch heads the card since every element is a look of it; with it off the elements and their
  * options dim and can't be changed. Each element folds its own options under the picker, so
- * adding one adds a fold, not a wall of chips. [accent] is the preview colour, which Fire's
- * colour chips burn in.
+ * adding one adds a fold, not a wall of chips. [accent] is the preview colour, which Fire's and
+ * Air's colour chips show.
  */
 @Composable
 internal fun ElementCard(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
@@ -123,6 +123,19 @@ internal fun ElementCard(settings: GlowSettings, accent: Color, onEffect: (GlowS
                         enabled = settings.spawn,
                     ) {
                         FireOptions(settings, accent, onEffect)
+                    }
+                }
+            }
+            Disclosure(visible = element == SpawnElement.AIR) {
+                Column(Modifier.padding(top = 12.dp)) {
+                    CardDivider()
+                    Spacer(Modifier.height(10.dp))
+                    Fold(
+                        title = stringResource(R.string.fold_air),
+                        summary = airPhrasing(settings).text(),
+                        enabled = settings.spawn,
+                    ) {
+                        AirOptions(settings, accent, onEffect)
                     }
                 }
             }

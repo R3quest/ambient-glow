@@ -33,9 +33,9 @@ import kotlin.math.sqrt
  *
  * - The arrival effect: when a new message lights the lock screen, the user's chosen style
  *   (edge frame, camera ring or dot) pulses over it, see-through and untouchable, so the lock
- *   screen and all its notifications stay visible and usable underneath. With the glass wave
- *   (Android 12+), the window also briefly blurs the lock screen behind it as the wave rolls
- *   over ([hazeTarget]): One UI's own blur ([SemBlur]), which can follow the wave, or Android's
+ *   screen and all its notifications stay visible and usable underneath. With the glass wave or
+ *   the gust (Android 12+), the window also briefly blurs the lock screen behind it as the wave
+ *   rolls over ([hazeTarget]): One UI's own blur ([SemBlur]), which can follow the wave, or Android's
  *   window blur, which can only blur the whole screen.
  * - A black cover for the LED hand-over: on every wake into the LED, One UI's lock-screen window
  *   stays on top of the glow screen for 100-450 ms and shows its battery icon and nav handle at
@@ -198,7 +198,7 @@ class GlowShield : AccessibilityService() {
     }
 
     /**
-     * The glass wave's blur of the lock screen, or null where there is none to be had:
+     * The spawn wave's blur of the lock screen (Water's glass, Air's gust), or null where there is none to be had:
      * - One UI ([SemBlur]): a row of [BLUR_STRIPS] narrow blur views in [root], each moved every
      *   frame to where the wave crosses its column (One UI won't let apps cut a blur to a shape,
      *   but it blurs exactly a view's bounds). One full-window view for [GlassArea.SCREEN].
@@ -208,9 +208,9 @@ class GlowShield : AccessibilityService() {
     private fun hazeTarget(settings: GlowSettings, root: FrameLayout): GlassHazeTarget? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || !settings.hazes) return null
         val density = resources.displayMetrics.density
-        val peak = settings.glassBlur.radius.value * density
+        val peak = settings.hazeBlur.radius.value * density
         fun stepped(level: Float) = (level * GLASS_BLUR_STEPS + 0.5f).toInt() / GLASS_BLUR_STEPS.toFloat()
-        val area = if (SemBlur.available) settings.glassArea else GlassArea.SCREEN
+        val area = if (SemBlur.available) settings.hazeArea else GlassArea.SCREEN
         return when {
             SemBlur.available && area == GlassArea.SCREEN -> {
                 val view = blurView(root, FrameLayout.LayoutParams.MATCH_PARENT)

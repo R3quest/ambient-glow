@@ -1,5 +1,9 @@
 package com.example.ambientglow.dashboard
 
+import com.example.ambientglow.AirCarry
+import com.example.ambientglow.AirColor
+import com.example.ambientglow.AirFlow
+import com.example.ambientglow.AirGust
 import com.example.ambientglow.ArrivalMode
 import com.example.ambientglow.EdgeColor
 import com.example.ambientglow.EdgeGlow
@@ -129,6 +133,47 @@ class SummaryTest {
             assertEquals(R.string.fire_wake_burn_black_phrase, firePhrasing(fire.copy(arrival = mode)).phrases[2])
             // Coals and Clean show on black as they do anywhere.
             assertEquals(R.string.fire_wake_coals_phrase, firePhrasing(fire.copy(arrival = mode, fireWake = FireWake.COALS)).phrases[2])
+        }
+    }
+
+    private val air = GlowSettings(
+        airGust = AirGust.GUST,
+        airFlow = AirFlow.CURLS,
+        airColor = AirColor.CLEAR,
+        airCarry = AirCarry.PETALS,
+        airBlur = GlassBlur.LIGHT,
+        arrival = ArrivalMode.LOCK_SCREEN,
+    )
+
+    private val airParts = listOf(R.string.air_gust_gust_phrase, R.string.air_flow_curls_phrase, R.string.air_color_clear_phrase)
+
+    @Test
+    fun airSaysStrengthLinesColourWhatItCarriesAndTheBlur() {
+        assertEquals(
+            Phrasing(R.string.air_summary_carry_blur, airParts + R.string.air_carry_petals_phrase + R.string.glass_blur_light_phrase),
+            airPhrasing(air),
+        )
+    }
+
+    @Test
+    fun airLeavesOutWhatIsOff() {
+        assertEquals(Phrasing(R.string.air_summary_carry, airParts + R.string.air_carry_petals_phrase), airPhrasing(air.copy(airBlur = GlassBlur.OFF)))
+        assertEquals(Phrasing(R.string.air_summary_blur, airParts + R.string.glass_blur_light_phrase), airPhrasing(air.copy(airCarry = AirCarry.NONE)))
+        assertEquals(
+            Phrasing(
+                R.string.air_summary,
+                listOf(R.string.air_gust_gale_phrase, R.string.air_flow_vortex_phrase, R.string.air_color_blend_phrase),
+            ),
+            airPhrasing(
+                air.copy(airGust = AirGust.GALE, airFlow = AirFlow.VORTEX, airColor = AirColor.BLEND, airCarry = AirCarry.NONE, airBlur = GlassBlur.OFF),
+            ),
+        )
+    }
+
+    @Test
+    fun airOnABlackScreenHasNothingToBlur() {
+        for (mode in listOf(ArrivalMode.BLACK, ArrivalMode.MESSAGE)) {
+            assertEquals(Phrasing(R.string.air_summary_carry, airParts + R.string.air_carry_petals_phrase), airPhrasing(air.copy(arrival = mode)))
         }
     }
 

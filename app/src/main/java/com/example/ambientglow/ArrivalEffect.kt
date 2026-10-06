@@ -311,11 +311,13 @@ private const val COMET_BASE = 0.15f
  * screen, and lights the chosen style as its rim passes. Then the style plays: the Edge Frame in
  * its chosen motion and colours, the Camera Ring and Custom Dot as a beacon sending out ripples.
  *
- * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]).
+ * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]); with
+ * [GlowSettings.air], a gust of wind ([AirWave]).
  *
- * With [GlowSettings.glass] too, [onBlurBehind] is told every frame of the wave how blurred the
- * screen under it should be and where ([GlassHazeTarget]), and 0 when the effect ends or is
- * dropped. The effect can't blur what is under it; whoever owns that screen does.
+ * With a blur ([GlowSettings.hazes]: Water's glass or Air's gust), [onBlurBehind] is told every
+ * frame of the wave how blurred the screen under it should be and where ([GlassHazeTarget]), and
+ * 0 when the effect ends or is dropped. The effect can't blur what is under it; whoever owns that
+ * screen does.
  *
  * [overBlack]: it plays on the black panel, so there is nothing under the frost to diffuse: it
  * shows only where the crest's light catches it, and nothing is blurred, even where a preview
@@ -342,7 +344,7 @@ fun ArrivalEffect(
                 coroutineScope {
                     // Debug builds only: in release no extra coroutine wakes on every frame.
                     val trace = if (BuildConfig.DEBUG) launch { traceFrames(settings, preview = scale < 1f) } else null
-                    val haze = blur?.let { launch { followHaze(it, settings.glassArea) { clock.value } } }
+                    val haze = blur?.let { launch { followHaze(it, settings.hazeArea) { clock.value } } }
                     clock.animateTo(ARRIVAL_MS.toFloat(), tween(ARRIVAL_MS, easing = LinearEasing))
                     trace?.cancel()
                     haze?.cancel()
@@ -357,8 +359,11 @@ fun ArrivalEffect(
     val glow = Color(color)
     Box(modifier.fillMaxSize()) {
         if (settings.spawn) {
-            if (settings.fire) FireWave(glow, settings, geometry, scale, overBlack, time)
-            else SpawnWave(glow, settings, geometry, scale, overBlack, time)
+            when {
+                settings.fire -> FireWave(glow, settings, geometry, scale, overBlack, time)
+                settings.air -> AirWave(glow, settings, geometry, scale, time)
+                else -> SpawnWave(glow, settings, geometry, scale, overBlack, time)
+            }
         }
         when (settings.style) {
             GlowStyle.EDGE_FRAME -> EdgeArrival(settings, glow, geometry, scale, time)
@@ -416,7 +421,8 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
         GlowLog.d {
             "effect ${if (preview) "preview" else "live"} $what spawn=${settings.spawn} " +
                 "${settings.element} glass=${settings.glassBlur}/${settings.glassArea}/${settings.glassFrost} " +
-                "fire=${settings.fireFlames}/${settings.fireColor}/${settings.fireSparks}/${settings.fireWake}: " +
+                "fire=${settings.fireFlames}/${settings.fireColor}/${settings.fireSparks}/${settings.fireWake} " +
+                "air=${settings.airGust}/${settings.airFlow}/${settings.airColor}/${settings.airCarry}/${settings.airBlur}: " +
                 "${if (seconds > 0f) (frames / seconds).toInt() else 0} fps, $dropped stutters, worst ${worst / 1_000_000} ms"
         }
     }

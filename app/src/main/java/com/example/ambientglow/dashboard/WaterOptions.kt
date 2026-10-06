@@ -48,7 +48,7 @@ internal fun WaterOptions(settings: GlowSettings, accent: Color, onEffect: (Glow
             Box(Modifier.padding(bottom = 14.dp)) {
                 OptionGroup(stringResource(R.string.glass_blur)) {
                     GlyphTiles(GlassBlur.entries, settings.glassBlur, { onEffect(settings.copy(glassBlur = it)) }, ::WaterLines) { blur, lit, lines ->
-                        blurGlyph(blur, ink(lit, accent), lines)
+                        blurGlyph(blur, ink(lit, accent), lines.plain)
                     }
                 }
             }
@@ -112,19 +112,20 @@ private val CENTRE = Offset(12f, 12f)
 private const val FROST_TINT = 0.35f
 
 /** A line struck through a glyph: the option is off. */
-private fun DrawScope.strike(color: Color, lines: WaterLines) {
-    drawLine(color, Offset(5f, 19f), Offset(19f, 5f), strokeWidth = lines.plain.width, cap = StrokeCap.Round)
+private fun DrawScope.strike(color: Color, plain: Stroke) {
+    drawLine(color, Offset(5f, 19f), Offset(19f, 5f), strokeWidth = plain.width, cap = StrokeCap.Round)
 }
 
 /**
  * The blur: a crisp point of light, struck through for none, spreading into rings of dots, more
- * and bigger the stronger it is, as a sharp light goes soft out of focus.
+ * and bigger the stronger it is, as a sharp light goes soft out of focus. [plain] is the glyphs'
+ * line; Air's blur draws it too.
  */
-private fun DrawScope.blurGlyph(blur: GlassBlur, color: Color, lines: WaterLines) {
+internal fun DrawScope.blurGlyph(blur: GlassBlur, color: Color, plain: Stroke) {
     when (blur) {
         GlassBlur.OFF -> {
-            drawCircle(color, 4.5f, CENTRE, style = lines.plain)
-            strike(color, lines)
+            drawCircle(color, 4.5f, CENTRE, style = plain)
+            strike(color, plain)
         }
         GlassBlur.LIGHT -> {
             drawCircle(color, 4f, CENTRE)

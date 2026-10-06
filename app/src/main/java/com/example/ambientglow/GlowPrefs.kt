@@ -32,6 +32,11 @@ object GlowPrefs {
     private const val KEY_FIRE_COLOR = "fire_color"
     private const val KEY_FIRE_SPARKS = "fire_sparks"
     private const val KEY_FIRE_WAKE = "fire_wake"
+    private const val KEY_AIR_GUST = "air_gust"
+    private const val KEY_AIR_FLOW = "air_flow"
+    private const val KEY_AIR_COLOR = "air_color"
+    private const val KEY_AIR_CARRY = "air_carry"
+    private const val KEY_AIR_BLUR = "air_blur"
     private const val KEY_EDGE_WIDTH = "edge_width"
     private const val KEY_EDGE_GLOW = "edge_glow"
     private const val KEY_EDGE_MOTION = "edge_motion"
@@ -69,6 +74,11 @@ object GlowPrefs {
             fireColor = getEnum(KEY_FIRE_COLOR, defaults.fireColor),
             fireSparks = getEnum(KEY_FIRE_SPARKS, defaults.fireSparks),
             fireWake = getEnum(KEY_FIRE_WAKE, defaults.fireWake),
+            airGust = getEnum(KEY_AIR_GUST, defaults.airGust),
+            airFlow = getEnum(KEY_AIR_FLOW, defaults.airFlow),
+            airColor = getEnum(KEY_AIR_COLOR, defaults.airColor),
+            airCarry = getEnum(KEY_AIR_CARRY, defaults.airCarry),
+            airBlur = getEnum(KEY_AIR_BLUR, defaults.airBlur),
             edgeWidth = getEnum(KEY_EDGE_WIDTH, defaults.edgeWidth),
             edgeGlow = getEnum(KEY_EDGE_GLOW, defaults.edgeGlow),
             edgeMotion = getEnum(KEY_EDGE_MOTION, defaults.edgeMotion),
@@ -98,6 +108,11 @@ object GlowPrefs {
             putString(KEY_FIRE_COLOR, settings.fireColor.name)
             putString(KEY_FIRE_SPARKS, settings.fireSparks.name)
             putString(KEY_FIRE_WAKE, settings.fireWake.name)
+            putString(KEY_AIR_GUST, settings.airGust.name)
+            putString(KEY_AIR_FLOW, settings.airFlow.name)
+            putString(KEY_AIR_COLOR, settings.airColor.name)
+            putString(KEY_AIR_CARRY, settings.airCarry.name)
+            putString(KEY_AIR_BLUR, settings.airBlur.name)
             putString(KEY_EDGE_WIDTH, settings.edgeWidth.name)
             putString(KEY_EDGE_GLOW, settings.edgeGlow.name)
             putString(KEY_EDGE_MOTION, settings.edgeMotion.name)

@@ -18,8 +18,8 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 
 // ---------------------------------------------------------------------------------------------
-// The glass wave's blur of whatever is under it. The effect can't blur what it is drawn over;
-// whoever owns that screen does: the lock-screen overlay through the system's window blur
+// The spawn wave's blur of whatever is under it (Water's glass, Air's gust). The effect can't
+// blur what it is drawn over; whoever owns that screen does: the lock-screen overlay through the system's window blur
 // ([GlowShield]), the dashboard and its preview through [glassHaze]. The effect only reports,
 // every frame of the wave, how strong the blur is and how far the wave has spread.
 // ---------------------------------------------------------------------------------------------
@@ -56,8 +56,22 @@ internal const val HAZE_BAND_INNER = 0.8f
 internal const val HAZE_BAND_OUTER = 0.975f
 internal const val HAZE_REVEAL_EDGE = 0.935f
 
-/** The glass wave blurs what is under it: on, with a blur to show. */
-internal val GlowSettings.hazes: Boolean get() = spawn && glass && glassBlur != GlassBlur.OFF
+/** The spawn wave blurs what is under it: on, with a blur to show. */
+internal val GlowSettings.hazes: Boolean get() = spawn && hazeBlur != GlassBlur.OFF
+
+/** How much the spawn wave blurs what is under it: Water's glass and Air's gust each have their own; the others blur nothing. */
+internal val GlowSettings.hazeBlur: GlassBlur
+    get() = when {
+        glass -> glassBlur
+        air -> airBlur
+        else -> GlassBlur.OFF
+    }
+
+/**
+ * Where the spawn wave blurs: where Water's glass is chosen to be; under Air's gust, always in the
+ * band riding its front, as moving air bends the light behind it.
+ */
+internal val GlowSettings.hazeArea: GlassArea get() = if (air) GlassArea.WAVE else glassArea
 
 /**
  * How blurred, 0..1 of [GlassBlur.radius], the screen under the wave is at [ms] into the effect.
@@ -89,7 +103,7 @@ internal fun hazeEndMs(area: GlassArea): Float = when (area) {
 }
 
 /**
- * Gets the glass wave's blur every frame it runs: [level] 0..1 of the chosen [GlassBlur], and
+ * Gets the spawn wave's blur every frame it runs: [level] 0..1 of the chosen [GlassBlur], and
  * [wave] the wave's radius as a fraction of its reach (for [GlassArea.WAVE] and
  * [GlassArea.REVEAL]). 0, 0 clears it.
  */
@@ -122,7 +136,7 @@ internal fun hazeMask(area: GlassArea, origin: Offset, reach: Float, color: Colo
     )
 }
 
-/** The glass wave's blur, for content the app draws itself (the dashboard and its preview). */
+/** The spawn wave's blur, for content the app draws itself (the dashboard and its preview). */
 @Stable
 class GlassHaze : GlassHazeTarget {
     var level by mutableFloatStateOf(0f)
@@ -137,7 +151,7 @@ class GlassHaze : GlassHazeTarget {
 }
 
 /**
- * Blurs this content as the glass wave passes, the way the lock screen gets it: all of it, or
+ * Blurs this content as the spawn wave passes (Water's glass, Air's gust), the way the lock screen gets it: all of it, or
  * a soft band under the crest. While the wave runs the content is drawn once more, blurred and
  * cut to the band; the rest of the time it is drawn as usual. Android 12+; below, nothing.
  * [geometry] and [scale] place the wave as the effect drawn over this content places it.
@@ -150,10 +164,10 @@ fun Modifier.glassHaze(haze: GlassHaze, settings: GlowSettings, geometry: Screen
     return drawWithCache {
         val origin = waveOrigin(geometry, size.width, density, scale)
         val reach = waveReach(origin, size.width, size.height)
-        val peak = settings.glassBlur.radius.toPx() * scale
+        val peak = settings.hazeBlur.radius.toPx() * scale
         val blurs = Array(GLASS_BLUR_STEPS) { i -> (peak * (i + 1) / GLASS_BLUR_STEPS).let { BlurEffect(it, it) } }
-        val mask = hazeMask(settings.glassArea, origin, reach, Color.White)
-        val waveOnly = settings.glassArea == GlassArea.WAVE
+        val mask = hazeMask(settings.hazeArea, origin, reach, Color.White)
+        val waveOnly = settings.hazeArea == GlassArea.WAVE
         // Offscreen, so the band cuts only this layer's copy of the content.
         soft.compositingStrategy = CompositingStrategy.Offscreen
         onDrawWithContent {

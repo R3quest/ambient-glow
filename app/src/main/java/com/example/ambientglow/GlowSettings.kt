@@ -107,9 +107,9 @@ enum class EdgeColor(
 
 /**
  * The element the spawn wave takes after; the wave always has one. Water is the glass wave, Fire
- * the ring of fire; the others have no look of their own yet ([ready] is false) and play the bare
- * wave until they do. [premium] ones are marked as such but free to try for now: nothing checks a
- * purchase yet.
+ * the ring of fire, Air a gust of wind; the others have no look of their own yet ([ready] is
+ * false) and play the bare wave until they do. [premium] ones are marked as such but free to try
+ * for now: nothing checks a purchase yet.
  */
 enum class SpawnElement(
     @param:StringRes override val label: Int,
@@ -119,13 +119,13 @@ enum class SpawnElement(
 ) : Labeled {
     FIRE(R.string.element_fire, R.string.element_fire_body, ready = true, premium = true),
     WATER(R.string.element_water, R.string.element_water_body, ready = true, premium = false),
-    AIR(R.string.element_air, R.string.element_air_body, ready = false, premium = true),
+    AIR(R.string.element_air, R.string.element_air_body, ready = true, premium = true),
     EARTH(R.string.element_earth, R.string.element_earth_body, ready = false, premium = true),
 }
 
 /**
- * Glass wave: how soft the screen under it goes, as the blur radius at full screen. The black
- * panel has nothing under it to blur, so there it is only the drawn wave and frost.
+ * Glass wave, and Air's gust: how soft the screen under it goes, as the blur radius at full
+ * screen. The black panel has nothing under it to blur, so there it is only what is drawn.
  */
 enum class GlassBlur(
     val radius: Dp,
@@ -232,6 +232,76 @@ enum class FireWake(
 }
 
 /**
+ * Air: how hard the gust blows. Its wind lines are up to [length] long and [width] thick at full
+ * screen, about [spacing] apart where the gust's front is, and play out at [pace].
+ */
+enum class AirGust(
+    val length: Dp,
+    val width: Dp,
+    val spacing: Dp,
+    val pace: Float,
+    @param:StringRes override val label: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    BREEZE(72.dp, 1.8.dp, 80.dp, 0.8f, R.string.air_gust_breeze, R.string.air_gust_breeze_phrase),
+    GUST(100.dp, 2.3.dp, 60.dp, 1f, R.string.air_gust_gust, R.string.air_gust_gust_phrase),
+    GALE(128.dp, 2.8.dp, 48.dp, 1.3f, R.string.air_gust_gale, R.string.air_gust_gale_phrase),
+}
+
+/**
+ * Air: how its wind lines run. [pitch] is how far they lean off straight out (the tangent of the
+ * angle, so 0 is straight), [curl] how big the curl at their heads is, and [turn] the share of
+ * curls that turn the way the wind does (the rest turn back).
+ * - STREAKS: straight lines rushing out of the camera, like speed lines.
+ * - CURLS: lines sweeping out and curling at their heads, as animation draws wind.
+ * - VORTEX: the whole gust spirals out like a whirlwind, every curl turning with it.
+ */
+enum class AirFlow(
+    val pitch: Float,
+    val curl: Dp,
+    val turn: Float,
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    STREAKS(0f, 0.dp, 0.5f, R.string.air_flow_streaks, R.string.air_flow_streaks_body, R.string.air_flow_streaks_phrase),
+    CURLS(0.2f, 11.dp, 0.7f, R.string.air_flow_curls, R.string.air_flow_curls_body, R.string.air_flow_curls_phrase),
+    VORTEX(0.75f, 9.dp, 1f, R.string.air_flow_vortex, R.string.air_flow_vortex_body, R.string.air_flow_vortex_phrase),
+}
+
+/**
+ * Air: the wind's colours ([airPalette]), white at the head of every line in all of them.
+ * - CLEAR: clear air, white with a pale sky-blue glow, the same for every app.
+ * - APP: the message's brand colour.
+ * - BLEND: white wind trailing the brand colour.
+ */
+enum class AirColor(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    CLEAR(R.string.air_color_clear, R.string.air_color_clear_body, R.string.air_color_clear_phrase),
+    APP(R.string.air_color_app, R.string.air_color_app_body, R.string.air_color_app_phrase),
+    BLEND(R.string.air_color_blend, R.string.air_color_blend_body, R.string.air_color_blend_phrase),
+}
+
+/**
+ * Air: what the gust carries, tumbling out with it and drifting down as it dies: [density] is
+ * the share of cells that hold one, [size] how big one is at full screen.
+ */
+enum class AirCarry(
+    val density: Float,
+    val size: Dp,
+    @param:StringRes override val label: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    NONE(0f, 0.dp, R.string.air_carry_none, R.string.air_carry_none_phrase),
+    DUST(0.4f, 1.1.dp, R.string.air_carry_dust, R.string.air_carry_dust_phrase),
+    PETALS(0.22f, 4.6.dp, R.string.air_carry_petals, R.string.air_carry_petals_phrase),
+    LEAVES(0.3f, 7.dp, R.string.air_carry_leaves, R.string.air_carry_leaves_phrase),
+}
+
+/**
  * What a new message looks like on a locked phone.
  * - LOCK_SCREEN: the lock screen lights up with all its notifications and the effect plays over
  *   it (needs [GlowShield]), then the LED dot covers it.
@@ -287,6 +357,12 @@ data class GlowSettings(
     val fireColor: FireColor = FireColor.NATURAL,
     val fireSparks: FireSparks = FireSparks.FEW,
     val fireWake: FireWake = FireWake.BURN,
+    val airGust: AirGust = AirGust.GUST,
+    val airFlow: AirFlow = AirFlow.CURLS,
+    val airColor: AirColor = AirColor.CLEAR,
+    val airCarry: AirCarry = AirCarry.PETALS,
+    /** How much the gust blurs the screen it passes over, in a band behind its front. */
+    val airBlur: GlassBlur = GlassBlur.LIGHT,
     val edgeWidth: EdgeWidth = EdgeWidth.THIN,
     val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
@@ -297,6 +373,9 @@ data class GlowSettings(
 
     /** The spawn wave bursts out as a ring of fire: a burning front trailing tongues of flame. */
     val fire: Boolean get() = element == SpawnElement.FIRE
+
+    /** The spawn wave bursts out as a gust: lines of wind sweeping out of the camera, carrying what it picks up. */
+    val air: Boolean get() = element == SpawnElement.AIR
 
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
     val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT

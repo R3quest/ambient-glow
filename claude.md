@@ -35,9 +35,9 @@ This file serves as the permanent system configuration and architectural authori
 - **Runtime state:** `GlowSession.kt` — `GlowPending` (unread messages), `GlowSession` (listener ↔ glow screen link), `WakeMode`.
 - **Wake path:** `NotificationWakerService` (filters messages, `BrandColors`) → `GlowLauncher` (bridge notification + full-screen intent) → `WakeScreenActivity` (the lock flow state machine). `Power.kt`: `PanelWaker`, `DarkHold`, `inCall`.
 - **Glow screen helpers:** `Led.kt` (breath curve, `LedDot`), `LedWindow.kt` (bars, display modes), `RelightLimiter.kt`.
-- **Effect:** `ArrivalEffect.kt` (timeline + drawing), `CrestShader.kt`, `FrostShader.kt` (Water), `FireWave.kt` + `FireShader.kt` (Fire: timeline, palette, shader), `EdgeLight.kt`, `GlassHaze.kt`, with `ShaderBrushes.kt`, `Oklab.kt`, `GlowMath.kt`, `GlowRenderer.kt` (geometry, `GlowGraphic`).
+- **Effect:** `ArrivalEffect.kt` (timeline + drawing), `CrestShader.kt`, `FrostShader.kt` (Water), `FireWave.kt` + `FireShader.kt` (Fire: timeline, palette, shader), `AirWave.kt` + `AirShader.kt` (Air: timeline, whirl, palette, shader), `EdgeLight.kt`, `GlassHaze.kt`, with `ShaderBrushes.kt`, `Oklab.kt`, `GlowMath.kt`, `GlowRenderer.kt` (geometry, `GlowGraphic`).
 - **Overlay:** `GlowShield` (accessibility overlay: effect over the lock screen, wake cover, blur).
-- **Dashboard:** `MainActivity` → `dashboard/` (`Dashboard`, `Access`, `EffectCard`, `ElementCard` + `WaterOptions`, `FireOptions` (built from `GlyphTiles`), `LedCard`, `LedShowcase`, `PhoneMock`), built from `ui/components/` (`Controls`, `Chips`) and `ui/theme/`.
+- **Dashboard:** `MainActivity` → `dashboard/` (`Dashboard`, `Access`, `EffectCard`, `ElementCard` + `WaterOptions`, `FireOptions`, `AirOptions` (built from `GlyphTiles`), `LedCard`, `LedShowcase`, `PhoneMock`), built from `ui/components/` (`Controls`, `Chips`) and `ui/theme/`.
 
 ## 🧩 6. Conventions
 - **Adding a setting:** a field with its default in `GlowSettings`, and one line each in `GlowPrefs.load` and `GlowPrefs.save`. Options are enums implementing `Labeled`, so `ChipRow` lists them as they are. If the arrival effect reads it, check `forPreview()`.
