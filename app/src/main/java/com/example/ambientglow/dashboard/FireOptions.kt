@@ -2,14 +2,9 @@ package com.example.ambientglow.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -21,7 +16,6 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.example.ambientglow.FireColor
 import com.example.ambientglow.FireFlames
 import com.example.ambientglow.FireSparks
 import com.example.ambientglow.FirePalette
@@ -29,41 +23,29 @@ import com.example.ambientglow.FireWake
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.R
 import com.example.ambientglow.firePalette
-import com.example.ambientglow.ui.components.ChipLabel
 import com.example.ambientglow.ui.components.OptionBody
 import com.example.ambientglow.ui.components.OptionGroup
-import com.example.ambientglow.ui.components.SelectionRow
 
 // ---------------------------------------------------------------------------------------------
 // Fire's options, under the element picker. Every choice is a picture: the flames as a fire that
-// grows tile by tile, the colours as chips each holding a small flame of that fire, the sparks as
-// the app's sparkle, none to a shower, and what the front leaves as a burnt page, coals or a lone
-// flame. The pictures burn in the fire chosen, and pop as the blade passes under them.
+// grows tile by tile, the sparks as the app's sparkle, none to a shower, and what the front leaves
+// as a burnt page, coals or a lone flame. The pictures burn in the message's fire, as Water's
+// light in its colour. There is no colour to choose: the fire is the app's, as all the glow is.
 // ---------------------------------------------------------------------------------------------
 
-private val SWATCH_WIDTH = 10.dp
-private val SWATCH_HEIGHT = 14.dp
-
-/** How far an unchosen colour's swatch fades, so the chosen fire is the one that burns. */
-private const val SWATCH_REST = 0.5f
-
 /**
- * Fire: the flames, their colour, the sparks and what the front leaves behind it. The colour
- * chips show each fire as a message in [accent] would burn, and the other pictures burn in the
- * fire chosen. Colour and wake aren't plain from their names: what the picked one does, under it.
+ * Fire: the flames, the sparks and what the front leaves behind it, the pictures burning as a
+ * message in [accent] would. What the front leaves isn't plain from its name: what the picked
+ * one does, under it.
  */
 @Composable
 internal fun FireOptions(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
-    val fire = remember(settings.fireColor, accent) { FireInk(firePalette(settings.fireColor, accent)) }
+    val fire = remember(accent) { FireInk(firePalette(accent)) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         OptionGroup(stringResource(R.string.fire_flames)) {
             GlyphTiles(FireFlames.entries, settings.fireFlames, { onEffect(settings.copy(fireFlames = it)) }, ::FireLines) { flames, lit, lines ->
                 flamesGlyph(flames, fire, lit, lines)
             }
-        }
-        OptionGroup(stringResource(R.string.fire_color)) {
-            FireColorPicker(settings.fireColor, accent) { onEffect(settings.copy(fireColor = it)) }
-            OptionBody(settings.fireColor) { stringResource(it.body) }
         }
         OptionGroup(stringResource(R.string.fire_sparks)) {
             GlyphTiles(FireSparks.entries, settings.fireSparks, { onEffect(settings.copy(fireSparks = it)) }, ::FireLines) { sparks, lit, lines ->
@@ -92,7 +74,7 @@ internal fun firePhrasing(settings: GlowSettings): Phrasing {
     } else {
         settings.fireWake.phrase
     }
-    val parts = listOf(settings.fireFlames.phrase, settings.fireColor.phrase, wake)
+    val parts = listOf(settings.fireFlames.phrase, wake)
     return if (settings.fireSparks == FireSparks.OFF) {
         Phrasing(R.string.fire_summary, parts)
     } else {
@@ -100,7 +82,7 @@ internal fun firePhrasing(settings: GlowSettings): Phrasing {
     }
 }
 
-/** The chosen fire as the glyphs draw it: a flame's fill, hottest at its base, and its colours. */
+/** The message's fire as the glyphs draw it: a flame's fill, hottest at its base, and its colours. */
 @Immutable
 private class FireInk(val palette: FirePalette) {
     /** On the flame's grid, tip to base. */
@@ -130,51 +112,12 @@ private class FireLines(unit: Float, line: Float) {
     val burn = glyphStroke(unit, line / BURN_FLAME)
 }
 
-/** One chip per fire colour, each with a small flame burning in that fire. */
-@Composable
-private fun FireColorPicker(selected: FireColor, accent: Color, onSelect: (FireColor) -> Unit) {
-    val fills = remember(accent) { FireColor.entries.map { firePalette(it, accent).fill() } }
-    SelectionRow(
-        count = FireColor.entries.size,
-        selected = selected.ordinal,
-        onSelect = { onSelect(FireColor.entries[it]) },
-        inset = 6.dp,
-    ) { index, lit ->
-        FlameSwatch(fills[index], lit)
-        Spacer(Modifier.width(6.dp))
-        ChipLabel(stringResource(FireColor.entries[index].label), lit, compact = true)
-    }
-}
-
 private val FLAME = PathParser().parsePathString(FLAME_OUTLINE).toPath()
 private val FLAME_INNER = PathParser().parsePathString(FLAME_CORE).toPath()
 private val SPARKLE_PATH = PathParser().parsePathString(SPARKLE).toPath()
 
 /** Where the flame glyphs stand on their 24-unit grid: the base they grow from. */
 private val FLAME_BASE = Offset(12f, 21f)
-
-/** A flame filled with its fire, brightening to full and popping as [lit] goes 0 → 1; read in draw. */
-@Composable
-private fun FlameSwatch(fill: Brush, lit: () -> Float) {
-    Spacer(
-        Modifier
-            .size(SWATCH_WIDTH, SWATCH_HEIGHT)
-            .pop(lit)
-            .drawWithCache {
-                // The flame spans x 6..18 and y 2.5..21 of its grid: fitted to the swatch.
-                val k = minOf(size.width / 12f, size.height / 18.5f)
-                val left = (size.width - 12f * k) / 2f - 6f * k
-                val top = (size.height - 18.5f * k) / 2f - 2.5f * k
-                onDrawBehind {
-                    translate(left, top) {
-                        scale(k, pivot = Offset.Zero) {
-                            drawPath(FLAME, fill, alpha = SWATCH_REST + (1f - SWATCH_REST) * lit())
-                        }
-                    }
-                }
-            },
-    )
-}
 
 private const val GENTLE_FLAME = 0.62f
 private const val TALL_FLAME = 0.92f

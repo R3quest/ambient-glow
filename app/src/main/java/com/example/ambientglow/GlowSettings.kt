@@ -187,22 +187,6 @@ enum class FireFlames(
     INFERNO(116.dp, 0.85f, 4f, R.string.fire_flames_inferno, R.string.fire_flames_inferno_phrase),
 }
 
-/**
- * Fire: the flames' colours, white-hot at the front in all of them ([firePalette]).
- * - NATURAL: real fire, the same for every app.
- * - APP: the message's brand colour, from white-hot to deep.
- * - BLEND: real fire whose tips take the brand colour, as metal salts colour a flame.
- */
-enum class FireColor(
-    @param:StringRes override val label: Int,
-    @param:StringRes val body: Int,
-    @param:StringRes val phrase: Int,
-) : Labeled {
-    NATURAL(R.string.fire_color_natural, R.string.fire_color_natural_body, R.string.fire_color_natural_phrase),
-    APP(R.string.fire_color_app, R.string.fire_color_app_body, R.string.fire_color_app_phrase),
-    BLEND(R.string.fire_color_blend, R.string.fire_color_blend_body, R.string.fire_color_blend_phrase),
-}
-
 /** Fire: sparks thrown up behind the front, as the share of spark cells that hold one. */
 enum class FireSparks(
     val density: Float,
@@ -284,7 +268,6 @@ data class GlowSettings(
     val glassArea: GlassArea = GlassArea.REVEAL,
     val glassFrost: GlassFrost = GlassFrost.SOFT,
     val fireFlames: FireFlames = FireFlames.BLAZE,
-    val fireColor: FireColor = FireColor.NATURAL,
     val fireSparks: FireSparks = FireSparks.FEW,
     val fireWake: FireWake = FireWake.BURN,
     val edgeWidth: EdgeWidth = EdgeWidth.THIN,

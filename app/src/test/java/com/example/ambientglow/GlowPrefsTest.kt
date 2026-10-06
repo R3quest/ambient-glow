@@ -26,7 +26,6 @@ class GlowPrefsTest {
         glassArea = GlassArea.SCREEN,
         glassFrost = GlassFrost.MILKY,
         fireFlames = FireFlames.INFERNO,
-        fireColor = FireColor.APP,
         fireSparks = FireSparks.SHOWER,
         fireWake = FireWake.COALS,
         edgeWidth = EdgeWidth.HEAVY,

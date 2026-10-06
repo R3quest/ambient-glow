@@ -416,7 +416,7 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
         GlowLog.d {
             "effect ${if (preview) "preview" else "live"} $what spawn=${settings.spawn} " +
                 "${settings.element} glass=${settings.glassBlur}/${settings.glassArea}/${settings.glassFrost} " +
-                "fire=${settings.fireFlames}/${settings.fireColor}/${settings.fireSparks}/${settings.fireWake}: " +
+                "fire=${settings.fireFlames}/${settings.fireSparks}/${settings.fireWake}: " +
                 "${if (seconds > 0f) (frames / seconds).toInt() else 0} fps, $dropped stutters, worst ${worst / 1_000_000} ms"
         }
     }

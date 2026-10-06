@@ -3,13 +3,15 @@ package com.example.ambientglow
 import androidx.compose.ui.graphics.Color
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The fire's colours and its curves: picked and timed once, so their shape can be pinned down here. */
 class FireTest {
 
-    private val brands = listOf(Color(DEFAULT_GLOW_COLOR), Color(0xFF25D366), Color(0xFF8B5CF6), Color(0xFFFF4B33), Color(0xFF777777))
+    private val brands = listOf(Color(DEFAULT_GLOW_COLOR), Color(0xFF25D366), Color(0xFF8B5CF6), Color(0xFFFF4B33), Color(0xFF1E88E5))
+    private val greys = listOf(Color(0xFF777777), Color.White, Color.Black, Color(0xFF1A1A1A))
 
     private fun lightness(color: Color) = toOklch(color)[0]
 
@@ -18,40 +20,30 @@ class FireTest {
 
     @Test
     fun everyFireDarkensFromItsCoreToItsEmbers() {
-        for (mode in FireColor.entries) {
-            for (brand in brands) {
-                val p = firePalette(mode, brand)
-                val steps = listOf(p.core, p.hot, p.body, p.flare, p.tip, p.ember).map(::lightness)
-                steps.zipWithNext().forEach { (hotter, cooler) ->
-                    assertTrue("$mode $brand: $steps", hotter > cooler)
-                }
+        for (brand in brands + greys) {
+            val p = firePalette(brand)
+            val steps = listOf(p.core, p.hot, p.body, p.flare, p.tip, p.ember).map(::lightness)
+            steps.zipWithNext().forEach { (hotter, cooler) ->
+                assertTrue("$brand: $steps", hotter > cooler)
             }
         }
     }
 
     @Test
-    fun naturalFireIsTheSameForEveryApp() {
-        val first = firePalette(FireColor.NATURAL, brands.first())
-        brands.forEach { assertEquals(first, firePalette(FireColor.NATURAL, it)) }
-    }
-
-    @Test
-    fun appFireBurnsInTheBrandsHue() {
-        for (brand in brands.dropLast(1)) {
+    fun theFireBurnsInTheBrandsHue() {
+        for (brand in brands) {
             val hue = toOklch(brand)[2]
-            assertTrue("$brand", hueGap(hue, toOklch(firePalette(FireColor.APP, brand).body)[2]) < 6f)
+            assertTrue("$brand", hueGap(hue, toOklch(firePalette(brand).body)[2]) < 6f)
         }
     }
 
     @Test
-    fun blendIsNaturalFireTippedWithTheBrand() {
-        val natural = firePalette(FireColor.NATURAL, Color.Black)
-        for (brand in brands.dropLast(1)) {
-            val blend = firePalette(FireColor.BLEND, brand)
-            assertEquals(natural.core, blend.core)
-            assertEquals(natural.body, blend.body)
-            assertTrue("$brand", hueGap(toOklch(brand)[2], toOklch(blend.tip)[2]) < 6f)
-        }
+    fun aBrandWithoutAHueBurnsAsNaturalFire() {
+        // Grey, white and black icons would burn ash grey: they all get the one natural fire, orange.
+        val natural = firePalette(greys.first())
+        greys.forEach { assertEquals("$it", natural, firePalette(it)) }
+        assertTrue(hueGap(toOklch(natural.body)[2], toOklch(Color(0xFFFF7F1E))[2]) < 1f)
+        brands.forEach { assertNotEquals("$it", natural, firePalette(it)) }
     }
 
     @Test

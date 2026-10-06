@@ -91,7 +91,7 @@ internal fun starburstAt(ms: Float): Float = (ms - SPAWN_GATHER_MS + STARBURST_L
 /**
  * The fire wave: light gathers in the camera and flashes in the fire's colours, releasing a ring
  * of fire that sweeps the screen and dies down as it reaches the bottom ([crestEnergyAt]). The
- * flames take [color] as [GlowSettings.fireColor] says ([firePalette]).
+ * flames burn in [color], the message's, as everything the effect draws does ([firePalette]).
  * [overBlack]: there is no screen under the char to darken, so only its smouldering edge shows.
  */
 @Composable
@@ -111,7 +111,7 @@ internal fun FireWave(
             .drawWithCache {
                 val origin = waveOrigin(geometry, size.width, density, scale)
                 val reach = waveReach(origin, size.width, size.height)
-                val palette = firePalette(settings.fireColor, color)
+                val palette = firePalette(color)
                 val veil = wake == FireWake.BURN && !overBlack
                 val coals = wake == FireWake.COALS
                 val shader = fireShader(origin, palette, settings.fireFlames, coals, density, scale)

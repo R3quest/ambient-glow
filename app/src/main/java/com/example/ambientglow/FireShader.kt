@@ -316,6 +316,7 @@ internal data class FirePalette(
     val ember: Color,
 )
 
+/** Real fire, for brands without a hue of their own. */
 private val NaturalFire = FirePalette(
     core = Color(0xFFFFF7E6),
     hot = Color(0xFFFFD05A),
@@ -326,40 +327,32 @@ private val NaturalFire = FirePalette(
     ember = Color(0xFF7A0A2A),
 )
 
-/** Brand colours with less chroma than this have no hue to speak of: their fire stays as pale as they are. */
+/**
+ * Brand colours with less chroma than this have no hue to speak of: a grey, white or black icon.
+ * Their fire would burn ash grey, so it burns as natural fire instead.
+ */
 private const val GREY_CHROMA = 0.04f
 
-/** The least chroma an app's fire burns with, so a muted brand still burns in colour. */
+/** The least chroma a fire burns with, so a muted brand still burns in colour. */
 private const val FIRE_CHROMA = 0.13f
 
 /**
- * The fire for [mode] in a message from [brand]. App and Blend pick their colours in OKLCh, so
- * every app's fire steps down in lightness the same way; Blend's flare turns from the natural
- * body to the brand tip the short way round the hue circle, so the two never mix to grey.
+ * The fire for a message from [brand], in the brand's colour as everything the effect draws is:
+ * picked in OKLCh, so every app's fire steps down in lightness the same way, white-hot at the
+ * front to deep embers. A brand without a hue burns as natural fire.
  */
-internal fun firePalette(mode: FireColor, brand: Color): FirePalette {
+internal fun firePalette(brand: Color): FirePalette {
     val (_, c, h) = toOklch(brand)
-    val chroma = if (c < GREY_CHROMA) c else max(c, FIRE_CHROMA)
-    return when (mode) {
-        FireColor.NATURAL -> NaturalFire
-        FireColor.APP -> FirePalette(
-            core = oklch(0.97f, 0.03f, h),
-            hot = oklch(0.88f, 0.6f * chroma, h),
-            body = oklch(0.75f, chroma, h),
-            flare = oklch(0.64f, chroma, h),
-            tip = oklch(0.52f, chroma, h),
-            ember = oklch(0.38f, 0.8f * chroma, h),
-        )
-        FireColor.BLEND -> {
-            val from = toOklch(NaturalFire.body)[2]
-            val turn = ((h - from) % 360f + 540f) % 360f - 180f
-            NaturalFire.copy(
-                flare = oklch(0.66f, max(chroma, 0.12f), from + turn / 2f),
-                tip = oklch(0.58f, chroma, h),
-                ember = oklch(0.4f, 0.8f * chroma, h),
-            )
-        }
-    }
+    if (c < GREY_CHROMA) return NaturalFire
+    val chroma = max(c, FIRE_CHROMA)
+    return FirePalette(
+        core = oklch(0.97f, 0.03f, h),
+        hot = oklch(0.88f, 0.6f * chroma, h),
+        body = oklch(0.75f, chroma, h),
+        flare = oklch(0.64f, chroma, h),
+        tip = oklch(0.52f, chroma, h),
+        ember = oklch(0.38f, 0.8f * chroma, h),
+    )
 }
 
 /**
