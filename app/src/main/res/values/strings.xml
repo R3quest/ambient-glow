@@ -132,6 +132,8 @@
     <string name="access_listener_grant">Grant permission</string>
     <string name="access_listener_manage">Manage access</string>
     <string name="access_manage">MANAGE</string>
+    <string name="access_on">On</string>
+    <string name="access_off">Off</string>
 
     <string name="access_post_title">Wake bridge</string>
     <string name="access_post_body">A silent, self-dismissing alert is how Android lets an app light the screen from the background. It needs high importance.</string>
@@ -282,5 +284,5 @@
     <string name="test_message">Dismiss me and cyan leaves the LED loop.</string>
     <string name="test_sender_second">Test 2 · Magenta</string>
     <string name="test_message_second">Dismiss me and magenta leaves the loop. Dismiss both and the LED stops.</string>
-    <string name="footer_privacy">OFFLINE · NO OVERLAY · NO TRACKING</string>
+    <string name="footer_privacy">Nothing leaves your phone.</string>
 </resources>

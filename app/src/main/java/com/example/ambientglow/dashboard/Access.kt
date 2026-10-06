@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -50,6 +51,7 @@ import com.example.ambientglow.GlowLauncher
 import com.example.ambientglow.GlowShield
 import com.example.ambientglow.NotificationWakerService
 import com.example.ambientglow.R
+import com.example.ambientglow.ui.components.Chevron
 import com.example.ambientglow.ui.components.GhostButton
 import com.example.ambientglow.ui.components.NoticeRow
 import com.example.ambientglow.ui.components.StatusPill
@@ -259,12 +261,7 @@ internal fun AccessPage(access: AccessState, actions: AccessActions) {
             onAction = actions.shield,
             notice = restrictedNotice.takeIf { restricted && !access.shield },
         )
-        Text(
-            text = stringResource(R.string.footer_privacy),
-            style = MaterialTheme.typography.labelSmall,
-            color = GlowPalette.TextFaint,
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-        )
+        PrivacyNote(Modifier.padding(top = 6.dp))
     }
 }
 
@@ -285,13 +282,29 @@ internal fun AccessSummary(access: AccessState, actions: AccessActions) {
             AccessRow(stringResource(R.string.access_fsi_title), access.fullScreen, actions.fullScreen)
         }
         AccessRow(stringResource(R.string.access_shield_title), access.shield, actions.shield)
-        Text(
-            text = stringResource(R.string.footer_privacy),
-            style = MaterialTheme.typography.labelSmall,
-            color = GlowPalette.TextFaint,
-            modifier = Modifier.padding(vertical = 10.dp),
+        Spacer(
+            Modifier
+                .padding(top = 4.dp)
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(GlowPalette.OutlineSoft),
         )
+        PrivacyNote(Modifier.padding(vertical = 12.dp))
     }
+}
+
+/**
+ * One short sentence in body type, not mono caps: in the label style it sat under the status rows
+ * and read as a state ("OFFLINE"), not as a promise. True because the app has no INTERNET permission.
+ */
+@Composable
+private fun PrivacyNote(modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(R.string.footer_privacy),
+        style = MaterialTheme.typography.bodySmall,
+        color = GlowPalette.TextMuted,
+        modifier = modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -301,22 +314,32 @@ private fun AccessRow(title: String, active: Boolean, onManage: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(GlowShapes.Pill)
-            .clickable(role = Role.Button, onClick = onManage)
-            .padding(vertical = 12.dp),
+            // The chevron replaces a MANAGE label; TalkBack still hears it as the action.
+            .clickable(onClickLabel = stringResource(R.string.access_manage), role = Role.Button, onClick = onManage)
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Canvas(Modifier.size(7.dp)) { drawCircle(tint) }
+        // Settings-style: title over state, a chevron for the tap. No caps labels on the row.
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = GlowPalette.TextPrimary,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Canvas(Modifier.size(6.dp)) { drawCircle(tint) }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(if (active) R.string.access_on else R.string.access_off),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlowPalette.TextMuted,
+                )
+            }
+        }
         Spacer(Modifier.width(12.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = GlowPalette.TextPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = stringResource(R.string.access_manage),
-            style = MaterialTheme.typography.labelSmall,
-            color = GlowPalette.Cyan,
+        Chevron(
+            tint = GlowPalette.TextMuted,
+            modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = -90f },
         )
     }
 }
