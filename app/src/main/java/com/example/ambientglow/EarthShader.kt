@@ -77,6 +77,9 @@ const float DEBRIS_FROM = $EARTH_DEBRIS_FROM;
 // A slab's bevel, as a share of a stone; Faults' main faults run this many stones apart.
 const float BEVEL = 0.09;
 const float FAULT_SCALE = 2.6;
+// A spire's shadow falls this share of its length away from the light, this dark at most.
+const float SPIRE_SHADOW = 0.22;
+const float SHADOW_ALPHA = 0.42;
 // How dark the lip along a crack is, how bright the shock ring is and how thick the smoke at most.
 const float LIP = 0.6;
 const float SHOCK = 0.85;
@@ -347,6 +350,8 @@ half4 main(float2 xy) {
         float bdown = 0.0;
         float bface = 0.0;
         float bage = 0.0;
+        float bsd = 100000.0;
+        float bsdown = 0.0;
         for (int j = -1; j <= 1; j++) {
             for (int i = -1; i <= 1; i++) {
                 float2 id = iq + float2(float(i), float(j));
@@ -363,9 +368,10 @@ half4 main(float2 xy) {
                         float2 dir = float2(away.x * cos(t) - away.y * sin(t), away.x * sin(t) + away.y * cos(t));
                         float2 perp = float2(-dir.y, dir.x);
                         float up = pop(age / riseLen);
-                        // At most a stone long, so it never reaches past the next cell.
-                        float L = cell * (0.6 + 0.35 * h.x / SPIKE_SHARE) * up * (0.35 + 0.65 * down);
-                        float W = 0.38 * cell * min(1.0, up) * (0.55 + 0.45 * down);
+                        // At most a stone long, so it never reaches past the next cell; as the quake
+                        // dies they sink back into the ground rather than fading where they stand.
+                        float L = cell * (0.6 + 0.35 * h.x / SPIKE_SHARE) * up * (0.35 + 0.65 * down) * (0.45 + 0.55 * energy);
+                        float W = 0.38 * cell * min(1.0, up) * (0.55 + 0.45 * down) * (0.7 + 0.3 * energy);
                         float K = 0.55 * W;
                         float2 l = xy - c;
                         float a = dot(l, dir);
@@ -374,6 +380,16 @@ half4 main(float2 xy) {
                         // A kite: a short back, widest at its root, a long point.
                         float sd = max((ab * L + a * W - L * W) * inversesqrt(L * L + W * W),
                                        (ab * K - a * W - K * W) * inversesqrt(K * K + W * W));
+                        // Its shadow on the ground, the same kite cast away from the light.
+                        float2 ls = l + SUN * (SPIRE_SHADOW * L);
+                        float sa = dot(ls, dir);
+                        float sb = abs(dot(ls, perp));
+                        float ssd = max((sb * L + sa * W - L * W) * inversesqrt(L * L + W * W),
+                                        (sb * K - sa * W - K * W) * inversesqrt(K * K + W * W));
+                        if (ssd < bsd) {
+                            bsd = ssd;
+                            bsdown = down;
+                        }
                         if (sd < bd) {
                             bd = sd;
                             bb = b;
@@ -386,6 +402,11 @@ half4 main(float2 xy) {
                     }
                 }
             }
+        }
+        float shadow = smoothstep(1.5 * dp, -1.5 * dp, bsd);
+        if (shadow > 0.0) {
+            float ha = SHADOW_ALPHA * shadow * energy * min(1.0, 2.5 * bsdown);
+            col = over(float4(float3(shade.rgb) * 0.15 * ha, ha), col);
         }
         float cov = clamp(0.5 - bd, 0.0, 1.0);
         if (cov > 0.0) {

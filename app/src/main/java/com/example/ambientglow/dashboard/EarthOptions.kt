@@ -97,7 +97,7 @@ private class EarthLines(unit: Float, line: Float) {
 private fun path(data: String): Path = PathParser().parsePathString(data).toPath()
 
 /** The force as a seismograph: a flutter, a quake, a trace thrown off the scale. */
-private val TREMOR = path("M2.5 12 L8 12 L9.5 10.5 L11 13.5 L12.5 10 L14 14 L15.5 12 L21.5 12")
+private val TREMOR = path("M2.5 12 L7.5 12 L9 10 L10.5 14 L12 9.5 L13.5 14.5 L15 11 L16.5 12 L21.5 12")
 private val QUAKE = path("M2.5 12 L6.5 12 L8 9 L9.5 15 L11 6.5 L13 17.5 L14.5 8.5 L16 15 L17.5 12 L21.5 12")
 private val UPHEAVAL = path("M2.5 12 L5 12 L6.5 8 L8 16 L10 3.5 L12 20.5 L14 5.5 L15.5 18 L17 9 L18.5 12 L21.5 12")
 
