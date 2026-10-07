@@ -31,27 +31,31 @@ import com.example.ambientglow.ui.theme.GlowShapes
 // Phone mock-ups, with this phone's real camera drawn where it is.
 // ---------------------------------------------------------------------------------------------
 
-/** Camera position as screen fractions (radius as a fraction of screen width). */
+/**
+ * Camera position as screen fractions (radius as a fraction of screen width). Without a [hole]
+ * (a camera in the bezel, or under the screen) it is where the camera usually is, top centre:
+ * the wave still comes from there, but there is no lens to draw or ring round.
+ */
 @Immutable
-internal data class ScreenCamera(val x: Float, val y: Float, val radius: Float)
+internal data class ScreenCamera(val x: Float, val y: Float, val radius: Float, val hole: Boolean = true)
 
 internal val LocalCamera = staticCompositionLocalOf { ScreenCamera(x = 0.5f, y = 0.03f, radius = 0.03f) }
 
 @Composable
-internal fun rememberCamera(geometry: ScreenGeometry): ScreenCamera {
+internal fun rememberCamera(geometry: ScreenGeometry, hole: Boolean): ScreenCamera {
     val window = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
-    return remember(geometry, window, density) {
+    return remember(geometry, hole, window, density) {
         val w = window.width.toFloat().coerceAtLeast(1f)
         val h = window.height.toFloat().coerceAtLeast(1f)
         val lens = geometry.lens(w, density.density)
-        ScreenCamera(x = lens.centerX / w, y = lens.centerY / h, radius = lens.radius / w)
+        ScreenCamera(x = lens.centerX / w, y = lens.centerY / h, radius = lens.radius / w, hole = hole)
     }
 }
 
 /**
  * A minimal handset silhouette: black panel, hairline bezel and this phone's punch-hole
- * camera drawn where it really is. [content] receives that camera scaled into the mock-up,
+ * camera drawn where it really is (none, without one). [content] receives that camera scaled into the mock-up,
  * so ring previews circle the drawn lens. [cameraDrop]: the camera sits at least this far down,
  * for a mock-up too small for a ring drawn round it to fit above it.
  */
@@ -80,8 +84,10 @@ internal fun PhoneMock(
                 radius = (camera.radius * w).coerceAtLeast(minRadius),
             )
         }
-        Canvas(Modifier.fillMaxSize()) {
-            drawCircle(GlowPalette.SurfaceHighest, radius = lens.radius, center = Offset(lens.centerX, lens.centerY))
+        if (camera.hole) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawCircle(GlowPalette.SurfaceHighest, radius = lens.radius, center = Offset(lens.centerX, lens.centerY))
+            }
         }
         content(remember(lens) { ScreenGeometry(cutout = lens, cornerRadiusPx = null) })
     }

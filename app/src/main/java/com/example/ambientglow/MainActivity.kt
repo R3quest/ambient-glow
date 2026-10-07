@@ -11,8 +11,9 @@ import com.example.ambientglow.dashboard.Dashboard
 import com.example.ambientglow.ui.theme.AmbientGlowTheme
 
 class MainActivity : ComponentActivity() {
-    // Real punch-hole position, so LED presets and mock-ups line up with this phone's camera.
-    private val geometry = mutableStateOf(ScreenGeometry.Unknown)
+    // Real punch-hole position, so LED presets and mock-ups line up with this phone's camera;
+    // null until the first insets say what the screen is.
+    private val geometry = mutableStateOf<ScreenGeometry?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(

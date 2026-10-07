@@ -150,14 +150,16 @@ private val DashboardInsets: WindowInsets
     @Composable get() = WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout)
 
 @Composable
-internal fun Dashboard(reported: ScreenGeometry) {
+internal fun Dashboard(reported: ScreenGeometry?) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(GlowPrefs.load(context)) }
     // The camera as the user fitted it: what every mock-up and real-size preview lines up with.
     val density = LocalDensity.current.density
     val geometry = remember(reported, settings.lensOffsetXDp, settings.lensOffsetDp, settings.lensGrowDp, density) {
-        reported.fitted(settings, density)
+        (reported ?: ScreenGeometry.Unknown).fitted(settings, density)
     }
+    // A phone with a camera hole, or one not measured yet (so nothing flickers in as it is).
+    val hole = reported == null || reported.cutout != null
     var access by remember { mutableStateOf(AccessState.read(context)) }
     var accessOpen by remember { mutableStateOf(false) }
     val refresh = { access = AccessState.read(context) }
@@ -278,7 +280,13 @@ internal fun Dashboard(reported: ScreenGeometry) {
         else -> null
     }
 
-    CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
+    // No camera hole, no ring round it: the LED there is a dot (a ring saved before, or restored
+    // from another phone, would circle nothing).
+    LaunchedEffect(hole) {
+        if (!hole && settings.ledOnCamera) edit(save = true) { it.copy(ledOnCamera = false) }
+    }
+
+    CompositionLocalProvider(LocalCamera provides rememberCamera(geometry, hole)) {
         Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
             // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
             Column(

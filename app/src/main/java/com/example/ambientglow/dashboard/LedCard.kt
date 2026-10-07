@@ -126,9 +126,9 @@ private val SPOT_EDGE = 18.dp
 private val SPOT_CAMERA_GAP = 10.dp
 
 /**
- * LED spots built from this phone's real camera: the lens itself (the ring), four on the
- * camera's horizontal line (screen edges and either side of the lens), one straight below it,
- * plus the classic corners and bottom. Positions are converted with the same margin the full-screen LED uses, so a spot
+ * LED spots built from this phone's real camera: the lens itself (the ring, only with a camera
+ * hole to ring round), four on the camera's horizontal line (screen edges and either side of the
+ * lens), one straight below it, plus the classic corners and bottom. Positions are converted with the same margin the full-screen LED uses, so a spot
  * picked here lands exactly there.
  */
 @Composable
@@ -152,8 +152,8 @@ private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
             val clear = camera.radius * w + SPOT_CAMERA_GAP.toPx() + dot
             val edge = SPOT_EDGE.toPx()
             val line = fy(camY)
-            listOf(
-                DotSpot(R.string.dot_spot_ring, fx(camX), line, onCameraLine = false, camera = true),
+            listOfNotNull(
+                DotSpot(R.string.dot_spot_ring, fx(camX), line, onCameraLine = false, camera = true).takeIf { camera.hole },
                 DotSpot(R.string.dot_spot_edge_left, fx(edge), line, onCameraLine = true),
                 DotSpot(R.string.dot_spot_cam_left, fx(camX - clear), line, onCameraLine = true),
                 DotSpot(R.string.dot_spot_cam_right, fx(camX + clear), line, onCameraLine = true),
