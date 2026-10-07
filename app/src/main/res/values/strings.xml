@@ -6,15 +6,11 @@
     <string name="shield_summary">Plays the new-message effect over the lock screen and hides the system bars while the LED turns the screen on.</string>
     <string name="shield_description">When a new message lights the lock screen, this service draws your chosen glow effect over it for two seconds; the lock screen stays visible and usable underneath. When the LED lights the screen, it also covers the battery icon and navigation handle with black for half a second. It reads no screen content and receives no accessibility events.</string>
 
-    <string name="channel_name">Wake bridge</string>
+    <string name="channel_name">Wake alert</string>
     <string name="channel_description">Briefly used to light the screen when a message arrives. Dismissed automatically.</string>
     <string name="bridge_title">New message</string>
     <string name="bridge_text">Lighting your screen</string>
 
-    <string name="status_armed">ARMED</string>
-    <string name="status_setup">SETUP %1$d/%2$d</string>
-    <string name="state_active">ACTIVE</string>
-    <string name="state_pending">PENDING</string>
 
     <string name="section_dot">LED DOT</string>
     <string name="group_arrival_title">The effect</string>
@@ -128,7 +124,7 @@
     <string name="earth_debris_none">NONE</string>
     <string name="earth_debris_dust">SMOKE</string>
     <string name="earth_debris_rubble">RUBBLE</string>
-    <string name="arrival_needs_shield">Turn on Effects &amp; clean wake to play the effect over the lock screen. Without it the lock screen only lights up.</string>
+    <string name="arrival_needs_shield">Turn on Ambient Glow effects to play the effect over the lock screen. Without it the lock screen only lights up.</string>
     <string name="section_effect">EFFECT</string>
     <string name="effect_preview_label">Preview of a new message: the effect, then the LED. Tap to replay.</string>
     <string name="preview_step_effect">EFFECT</string>
@@ -178,28 +174,31 @@
     <string name="led_brightness_bright">BRIGHT</string>
     <string name="led_brightness_max">MAX</string>
 
-    <string name="access_listener_title">Notification access</string>
-    <string name="access_listener_body">Lets Ambient Glow notice new messages to light the screen and pick each app\'s colour. It never reads, stores or sends message content.</string>
-    <string name="access_listener_grant">Grant permission</string>
-    <string name="access_listener_manage">Manage access</string>
-    <string name="access_manage">MANAGE</string>
-    <string name="access_on">On</string>
-    <string name="access_off">Off</string>
 
-    <string name="access_post_title">Wake bridge</string>
-    <string name="access_post_body">A silent, self-dismissing alert is how Android lets an app light the screen from the background. It needs high importance.</string>
+    <string name="setup_step">STEP %1$d OF %2$d</string>
+    <string name="setup_step_optional">STEP %1$d OF %2$d · OPTIONAL</string>
+    <string name="setup_skip">Not now</string>
+    <string name="setup_shield_title">Effects on the lock screen</string>
+    <string name="setup_shield_body">Plays your effect over the lock screen when a message arrives; without it the lock screen only lights up. Android files this under accessibility and warns about full control: Ambient Glow reads nothing on screen.</string>
+    <string name="setup_shield_where">In Settings, open Installed apps (or Downloaded apps), tap Ambient Glow effects and turn it on.</string>
+    <string name="access_done_title">You\'re all set</string>
+    <string name="access_done_body">Ambient Glow now lights up for new messages. Next, choose what that looks like.</string>
+    <string name="access_done_body_no_shield">Ambient Glow now lights up for new messages. You can turn on lock-screen effects any time from the Screen tab.</string>
+    <string name="access_done_action">Choose the look</string>
+
+    <string name="access_listener_title">Notification access</string>
+    <string name="access_listener_body">Lets Ambient Glow notice new messages and pick each app\'s colour. Android will warn that it could read your notifications: it never reads, stores or sends what they say.</string>
+    <string name="access_listener_grant">Grant permission</string>
+
+    <string name="access_post_title">Wake alerts</string>
+    <string name="access_post_body">Android only lets an app turn the screen on through an alert. This one is silent and closes itself at once: you won\'t see or hear it.</string>
     <string name="access_post_grant">Allow alerts</string>
-    <string name="access_post_manage">Channel settings</string>
 
     <string name="access_fsi_title">Full-screen wake</string>
     <string name="access_fsi_body">Android 14+ asks you to confirm that Ambient Glow may turn the display on.</string>
     <string name="access_fsi_grant">Allow wake</string>
-    <string name="access_fsi_manage">Review setting</string>
 
-    <string name="access_shield_title">Effects &amp; clean wake (optional)</string>
-    <string name="access_shield_body">Needed to play the new-message effect over your lock screen; without it the lock screen just lights up. It also covers the battery icon and navigation handle with black for the half second the LED takes over. It reads nothing on screen.</string>
     <string name="access_shield_grant">Turn on</string>
-    <string name="access_shield_manage">Accessibility settings</string>
 
     <string name="access_restricted_body">Android says \"Restricted setting\"? Open App info, tap ⋮ in the top corner, choose Allow restricted settings, then come back and try again.</string>
     <string name="access_restricted_action">App info</string>
@@ -263,7 +262,6 @@
     <string name="dot_readout_x">X %1$d%%</string>
     <string name="dot_readout_y">Y %1$d%%</string>
 
-    <string name="tab_access">ACCESS</string>
     <string name="tab_effect">EFFECT</string>
     <string name="tab_screen">SCREEN</string>
     <string name="tab_led">LED</string>
@@ -387,7 +385,7 @@
     <string name="test_locked">TEST ON LOCKED PHONE</string>
     <string name="test_locked_countdown">LOCK NOW · %1$d</string>
     <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
-    <string name="test_locked_blocked">Allow alerts on the Access tab first.</string>
+    <string name="test_locked_blocked">Alerts are off for Ambient Glow. Allow them, then try again.</string>
 
     <string name="message_channel_name">New message pop-up</string>
     <string name="message_channel_description">Shows the new message again as a pop-up when the black screen comes on. Silent; removed after a few seconds.</string>

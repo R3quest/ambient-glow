@@ -1,19 +1,21 @@
 package com.example.ambientglow.dashboard
 
 import android.animation.ValueAnimator
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -46,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -55,7 +58,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,10 +94,9 @@ import com.example.ambientglow.GlowStyle
 import com.example.ambientglow.R
 import com.example.ambientglow.ScreenGeometry
 import com.example.ambientglow.glassHaze
-import com.example.ambientglow.ui.components.Chevron
 import com.example.ambientglow.ui.components.Disclosure
+import com.example.ambientglow.ui.components.PrimaryButton
 import com.example.ambientglow.ui.components.SettingsGroup
-import com.example.ambientglow.ui.components.StatusPill
 import com.example.ambientglow.ui.theme.GlowBrushes
 import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
@@ -108,8 +109,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------------------------------------
-// Dashboard shell: header, tab bar, swipeable pages (access until it is all granted, then the
-// three steps of a message: effect, screen, LED), pinned test dock, and the real-size previews
+// Dashboard shell: setup until everything is granted; then header, tab bar, swipeable pages (the
+// three steps of a message: screen, effect, LED), pinned test dock, and the real-size previews
 // every change starts.
 // ---------------------------------------------------------------------------------------------
 
@@ -118,26 +119,17 @@ import kotlinx.coroutines.launch
  * The screen comes first because it decides whether there is an effect at all (Just the LED).
  */
 internal enum class DashboardTab(val label: Int) {
-    ACCESS(R.string.tab_access),
     SCREEN(R.string.tab_screen),
     EFFECT(R.string.tab_effect),
     LED(R.string.tab_led),
 }
 
-/** Access is a tab until everything is granted; after that it lives behind the ARMED pill. */
-internal fun dashboardTabs(armed: Boolean): List<DashboardTab> =
-    if (armed) DashboardTab.entries - DashboardTab.ACCESS else DashboardTab.entries
-
-/**
- * When Access comes or goes the pages shift: the page that keeps [shown] showing, or null when
- * the pager is already on it or the tab is gone (then the pager's own page stands).
- */
-internal fun List<DashboardTab>.pageKeeping(shown: DashboardTab, current: Int): Int? =
-    indexOf(shown).takeIf { it >= 0 && it != current }
-
 /** Outer margins and the gap between sections: generous, so each block reads on its own. */
 private val PageGutter = 24.dp
 private val SectionGap = 28.dp
+
+/** Settings.Secure's key for the enabled notification listeners; hidden from the SDK, stable since Android 4.3. */
+private const val ENABLED_NOTIFICATION_LISTENERS = "enabled_notification_listeners"
 
 /** How long a real-size effect dissolves when the next preview replaces it. */
 internal const val SHOWCASE_FADE_MS = 110
@@ -160,20 +152,22 @@ internal fun Dashboard(reported: ScreenGeometry) {
         reported.fitted(settings, density)
     }
     var access by remember { mutableStateOf(AccessState.read(context)) }
-    var accessOpen by remember { mutableStateOf(false) }
     val refresh = { access = AccessState.read(context) }
     // Remove animations (animator scale 0): nothing plays on its own; changes show only in the
     // inline preview, once. Read again on resume, since it is changed in Settings.
     var reduceMotion by remember { mutableStateOf(!ValueAnimator.areAnimatorsEnabled()) }
 
-    val tabs = remember(access.armed) { dashboardTabs(access.armed) }
-    val pager = rememberPagerState(pageCount = { tabs.size })
-    // Access coming or going shifts the pages: stay on the tab that was showing.
-    var shownTab by rememberSaveable { mutableStateOf(tabs.first()) }
-    LaunchedEffect(tabs) {
-        tabs.pageKeeping(shownTab, pager.currentPage)?.let { pager.scrollToPage(it) }
-        snapshotFlow { pager.currentPage }.collect { shownTab = tabs[it.coerceAtMost(tabs.lastIndex)] }
+    // Setup takes the whole screen until everything is granted (again, if a grant is withdrawn),
+    // and stays on its all-set page until the user moves on, so the last grant is seen to land.
+    var finishing by rememberSaveable { mutableStateOf(false) }
+    var wasReady by remember { mutableStateOf(access.ready) }
+    if (access.ready != wasReady) {
+        wasReady = access.ready
+        finishing = access.ready
     }
+    val inSetup = !access.ready || finishing
+    val tabs = DashboardTab.entries
+    val pager = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
@@ -246,7 +240,21 @@ internal fun Dashboard(reported: ScreenGeometry) {
         ledShowing = true
     }
 
+    // Grants land in secure settings, on Samsung a moment after the service they turn on has
+    // connected and brought the app back (GrantReturn): watch them, so the step turns when they do.
+    DisposableEffect(context) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = refresh()
+        }
+        val resolver = context.contentResolver
+        for (key in listOf(ENABLED_NOTIFICATION_LISTENERS, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)) {
+            resolver.registerContentObserver(Settings.Secure.getUriFor(key), false, observer)
+        }
+        onDispose { resolver.unregisterContentObserver(observer) }
+    }
+
     LifecycleResumeEffect(Unit) {
+        GrantReturn.clear()
         refresh()
         reduceMotion = !ValueAnimator.areAnimatorsEnabled()
         // Leaving mid-run ends both previews: the LED's hidden bars are released with it, and
@@ -296,76 +304,73 @@ internal fun Dashboard(reported: ScreenGeometry) {
 
     CompositionLocalProvider(LocalCamera provides camera) {
         Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
-            // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .glassHaze(haze, shownSettings, geometry)
-                    .windowInsetsPadding(DashboardInsets),
-            ) {
-                TopBar(
-                    access = access,
-                    accessOpen = accessOpen,
-                    onStatusClick = {
-                        if (access.armed) {
-                            accessOpen = !accessOpen
-                        } else {
-                            scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.ACCESS)) }
-                        }
-                    },
-                )
-                // Setup done: access opens from the ARMED pill, above the tabs. It carries its own
-                // gap, so it opens and closes without a jump.
-                Disclosure(visible = access.armed && accessOpen) {
-                    Box(Modifier.padding(start = PageGutter, end = PageGutter, bottom = 16.dp)) {
-                        AccessSummary(access, actions)
-                    }
-                }
-                Box(Modifier.padding(horizontal = PageGutter)) {
-                    GlowTabBar(
-                        pager = pager,
-                        tabs = tabs,
-                        accessPending = !access.armed,
-                        onSelect = { index -> scope.launch { pager.animateScrollToPage(index) } },
+            // Setup and the dashboard cross-fade: same header, same place, so only what is under it changes.
+            AnimatedContent(
+                targetState = inSetup,
+                transitionSpec = { fadeIn(tween(GlowMotion.ENTER_MS, GlowMotion.ENTER_DELAY_MS)) togetherWith fadeOut(tween(GlowMotion.EXIT_MS)) },
+                label = "setup",
+            ) { setup ->
+                if (setup) {
+                    SetupFlow(
+                        access = access,
+                        actions = actions,
+                        onDone = { finishing = false },
+                        modifier = Modifier.windowInsetsPadding(DashboardInsets),
                     )
+                    return@AnimatedContent
                 }
-                HorizontalPager(
-                    state = pager,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    beyondViewportPageCount = 1,
-                ) { page ->
-                    PageColumn(Modifier.fillMaxSize()) {
-                        when (tabs[page]) {
-                            DashboardTab.ACCESS -> AccessPage(access, actions)
-                            DashboardTab.SCREEN -> ScreenPage(
-                                settings = settings,
-                                sample = sample,
-                                previewHeld = previewHeld,
-                                loop = !reduceMotion,
-                                shieldOn = access.shield,
-                                onShield = actions.shield,
-                                edit = edit,
-                            )
-                            DashboardTab.EFFECT -> EffectPage(
-                                settings = settings,
-                                sample = sample,
-                                previewHeld = previewHeld,
-                                loop = !reduceMotion,
-                                edit = edit,
-                                onSample = { index ->
-                                    sample = index
-                                    showcase()
-                                },
-                                onShowcase = showcase,
-                                onChooseScreen = openScreenTab,
-                                onMoveLed = openLedTab,
-                            )
-                            DashboardTab.LED -> LedPage(settings, edit, onLed = showLed)
+                // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .glassHaze(haze, shownSettings, geometry)
+                        .windowInsetsPadding(DashboardInsets),
+                ) {
+                    BrandHeader(Modifier.padding(start = PageGutter, end = PageGutter, top = 14.dp, bottom = 18.dp))
+                    Box(Modifier.padding(horizontal = PageGutter)) {
+                        GlowTabBar(
+                            pager = pager,
+                            tabs = tabs,
+                            onSelect = { index -> scope.launch { pager.animateScrollToPage(index) } },
+                        )
+                    }
+                    HorizontalPager(
+                        state = pager,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        beyondViewportPageCount = 1,
+                    ) { page ->
+                        PageColumn(Modifier.fillMaxSize()) {
+                            when (tabs[page]) {
+                                DashboardTab.SCREEN -> ScreenPage(
+                                    settings = settings,
+                                    sample = sample,
+                                    previewHeld = previewHeld,
+                                    loop = !reduceMotion,
+                                    shieldOn = access.shield,
+                                    onShield = actions.shield,
+                                    edit = edit,
+                                )
+                                DashboardTab.EFFECT -> EffectPage(
+                                    settings = settings,
+                                    sample = sample,
+                                    previewHeld = previewHeld,
+                                    loop = !reduceMotion,
+                                    edit = edit,
+                                    onSample = { index ->
+                                        sample = index
+                                        showcase()
+                                    },
+                                    onShowcase = showcase,
+                                    onChooseScreen = openScreenTab,
+                                    onMoveLed = openLedTab,
+                                )
+                                DashboardTab.LED -> LedPage(settings, edit, onLed = showLed)
+                            }
                         }
                     }
-                }
 
-                TestDock()
+                    TestDock()
+                }
             }
 
             // The LED first, so an effect that replaces it is never dimmed by its lifting scrim.
@@ -538,50 +543,20 @@ private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding:
     }
 }
 
-/** One compact line: mark, name, and a status pill that opens access (or jumps to setup). */
+/**
+ * Mark and name, the one header of setup and the dashboard alike. No status beside it: the
+ * dashboard only shows once everything is granted, and setup takes over again if it is not.
+ */
 @Composable
-private fun TopBar(access: AccessState, accessOpen: Boolean, onStatusClick: () -> Unit) {
-    val chevronTurn by animateFloatAsState(if (accessOpen) 180f else 0f, GlowMotion.chevronTurn(accessOpen), label = "chevron")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = PageGutter, end = PageGutter - 4.dp, top = 14.dp, bottom = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+internal fun BrandHeader(modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         GlowEmblem(Modifier.size(26.dp))
         Spacer(Modifier.width(12.dp))
         Text(
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
-            modifier = Modifier.weight(1f),
         )
-        StatusPill(
-            text = if (access.armed) {
-                stringResource(R.string.status_armed)
-            } else {
-                stringResource(R.string.status_setup, access.granted, access.required)
-            },
-            tint = if (access.armed) GlowPalette.Lime else GlowPalette.Amber,
-            onClick = onStatusClick,
-        ) {
-            // Comes and goes with ARMED, the pill easing to its width as the access panel does.
-            AnimatedVisibility(
-                visible = access.armed,
-                enter = expandHorizontally(GlowMotion.SizeIn, expandFrom = Alignment.Start) +
-                    GlowMotion.SwapIn,
-                exit = GlowMotion.SwapOut +
-                    shrinkHorizontally(GlowMotion.SizeOut, shrinkTowards = Alignment.Start),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.width(6.dp))
-                    Chevron(
-                        tint = GlowPalette.Lime,
-                        modifier = Modifier.size(8.dp).graphicsLayer { rotationZ = chevronTurn },
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -608,11 +583,10 @@ private fun GlowEmblem(modifier: Modifier = Modifier) {
 /**
  * Segmented blade control. The highlighted blade and the label tints track the pager's scroll
  * position as you swipe; that is read in the layout and draw phases, so swiping does not
- * recompose the bar. An amber dot on Access while something is still to grant (the header pill
- * counts it).
+ * recompose the bar.
  */
 @Composable
-private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, accessPending: Boolean, onSelect: (Int) -> Unit) {
+private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, onSelect: (Int) -> Unit) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -657,10 +631,6 @@ private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, accessPendin
                         },
                         maxLines = 1,
                     )
-                    if (tab == DashboardTab.ACCESS && accessPending) {
-                        Spacer(Modifier.width(6.dp))
-                        Canvas(Modifier.size(6.dp)) { drawCircle(GlowPalette.Amber) }
-                    }
                 }
             }
         }
@@ -707,38 +677,20 @@ private fun TestDock() {
     ) {
         // The one end-to-end check: real messages through the listener, on the locked phone.
         // The effect alone replays at full size whenever it is changed.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .graphicsLayer { alpha = dim.value }
-                .clip(GlowShapes.Button)
-                .background(GlowBrushes.SignatureHorizontal)
-                .clickable(role = Role.Button, enabled = countdown == 0) {
-                    blocked = !GlowLauncher.scheduleTestNotification(context)
-                    haptics.performHapticFeedback(if (blocked) HapticFeedbackType.Reject else HapticFeedbackType.Confirm)
-                    if (!blocked) runs++
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            // The label and every count swap in place, as one.
-            AnimatedContent(
-                targetState = countdown,
-                transitionSpec = { GlowMotion.swap() },
-                contentAlignment = Alignment.Center,
-                label = "test-label",
-            ) { count ->
-                Text(
-                    text = if (count > 0) {
-                        stringResource(R.string.test_locked_countdown, count)
-                    } else {
-                        stringResource(R.string.test_locked)
-                    },
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
-                    color = GlowPalette.Void,
-                )
-            }
-        }
+        PrimaryButton(
+            text = if (countdown > 0) {
+                stringResource(R.string.test_locked_countdown, countdown)
+            } else {
+                stringResource(R.string.test_locked)
+            },
+            onClick = {
+                blocked = !GlowLauncher.scheduleTestNotification(context)
+                haptics.performHapticFeedback(if (blocked) HapticFeedbackType.Reject else HapticFeedbackType.Confirm)
+                if (!blocked) runs++
+            },
+            enabled = countdown == 0,
+            modifier = Modifier.graphicsLayer { alpha = dim.value },
+        )
         // Carries its own gap, so the dock grows and shrinks in one movement.
         Disclosure(visible = blocked || countdown > 0) {
             Box(Modifier.padding(top = 10.dp)) {

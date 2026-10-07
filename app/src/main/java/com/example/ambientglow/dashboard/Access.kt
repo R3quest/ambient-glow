@@ -12,14 +12,24 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,38 +39,53 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import com.example.ambientglow.GlowLauncher
+import com.example.ambientglow.GlowLog
+import com.example.ambientglow.GlowPrefs
 import com.example.ambientglow.GlowShield
+import com.example.ambientglow.MainActivity
 import com.example.ambientglow.NotificationWakerService
 import com.example.ambientglow.R
-import com.example.ambientglow.ui.components.Chevron
-import com.example.ambientglow.ui.components.GhostButton
+import com.example.ambientglow.ui.components.Disclosure
 import com.example.ambientglow.ui.components.NoticeRow
-import com.example.ambientglow.ui.components.StatusPill
+import com.example.ambientglow.ui.components.PrimaryButton
 import com.example.ambientglow.ui.theme.GlowBrushes
+import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
 
 // ---------------------------------------------------------------------------------------------
-// Access: what the app needs granted, the Settings screens that grant it, and its cards.
+// Access: what the app needs granted, the Settings screens that grant it, and setup.
 // ---------------------------------------------------------------------------------------------
 
 @Immutable
@@ -69,12 +94,22 @@ internal data class AccessState(
     val bridge: Boolean,
     val fullScreen: Boolean,
     val fullScreenApplies: Boolean,
-    /** Optional: covers the system bars while the LED takes over (GlowShield). Not counted in [armed]. */
+    /** Optional: plays the effect over the lock screen and covers the bars for the LED (GlowShield). Not counted in [ready]. */
     val shield: Boolean,
 ) {
-    val required: Int get() = if (fullScreenApplies) 3 else 2
-    val granted: Int get() = listOf(listener, bridge, fullScreen && fullScreenApplies).count { it }
-    val armed: Boolean get() = granted == required
+    fun has(step: AccessStep): Boolean = when (step) {
+        AccessStep.LISTENER -> listener
+        AccessStep.BRIDGE -> bridge
+        AccessStep.FULL_SCREEN -> fullScreen || !fullScreenApplies
+    }
+
+    /** The steps setup shows, in order: full-screen wake only where Android asks for it. */
+    val steps: List<AccessStep> get() = AccessStep.entries.filter { it != AccessStep.FULL_SCREEN || fullScreenApplies }
+
+    /** The first required grant still missing, in step order; null once ready. */
+    val nextStep: AccessStep? get() = steps.firstOrNull { !has(it) }
+
+    val ready: Boolean get() = nextStep == null
 
     companion object {
         fun read(context: Context): AccessState {
@@ -94,6 +129,17 @@ internal data class AccessState(
             )
         }
     }
+}
+
+/**
+ * The required grants, in setup order. Alerts come first: Android asks for them in a dialog over
+ * the app, a quick yes before the trips to Settings. The shield is optional, so it is not one of
+ * them: setup offers it after these, once (see [SetupFlow]).
+ */
+internal enum class AccessStep(@StringRes val title: Int, @StringRes val body: Int, @StringRes val grant: Int) {
+    BRIDGE(R.string.access_post_title, R.string.access_post_body, R.string.access_post_grant),
+    LISTENER(R.string.access_listener_title, R.string.access_listener_body, R.string.access_listener_grant),
+    FULL_SCREEN(R.string.access_fsi_title, R.string.access_fsi_body, R.string.access_fsi_grant),
 }
 
 private fun isShieldEnabled(context: Context): Boolean {
@@ -174,13 +220,19 @@ private fun Context.openFullScreenIntentSettings() {
     )
 }
 
-/** What each access row's button does; shared by the setup cards and the compact summary. */
+/** What each grant's button does: the dialog or Settings screen that grants it. */
 internal class AccessActions(
     val listener: () -> Unit,
     val bridge: () -> Unit,
     val fullScreen: () -> Unit,
     val shield: () -> Unit,
-)
+) {
+    fun open(step: AccessStep) = when (step) {
+        AccessStep.LISTENER -> listener()
+        AccessStep.BRIDGE -> bridge()
+        AccessStep.FULL_SCREEN -> fullScreen()
+    }
+}
 
 @Composable
 internal fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
@@ -193,7 +245,10 @@ internal fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
     }
     return remember(context, notificationPermission) {
         AccessActions(
-            listener = context::openListenerSettings,
+            listener = {
+                GrantReturn.await(GrantReturn.Grant.LISTENER)
+                context.openListenerSettings()
+            },
             bridge = {
                 val needsRuntimeGrant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     !NotificationManagerCompat.from(context).areNotificationsEnabled()
@@ -204,98 +259,339 @@ internal fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
                 }
             },
             fullScreen = context::openFullScreenIntentSettings,
-            shield = context::openShieldSettings,
+            shield = {
+                GrantReturn.await(GrantReturn.Grant.SHIELD)
+                context.openShieldSettings()
+            },
         )
-    }
-}
-
-@Composable
-internal fun AccessPage(access: AccessState, actions: AccessActions) {
-    val context = LocalContext.current
-    val restricted = remember(context) { isRestrictedInstall(context) }
-    val restrictedNotice: @Composable () -> Unit = {
-        NoticeRow(
-            text = stringResource(R.string.access_restricted_body),
-            action = stringResource(R.string.access_restricted_action),
-            onAction = context::openAppInfo,
-        )
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        AccessCard(
-            index = "01",
-            title = stringResource(R.string.access_listener_title),
-            body = stringResource(R.string.access_listener_body),
-            active = access.listener,
-            grantLabel = stringResource(R.string.access_listener_grant),
-            manageLabel = stringResource(R.string.access_listener_manage),
-            onAction = actions.listener,
-            notice = restrictedNotice.takeIf { restricted && !access.listener },
-        )
-        AccessCard(
-            index = "02",
-            title = stringResource(R.string.access_post_title),
-            body = stringResource(R.string.access_post_body),
-            active = access.bridge,
-            grantLabel = stringResource(R.string.access_post_grant),
-            manageLabel = stringResource(R.string.access_post_manage),
-            onAction = actions.bridge,
-        )
-        if (access.fullScreenApplies) {
-            AccessCard(
-                index = "03",
-                title = stringResource(R.string.access_fsi_title),
-                body = stringResource(R.string.access_fsi_body),
-                active = access.fullScreen,
-                grantLabel = stringResource(R.string.access_fsi_grant),
-                manageLabel = stringResource(R.string.access_fsi_manage),
-                onAction = actions.fullScreen,
-            )
-        }
-        AccessCard(
-            index = if (access.fullScreenApplies) "04" else "03",
-            title = stringResource(R.string.access_shield_title),
-            body = stringResource(R.string.access_shield_body),
-            active = access.shield,
-            grantLabel = stringResource(R.string.access_shield_grant),
-            manageLabel = stringResource(R.string.access_shield_manage),
-            onAction = actions.shield,
-            notice = restrictedNotice.takeIf { restricted && !access.shield },
-        )
-        PrivacyNote(Modifier.padding(top = 6.dp))
-    }
-}
-
-/** Armed state: one quiet card with a row per permission, opened from the ARMED pill. */
-@Composable
-internal fun AccessSummary(access: AccessState, actions: AccessActions) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(GlowShapes.Card)
-            .background(GlowPalette.Surface)
-            .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Card)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-    ) {
-        AccessRow(stringResource(R.string.access_listener_title), access.listener, actions.listener)
-        AccessRow(stringResource(R.string.access_post_title), access.bridge, actions.bridge)
-        if (access.fullScreenApplies) {
-            AccessRow(stringResource(R.string.access_fsi_title), access.fullScreen, actions.fullScreen)
-        }
-        AccessRow(stringResource(R.string.access_shield_title), access.shield, actions.shield)
-        Spacer(
-            Modifier
-                .padding(top = 4.dp)
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(GlowPalette.OutlineSoft),
-        )
-        PrivacyNote(Modifier.padding(vertical = 12.dp))
     }
 }
 
 /**
- * One short sentence in body type, not mono caps: in the label style it sat under the status rows
- * and read as a state ("OFFLINE"), not as a promise. True because the app has no INTERNET permission.
+ * The grant the app just sent the user to Settings for, so the service it turns on can bring them
+ * back the moment it connects, instead of them backing out through Settings screen by screen
+ * (three on Samsung's accessibility pages). Cleared when the user comes back by themselves (the
+ * dashboard's resume), so a service turned on some other time never pulls the app forward. In
+ * memory only: a process restarted meanwhile has nothing waiting.
+ */
+internal object GrantReturn {
+    enum class Grant { LISTENER, SHIELD }
+
+    @Volatile private var awaiting: Grant? = null
+
+    fun await(grant: Grant) {
+        awaiting = grant
+    }
+
+    fun clear() {
+        awaiting = null
+    }
+
+    /** From the service [grant] turns on, as it connects: back to the app, Settings closed over it. */
+    fun granted(context: Context, grant: Grant) {
+        if (awaiting != grant) return
+        awaiting = null
+        val back = Intent(context, MainActivity::class.java).addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+        )
+        // A start Android blocks from the background is dropped silently: the user then backs out
+        // of Settings as before. The catch is for builds that throw instead.
+        try {
+            context.startActivity(back)
+        } catch (e: RuntimeException) {
+            GlowLog.d { "setup return refused: $e" }
+        }
+    }
+}
+
+/** What a setup page asks for: a required grant, the optional shield, or nothing: all set. */
+private sealed interface SetupPage {
+    @get:StringRes val title: Int
+
+    @get:StringRes val action: Int
+
+    data class Grant(val step: AccessStep) : SetupPage {
+        override val title get() = step.title
+        override val action get() = step.grant
+    }
+
+    data object Shield : SetupPage {
+        override val title get() = R.string.setup_shield_title
+        override val action get() = R.string.access_shield_grant
+    }
+
+    data object Done : SetupPage {
+        override val title get() = R.string.access_done_title
+        override val action get() = R.string.access_done_action
+    }
+}
+
+/**
+ * Setup, full screen, one grant per page: why it is needed, then one button to the Settings
+ * screen (or dialog) that grants it. Back from Settings the next page slides in, but nothing
+ * opens on its own: each page is what prepares the user for the system's own wording, which for
+ * notification access sounds far worse than what the app does. Steps granted before setup
+ * started (full-screen wake usually is) are neither shown nor counted.
+ *
+ * After the required steps comes the shield, the one optional grant, with a way past it. It is
+ * offered once: passed over (or turned on), later setups leave it out, and the Screen tab keeps
+ * offering it where it matters. Then an all-set page, left with [onDone].
+ */
+@Composable
+internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val restricted = remember(context) { isRestrictedInstall(context) }
+    // What this run asks for, decided as it starts and kept through a recreated activity, so the
+    // count never shifts under the user. A step lost meanwhile (withdrawn mid-setup) joins it.
+    val startPlan = rememberSaveable { access.steps.filterNot(access::has).map { it.name } }
+    val plan = access.steps.filter { it.name in startPlan || !access.has(it) }
+    val offerShield = rememberSaveable { !access.shield && !GlowPrefs.shieldOffered(context) }
+    val startedReady = rememberSaveable { access.ready }
+    var shieldPassed by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(access.shield) { if (access.shield && offerShield) GlowPrefs.markShieldOffered(context) }
+    val page = access.nextStep?.let { SetupPage.Grant(it) } ?: when {
+        offerShield && !access.shield && !shieldPassed -> SetupPage.Shield
+        else -> SetupPage.Done
+    }
+    val total = plan.size + if (offerShield) 1 else 0
+    val done = plan.count(access::has) + if (offerShield && page == SetupPage.Done) 1 else 0
+    // Once, as the last grant lands: not again for the same all-set page redrawn.
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(access.ready) { if (access.ready && !startedReady) haptics.performHapticFeedback(HapticFeedbackType.Confirm) }
+    // The header sits exactly where the dashboard's does, so handing over to it moves nothing.
+    Column(modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 20.dp)) {
+        BrandHeader()
+        if (total > 1) {
+            Spacer(Modifier.height(20.dp))
+            SetupProgress(done = done, total = total)
+        }
+        Spacer(Modifier.weight(1f))
+        // A step slides in from the right as the one before it is granted, the way a pager turns.
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+            },
+            label = "setup-step",
+        ) { shown ->
+            Column {
+                StepGlyph(shown, Modifier.size(72.dp))
+                Spacer(Modifier.height(28.dp))
+                if (shown != SetupPage.Done && total > 1) {
+                    Text(
+                        text = when (shown) {
+                            is SetupPage.Grant -> stringResource(R.string.setup_step, plan.indexOf(shown.step) + 1, total)
+                            else -> stringResource(R.string.setup_step_optional, total, total)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GlowPalette.Cyan,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+                Text(
+                    text = stringResource(shown.title),
+                    style = MaterialTheme.typography.displaySmall,
+                    color = GlowPalette.TextPrimary,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = stringResource(
+                        when (shown) {
+                            is SetupPage.Grant -> shown.step.body
+                            SetupPage.Shield -> R.string.setup_shield_body
+                            SetupPage.Done -> if (access.shield) R.string.access_done_body else R.string.access_done_body_no_shield
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GlowPalette.TextMuted,
+                )
+                if (shown == SetupPage.Shield) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.setup_shield_where),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GlowPalette.TextMuted,
+                    )
+                }
+                val needsUnlock = shown == SetupPage.Shield || (shown as? SetupPage.Grant)?.step == AccessStep.LISTENER
+                if (restricted && needsUnlock) {
+                    Spacer(Modifier.height(18.dp))
+                    NoticeRow(
+                        text = stringResource(R.string.access_restricted_body),
+                        action = stringResource(R.string.access_restricted_action),
+                        onAction = context::openAppInfo,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.weight(1.4f))
+        PrimaryButton(
+            text = stringResource(page.action),
+            onClick = {
+                when (page) {
+                    is SetupPage.Grant -> actions.open(page.step)
+                    SetupPage.Shield -> actions.shield()
+                    SetupPage.Done -> onDone()
+                }
+            },
+        )
+        // The way past the optional step: quiet, under the button, so turning it on stays the lead.
+        Disclosure(visible = page == SetupPage.Shield) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .clip(GlowShapes.Button)
+                    .clickable(role = Role.Button) {
+                        GlowPrefs.markShieldOffered(context)
+                        shieldPassed = true
+                    }
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.setup_skip).uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GlowPalette.TextMuted,
+                )
+            }
+        }
+        PrivacyNote(Modifier.padding(top = 14.dp))
+    }
+}
+
+/** One segment per step of this run: lime once granted, cyan for the one showing, faint to come. */
+@Composable
+private fun SetupProgress(done: Int, total: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(total) { i ->
+            val color by animateColorAsState(
+                targetValue = when {
+                    i < done -> GlowPalette.Lime
+                    i == done -> GlowPalette.Cyan
+                    else -> GlowPalette.SurfaceHighest
+                },
+                animationSpec = GlowMotion.stateChange(),
+                label = "setup-segment",
+            )
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(3.dp)
+                    .clip(GlowShapes.Pill)
+                    .background(color),
+            )
+        }
+    }
+}
+
+/**
+ * The page's mark in a tile edged in the signature gradient: a bell, a message, a phone waking,
+ * a spark for the effects, or a check once all is set.
+ */
+@Composable
+private fun StepGlyph(page: SetupPage, modifier: Modifier = Modifier) {
+    val glow by animateColorAsState(
+        targetValue = if (page == SetupPage.Done) GlowPalette.Lime else GlowPalette.Cyan,
+        animationSpec = GlowMotion.stateChange(),
+        label = "glyph-glow",
+    )
+    Box(
+        modifier
+            // A soft halo past the tile's edge, the app's glow in miniature.
+            .drawBehind {
+                drawCircle(
+                    Brush.radialGradient(listOf(glow.copy(alpha = 0.22f), Color.Transparent), center, size.maxDimension),
+                    radius = size.maxDimension,
+                )
+            }
+            .clip(GlowShapes.Tile)
+            .background(GlowPalette.Surface)
+            .border(1.dp, GlowBrushes.Signature, GlowShapes.Tile),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(30.dp)) {
+            val line = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            val tint = if (page == SetupPage.Done) GlowPalette.Lime else GlowPalette.Cyan
+            when (page) {
+                is SetupPage.Grant -> when (page.step) {
+                    AccessStep.BRIDGE -> bell(tint, line)
+                    AccessStep.LISTENER -> bubble(tint, line)
+                    AccessStep.FULL_SCREEN -> phone(tint, line)
+                }
+                SetupPage.Shield -> spark(tint, line)
+                SetupPage.Done -> check(tint, line)
+            }
+        }
+    }
+}
+
+/** Bell: a dome on a flared rim, and its clapper. */
+private fun DrawScope.bell(tint: Color, line: Stroke) {
+    val (w, h) = size
+    val path = Path().apply {
+        moveTo(w * 0.12f, h * 0.76f)
+        lineTo(w * 0.88f, h * 0.76f)
+        moveTo(w * 0.2f, h * 0.76f)
+        cubicTo(w * 0.28f, h * 0.62f, w * 0.22f, h * 0.12f, w * 0.5f, h * 0.12f)
+        cubicTo(w * 0.78f, h * 0.12f, w * 0.72f, h * 0.62f, w * 0.8f, h * 0.76f)
+    }
+    drawPath(path, tint, style = line)
+    drawCircle(tint, radius = w * 0.07f, center = Offset(w * 0.5f, h * 0.9f))
+}
+
+/** A message bubble with its tail, and two lines of text. */
+private fun DrawScope.bubble(tint: Color, line: Stroke) {
+    val (w, h) = size
+    val path = Path().apply {
+        addRoundRect(RoundRect(w * 0.06f, h * 0.12f, w * 0.94f, h * 0.72f, CornerRadius(w * 0.16f)))
+        moveTo(w * 0.26f, h * 0.72f)
+        lineTo(w * 0.22f, h * 0.92f)
+        lineTo(w * 0.46f, h * 0.72f)
+    }
+    drawPath(path, tint, style = line)
+    drawLine(tint, Offset(w * 0.26f, h * 0.34f), Offset(w * 0.74f, h * 0.34f), line.width, StrokeCap.Round)
+    drawLine(tint, Offset(w * 0.26f, h * 0.5f), Offset(w * 0.58f, h * 0.5f), line.width, StrokeCap.Round)
+}
+
+/** A phone, its screen lit. */
+private fun DrawScope.phone(tint: Color, line: Stroke) {
+    val (w, h) = size
+    drawRoundRect(tint, Offset(w * 0.24f, h * 0.04f), Size(w * 0.52f, h * 0.92f), CornerRadius(w * 0.12f), style = line)
+    drawRoundRect(tint.copy(alpha = 0.35f), Offset(w * 0.33f, h * 0.16f), Size(w * 0.34f, h * 0.62f), CornerRadius(w * 0.04f))
+}
+
+/** A four-pointed spark, pinched at its waist, and a small one beside it. */
+private fun DrawScope.spark(tint: Color, line: Stroke) {
+    val (w, h) = size
+    val c = Offset(w * 0.44f, h * 0.56f)
+    val r = w * 0.4f
+    val waist = r * 0.22f
+    val path = Path().apply {
+        moveTo(c.x, c.y - r)
+        quadraticTo(c.x + waist, c.y - waist, c.x + r, c.y)
+        quadraticTo(c.x + waist, c.y + waist, c.x, c.y + r)
+        quadraticTo(c.x - waist, c.y + waist, c.x - r, c.y)
+        quadraticTo(c.x - waist, c.y - waist, c.x, c.y - r)
+        close()
+    }
+    drawPath(path, tint, style = line)
+    drawCircle(tint, radius = w * 0.06f, center = Offset(w * 0.86f, h * 0.14f))
+}
+
+private fun DrawScope.check(tint: Color, line: Stroke) {
+    val (w, h) = size
+    val path = Path().apply {
+        moveTo(w * 0.12f, h * 0.54f)
+        lineTo(w * 0.4f, h * 0.8f)
+        lineTo(w * 0.88f, h * 0.2f)
+    }
+    drawPath(path, tint, style = line)
+}
+
+/**
+ * One short sentence in body type, not mono caps: in the label style it read as a state
+ * ("OFFLINE"), not as a promise. True because the app has no INTERNET permission.
  */
 @Composable
 private fun PrivacyNote(modifier: Modifier = Modifier) {
@@ -303,89 +599,7 @@ private fun PrivacyNote(modifier: Modifier = Modifier) {
         text = stringResource(R.string.footer_privacy),
         style = MaterialTheme.typography.bodySmall,
         color = GlowPalette.TextMuted,
+        textAlign = TextAlign.Center,
         modifier = modifier.fillMaxWidth(),
     )
-}
-
-@Composable
-private fun AccessRow(title: String, active: Boolean, onManage: () -> Unit) {
-    val tint = if (active) GlowPalette.Lime else GlowPalette.Amber
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(GlowShapes.Pill)
-            // The chevron replaces a MANAGE label; TalkBack still hears it as the action.
-            .clickable(onClickLabel = stringResource(R.string.access_manage), role = Role.Button, onClick = onManage)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Settings-style: title over state, a chevron for the tap. No caps labels on the row.
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = GlowPalette.TextPrimary,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Canvas(Modifier.size(6.dp)) { drawCircle(tint) }
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(if (active) R.string.access_on else R.string.access_off),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GlowPalette.TextMuted,
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Chevron(
-            tint = GlowPalette.TextMuted,
-            modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = -90f },
-        )
-    }
-}
-
-@Composable
-private fun AccessCard(
-    index: String,
-    title: String,
-    body: String,
-    active: Boolean,
-    grantLabel: String,
-    manageLabel: String,
-    onAction: () -> Unit,
-    notice: (@Composable () -> Unit)? = null,
-) {
-    val borderBrush: Brush = if (active) SolidColor(GlowPalette.OutlineSoft) else GlowBrushes.Warning
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(GlowShapes.Card)
-            .background(GlowPalette.Surface)
-            .border(1.dp, borderBrush, GlowShapes.Card)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = index, style = MaterialTheme.typography.labelMedium, color = GlowPalette.TextFaint)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = GlowPalette.TextPrimary,
-                modifier = Modifier.weight(1f),
-            )
-            StatusPill(
-                text = stringResource(if (active) R.string.state_active else R.string.state_pending),
-                tint = if (active) GlowPalette.Lime else GlowPalette.Amber,
-            )
-        }
-        Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
-        Spacer(Modifier.height(2.dp))
-        GhostButton(
-            text = if (active) manageLabel else grantLabel,
-            emphasized = !active,
-            onClick = onAction,
-        )
-        notice?.invoke()
-    }
 }

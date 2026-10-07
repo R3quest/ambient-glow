@@ -55,13 +55,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -83,6 +80,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.ambientglow.R
+import com.example.ambientglow.ui.theme.GlowBrushes
 import com.example.ambientglow.ui.theme.GlowMotion
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
@@ -318,50 +316,30 @@ internal fun SectionLabel(text: String, color: Color = GlowPalette.TextFaint) {
     Text(text = text, style = MaterialTheme.typography.labelSmall, color = color)
 }
 
-/**
- * A status in [tint]. A new one turns the colour (read in draw), swaps the text in place and
- * eases the pill to its new width.
- */
+/** A page's one main action: full width, in the signature gradient. A new label swaps in place. */
 @Composable
-internal fun StatusPill(
-    text: String,
-    tint: Color,
-    onClick: (() -> Unit)? = null,
-    trailing: @Composable RowScope.() -> Unit = {},
-) {
-    val color = animateColorAsState(
-        targetValue = tint,
-        animationSpec = GlowMotion.stateChange(),
-        label = "status",
-    )
-    Row(
-        modifier = Modifier
-            .clip(GlowShapes.Pill)
-            .drawWithCache {
-                val s = 1.dp.toPx()
-                val fill = GlowShapes.Pill.createOutline(size, layoutDirection, this)
-                val edge = GlowShapes.Pill.createOutline(Size(size.width - s, size.height - s), layoutDirection, this)
-                val stroke = Stroke(s)
-                onDrawBehind {
-                    drawOutline(fill, color.value, alpha = 0.10f)
-                    translate(s / 2f, s / 2f) { drawOutline(edge, color.value, alpha = 0.55f, style = stroke) }
-                }
-            }
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .clip(GlowShapes.Button)
+            .background(GlowBrushes.SignatureHorizontal)
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(6.dp)) { drawCircle(color.value) }
-        Spacer(Modifier.width(7.dp))
         AnimatedContent(
             targetState = text,
             transitionSpec = { GlowMotion.swap() },
-            contentAlignment = Alignment.CenterStart,
-            label = "status-text",
-        ) { shown ->
-            BasicText(text = shown, style = MaterialTheme.typography.labelSmall, color = { color.value })
+            contentAlignment = Alignment.Center,
+            label = "primary-label",
+        ) { label ->
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                color = GlowPalette.Void,
+            )
         }
-        trailing()
     }
 }
 

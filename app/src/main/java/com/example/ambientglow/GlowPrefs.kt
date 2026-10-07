@@ -48,6 +48,9 @@ object GlowPrefs {
     private const val KEY_EDGE_COLOR = "edge_color"
     private const val KEY_EDGE_MATERIAL = "edge_material"
 
+    // Not a setting: whether setup has offered the optional shield step, so it is offered once.
+    private const val KEY_SHIELD_OFFERED = "setup_shield_offered"
+
     private val defaults = GlowSettings()
 
     private fun prefs(context: Context): SharedPreferences =
@@ -59,6 +62,10 @@ object GlowPrefs {
     fun warm(context: Context) {
         prefs(context)
     }
+
+    fun shieldOffered(context: Context): Boolean = prefs(context).getBoolean(KEY_SHIELD_OFFERED, false)
+
+    fun markShieldOffered(context: Context) = prefs(context).edit { putBoolean(KEY_SHIELD_OFFERED, true) }
 
     /** Writes every choice at once: a handful of keys, applied asynchronously. */
     fun save(context: Context, settings: GlowSettings) = save(prefs(context), settings)

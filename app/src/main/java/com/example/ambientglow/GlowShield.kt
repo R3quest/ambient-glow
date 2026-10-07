@@ -24,6 +24,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.example.ambientglow.dashboard.GrantReturn
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -64,6 +65,7 @@ class GlowShield : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         GlowLog.d { "shield connected" }
+        GrantReturn.granted(this, GrantReturn.Grant.SHIELD)
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {

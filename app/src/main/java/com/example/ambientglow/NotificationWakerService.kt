@@ -17,6 +17,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.os.BundleCompat
+import com.example.ambientglow.dashboard.GrantReturn
 
 /**
  * Purely reactive: it runs only when the system calls onNotificationPosted/Removed or the
@@ -77,6 +78,7 @@ class NotificationWakerService : NotificationListenerService() {
             registerScreenEvents(screenEvents)
             screenReceiverRegistered = true
         }
+        GrantReturn.granted(this, GrantReturn.Grant.LISTENER)
     }
 
     override fun onListenerDisconnected() {
