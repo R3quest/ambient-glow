@@ -239,6 +239,8 @@ internal const val FLAME_CORE = "M12 21 C10.4 21 9.6 19.7 9.6 18.3 C9.6 16.5 11 
     "C14.4 19.7 13.6 21 12 21"
 
 /** Glyph outlines on a 24-unit grid, stroked rather than filled, as the app's other marks are. */
+internal val SpawnElement.glyph: List<Path> get() = GLYPHS.getValue(this)
+
 private val GLYPHS: Map<SpawnElement, List<Path>> = mapOf(
     // A flame with a smaller one inside.
     SpawnElement.FIRE to listOf(FLAME_OUTLINE, FLAME_CORE),
@@ -264,7 +266,7 @@ private val GLYPHS: Map<SpawnElement, List<Path>> = mapOf(
 
 @Composable
 private fun ElementGlyph(element: SpawnElement, tint: () -> Color) {
-    val paths = GLYPHS.getValue(element)
+    val paths = element.glyph
     Canvas(Modifier.size(GLYPH_SIZE)) {
         val unit = size.minDimension / 24f
         // Stroked in grid units, so the line is 1.6 dp at this size.

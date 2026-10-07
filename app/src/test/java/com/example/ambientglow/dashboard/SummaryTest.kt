@@ -11,6 +11,7 @@ import com.example.ambientglow.EarthForce
 import com.example.ambientglow.EarthForm
 import com.example.ambientglow.EdgeColor
 import com.example.ambientglow.EdgeGlow
+import com.example.ambientglow.EdgeMaterial
 import com.example.ambientglow.EdgeMotion
 import com.example.ambientglow.EdgeWidth
 import com.example.ambientglow.FireColor
@@ -22,6 +23,7 @@ import com.example.ambientglow.GlassBlur
 import com.example.ambientglow.GlassFrost
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.R
+import com.example.ambientglow.SpawnElement
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -52,8 +54,40 @@ class SummaryTest {
                     R.string.edge_glow_off_phrase,
                 ),
             ),
-            edgePhrasing(settings),
+            edgePhrasing(settings.copy(edgeMaterial = EdgeMaterial.NEON), shaders = true),
         )
+    }
+
+    @Test
+    fun anElementalFrameSaysWhatItIsMadeOfInPlaceOfItsColour() {
+        val settings = GlowSettings(edgeMaterial = EdgeMaterial.ELEMENT, element = SpawnElement.FIRE, edgeColor = EdgeColor.DUO)
+        assertEquals(R.string.edge_material_fire_phrase, edgePhrasing(settings, shaders = true).phrases[1])
+        assertEquals(R.string.edge_material_water_phrase, edgePhrasing(settings.copy(element = SpawnElement.WATER), shaders = true).phrases[1])
+        assertEquals(R.string.edge_material_air_phrase, edgePhrasing(settings.copy(element = SpawnElement.AIR), shaders = true).phrases[1])
+        val earth = settings.copy(element = SpawnElement.EARTH)
+        // Mended in gold only in its own stone; in the app's colour or crystal it is a glowing crack.
+        assertEquals(R.string.edge_material_earth_phrase, edgePhrasing(earth.copy(earthColor = EarthColor.STONE), shaders = true).phrases[1])
+        assertEquals(R.string.edge_material_earth_lit_phrase, edgePhrasing(earth.copy(earthColor = EarthColor.CRYSTAL), shaders = true).phrases[1])
+    }
+
+    @Test
+    fun anElementalFrameThatCantPlaySaysItsNeonColour() {
+        val settings = GlowSettings(edgeMaterial = EdgeMaterial.ELEMENT, element = SpawnElement.FIRE, edgeColor = EdgeColor.DUO)
+        // No spawn wave to carry the element, or no runtime shaders: it plays as neon, and says so.
+        assertEquals(R.string.edge_color_duo_phrase, edgePhrasing(settings.copy(spawn = false), shaders = true).phrases[1])
+        assertEquals(R.string.edge_color_duo_phrase, edgePhrasing(settings, shaders = false).phrases[1])
+        assertEquals(listOf(R.string.edge_material_needs_spawn), materialBody(settings.copy(spawn = false), shaders = true))
+        assertEquals(listOf(R.string.edge_material_needs_shaders), materialBody(settings, shaders = false))
+    }
+
+    @Test
+    fun anElementalFramePointsToTheElementsColoursExceptWatersWhichHasNone() {
+        val settings = GlowSettings(edgeMaterial = EdgeMaterial.ELEMENT)
+        assertEquals(
+            listOf(R.string.edge_material_fire_body, R.string.edge_material_element_colours),
+            materialBody(settings.copy(element = SpawnElement.FIRE), shaders = true),
+        )
+        assertEquals(listOf(R.string.edge_material_water_body), materialBody(settings.copy(element = SpawnElement.WATER), shaders = true))
     }
 
     @Test

@@ -161,6 +161,9 @@
     <string name="edge_color_app">APP</string>
     <string name="edge_color_duo">DUO</string>
     <string name="edge_color_spectrum">SPECTRUM</string>
+    <string name="edge_material">MATERIAL</string>
+    <string name="edge_material_neon">NEON</string>
+    <string name="edge_material_element">ELEMENT</string>
     <string name="arrival_mode">THE SCREEN SHOWS</string>
     <string name="arrival_lock_screen">Lock screen</string>
     <string name="arrival_black">Black screen</string>
@@ -288,6 +291,19 @@
     <string name="edge_color_app_body">The colour of the app that sent the message.</string>
     <string name="edge_color_duo_body">The app\'s colour flowing into a neighbouring hue and back.</string>
     <string name="edge_color_spectrum_body">A turning rainbow that starts at the app\'s colour.</string>
+    <string name="edge_material_neon_body">A line of light, in the colours you pick below.</string>
+    <string name="edge_material_fire_body">A burning fuse: white-hot where the light runs, cooling to embers behind it, with flames licking in off the edge.</string>
+    <string name="edge_material_water_body">Liquid light in a glass tube: it ripples, swells into a wave where the light runs, and glints along its surface.</string>
+    <string name="edge_material_air_body">A slipstream: no solid line, only wind racing round the edge, carrying what the gust picks up.</string>
+    <string name="edge_material_earth_body">A crack mended in light: the edge splits open, cracks branch in as it lights, and a sheen runs along the seam.</string>
+    <string name="edge_material_element_colours">Its colours are the element\'s, set in its options above.</string>
+    <string name="edge_material_needs_spawn">Made of the element the spawn wave takes after. Turn the wave on above to use it; until then the frame plays as Neon.</string>
+    <string name="edge_material_needs_shaders">Made of the element the spawn wave takes after. It needs Android 13 or later; on this phone the frame plays as Neon.</string>
+    <string name="edge_material_fire_phrase">as a burning fuse</string>
+    <string name="edge_material_water_phrase">as liquid light</string>
+    <string name="edge_material_air_phrase">as a slipstream</string>
+    <string name="edge_material_earth_phrase">as a crack mended in gold</string>
+    <string name="edge_material_earth_lit_phrase">as a glowing crack</string>
 
     <string name="glass_summary_both">%1$s and %2$s, %3$s.</string>
     <string name="glass_summary_one">%1$s, %2$s.</string>

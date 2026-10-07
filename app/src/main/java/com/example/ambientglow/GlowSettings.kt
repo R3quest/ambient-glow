@@ -106,6 +106,19 @@ enum class EdgeColor(
 }
 
 /**
+ * What the Edge Frame is made of.
+ * - NEON: a line of light in the colours [EdgeColor] picks.
+ * - ELEMENT: the element the spawn wave takes after ([ElementFrame]): Fire a burning fuse, Water
+ *   liquid light in a glass tube, Air a slipstream of wind lines, Earth a crack mended in gold.
+ *   It takes the element's colours, so [EdgeColor] has no say. Needs the spawn wave, whose element
+ *   it is, and runtime shaders (Android 13+); without either it plays as NEON.
+ */
+enum class EdgeMaterial(@param:StringRes override val label: Int) : Labeled {
+    NEON(R.string.edge_material_neon),
+    ELEMENT(R.string.edge_material_element),
+}
+
+/**
  * The element the spawn wave takes after; the wave always has one. Water is the glass wave, Fire
  * the ring of fire, Air a gust of wind, Earth a quake breaking the ground open; one with no look
  * of its own yet ([ready] is false) plays the bare wave until it has one. [premium] ones are
@@ -433,7 +446,14 @@ data class GlowSettings(
     val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
     val edgeColor: EdgeColor = EdgeColor.APP,
+    val edgeMaterial: EdgeMaterial = EdgeMaterial.ELEMENT,
 ) {
+    /**
+     * The Edge Frame is made of the element: chosen, and the spawn wave is on to carry it.
+     * Below Android 13 it still plays as Neon, as every shader falls back ([elementFrame]).
+     */
+    val elementalEdge: Boolean get() = edgeMaterial == EdgeMaterial.ELEMENT && spawn
+
     /** The spawn wave rolls in like the iPhone's: a soft, shimmering crest of light and a trailing ripple. */
     val glass: Boolean get() = element == SpawnElement.WATER
 

@@ -259,6 +259,13 @@ private const val DUO_HUE_SHIFT = 55f
 private val HEAD_LEAD = 5.dp
 private const val HEAD_TAIL_PX = 420f
 
+/** The element's frame ([ElementFrame]) runs hottest over this share of a head's tail. */
+private const val ELEMENT_HEAT_TAIL = 0.6f
+
+/** Earth's frame: its cracks branch out over this long, from when the wave has lit the frame. */
+private const val CRACKS_FROM_MS = SPAWN_GATHER_MS + 250f
+private const val CRACKS_MS = 900f
+
 /** Glass wave (gradient crest): inner edge of the band it lights, as a fraction of the reach; inside it is clear. */
 private const val GLASS_BAND_INNER = 0.7f
 
@@ -415,7 +422,7 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
     } finally {
         val seconds = (last - first) / 1e9f
         val what = if (settings.style == GlowStyle.EDGE_FRAME) {
-            "${settings.style} ${settings.edgeMotion} ${settings.edgeColor} ${settings.edgeWidth} ${settings.edgeGlow}"
+            "${settings.style} ${settings.edgeMaterial} ${settings.edgeMotion} ${settings.edgeColor} ${settings.edgeWidth} ${settings.edgeGlow}"
         } else {
             settings.style.name
         }
@@ -808,17 +815,38 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val hotTopLeft = Offset(filament / 2f, filament / 2f)
                 val hotSize = Size(size.width - filament, size.height - filament)
                 val hotCorner = CornerRadius((corner - filament / 2f).coerceAtLeast(0f))
+                val origin = spawnOrigin(geometry, scale)
+                val reach = waveReach(origin)
+                val axis = origin.x - size.width / 2f
+                // Made of the element: one shader paints it in place of the glow, line and tint.
+                val element = if (settings.elementalEdge) {
+                    elementFrame(
+                        settings,
+                        color,
+                        size,
+                        corner,
+                        axis,
+                        mirror = motion == EdgeMotion.TWIN,
+                        line = line,
+                        reach = glowReach,
+                        peak = glowPeak,
+                        lead = HEAD_LEAD.toPx() * scale,
+                        tail = HEAD_TAIL_PX * scale * ELEMENT_HEAT_TAIL,
+                        density = density,
+                        scale = scale,
+                    )
+                } else {
+                    null
+                }
                 // Covers every pixel the frame and its glow can light, from the edge in (half of
                 // it is off screen).
-                val band = Stroke(2f * (line + glowReach) + 2f)
+                val band = Stroke(2f * max(line + glowReach, element?.inwardPx ?: 0f) + 2f)
                 val bandCorner = CornerRadius(corner)
                 // Tinted modes draw white and recolour it afterwards with SrcIn.
                 val paint = if (settings.edgeColor == EdgeColor.APP) color else Color.White
-                val tint = edgeTint(settings.edgeColor, color)
+                val tint = if (element == null) edgeTint(settings.edgeColor, color) else null
                 val center = Offset(size.width / 2f, size.height / 2f)
 
-                val origin = spawnOrigin(geometry, scale)
-                val reach = waveReach(origin)
                 // The heads: in perimeter space where runtime shaders exist, as a sweep below.
                 val heads = if (motion == EdgeMotion.PULSE) {
                     null
@@ -830,7 +858,7 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                         tail = HEAD_TAIL_PX * scale,
                         base = COMET_BASE,
                         mirror = motion == EdgeMotion.TWIN,
-                        axis = origin.x - size.width / 2f,
+                        axis = axis,
                     )
                 }
                 val sweep = if (motion != EdgeMotion.PULSE && heads == null) cometSweep() else null
@@ -862,7 +890,7 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                     1f to Color.White.copy(alpha = 0f),
                 )
                 val glintRadius = LANDING_GLINT.toPx() * scale
-                val glintColor = if (settings.edgeColor == EdgeColor.APP) color else Color.White
+                val glintColor = element?.landing ?: if (settings.edgeColor == EdgeColor.APP) color else Color.White
                 val glint = fixedRadial(
                     origin,
                     glintRadius,
@@ -870,7 +898,7 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                     0.4f to glintColor.copy(alpha = 0.5f),
                     1f to glintColor.copy(alpha = 0f),
                 )
-                val glintAlpha = if (settings.edgeColor == EdgeColor.APP) 0.45f else 0.27f
+                val glintAlpha = if (element != null || settings.edgeColor == EdgeColor.APP) 0.45f else 0.27f
                 onDrawBehind {
                     val ms = time()
                     val wave = waveAt(ms, spawn)
@@ -879,19 +907,25 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                     // barely dims, so it stays crisp. 1 elsewhere.
                     val b = if (motion == EdgeMotion.PULSE) breathAt(ms, spawn) else 1f
                     val spread = 0.55f + 0.45f * b
-                    for (i in 0 until rings) {
-                        val t = ringAt[i] / spread
-                        val alpha = glowPeak * exp(-4.5f * t * t) * (0.5f + 0.5f * b)
-                        drawRoundRect(paint, ringTopLeft[i], ringSize[i], ringCorner[i], style = ringStroke, alpha = alpha)
+                    if (element != null) {
+                        val focus = if (motion == EdgeMotion.PULSE) 0f else motionAt(ms, spawn)
+                        element.update(ms, headAt(ms, spawn), focus, spread, crackGrowthAt(ms, spawn))
+                        drawRoundRect(element, Offset.Zero, size, bandCorner, style = band)
+                    } else {
+                        for (i in 0 until rings) {
+                            val t = ringAt[i] / spread
+                            val alpha = glowPeak * exp(-4.5f * t * t) * (0.5f + 0.5f * b)
+                            drawRoundRect(paint, ringTopLeft[i], ringSize[i], ringCorner[i], style = ringStroke, alpha = alpha)
+                        }
+                        // Without the glow the line carries the breath, so it dims more.
+                        val coreAlpha = if (rings == 0) 0.55f + 0.45f * b else 0.72f + 0.28f * b
+                        drawRoundRect(paint, frameTopLeft, frameSize, frameCorner, style = core, alpha = coreAlpha)
+                        if (tint != null) {
+                            tint.rotateTo(tintTurnAt(ms, settings.edgeColor, spawn), center)
+                            drawRoundRect(tint, Offset.Zero, size, bandCorner, style = band, blendMode = BlendMode.SrcIn)
+                        }
+                        drawRoundRect(Color.White, hotTopLeft, hotSize, hotCorner, style = hot, alpha = 0.55f * (0.4f + 0.6f * b))
                     }
-                    // Without the glow the line carries the breath, so it dims more.
-                    val coreAlpha = if (rings == 0) 0.55f + 0.45f * b else 0.72f + 0.28f * b
-                    drawRoundRect(paint, frameTopLeft, frameSize, frameCorner, style = core, alpha = coreAlpha)
-                    if (tint != null) {
-                        tint.rotateTo(tintTurnAt(ms, settings.edgeColor, spawn), center)
-                        drawRoundRect(tint, Offset.Zero, size, bandCorner, style = band, blendMode = BlendMode.SrcIn)
-                    }
-                    drawRoundRect(Color.White, hotTopLeft, hotSize, hotCorner, style = hot, alpha = 0.55f * (0.4f + 0.6f * b))
                     if (spawn && spawnLinearAt(ms) < 1f) {
                         // The highlight shares the crest's light; by the time the reveal stops being
                         // drawn it covers every pixel, so neither ends in a step.
@@ -1004,6 +1038,15 @@ private fun perimeterAngle(p: Float, w: Float, h: Float): Float {
     }
     return atan2(y, x) * (180f / PI.toFloat())
 }
+
+/** How far Earth's frame has cracked open, 0..1: branching out as the wave lights it, or at once without it. */
+private fun crackGrowthAt(ms: Float, spawn: Boolean): Float {
+    val from = if (spawn) CRACKS_FROM_MS else 0f
+    return EaseOutCubic.transform(((ms - from) / CRACKS_MS).coerceIn(0f, 1f))
+}
+
+/** Cracks race out and slow as they run out of force. */
+private val EaseOutCubic = CubicBezierEasing(0.33f, 1f, 0.68f, 1f)
 
 /** Duo and Spectrum turn with the heads, from rest to rest. */
 private fun tintTurnAt(ms: Float, mode: EdgeColor, spawn: Boolean): Float {

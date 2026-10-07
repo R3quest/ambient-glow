@@ -34,7 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
@@ -53,7 +55,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.ambientglow.DEFAULT_GLOW_COLOR
+import com.example.ambientglow.EarthColor
 import com.example.ambientglow.EdgeColor
+import com.example.ambientglow.EdgeMaterial
 import com.example.ambientglow.EdgeGlow
 import com.example.ambientglow.EdgeMotion
 import com.example.ambientglow.EdgeWidth
@@ -62,7 +66,10 @@ import com.example.ambientglow.GlowMetrics
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.GlowStyle
 import com.example.ambientglow.R
+import com.example.ambientglow.SpawnElement
+import com.example.ambientglow.elementFramesSupported
 import com.example.ambientglow.ui.components.ChipRow
+import com.example.ambientglow.ui.components.Disclosure
 import com.example.ambientglow.ui.components.Fold
 import com.example.ambientglow.ui.components.GhostButton
 import com.example.ambientglow.ui.components.OptionBody
@@ -138,24 +145,41 @@ internal fun EffectCard(
     }
 }
 
-/** Edge Frame's own options, folded under what they are set to; the other styles have none. */
+/**
+ * Edge Frame's own options, folded under what they are set to; the other styles have none. The
+ * material leads: made of the element, the frame takes the element's colours, so its own
+ * colour row steps aside.
+ */
 @Composable
 internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+    val shaders = elementFramesSupported
     Column(Modifier.glowCard(vertical = 10.dp)) {
-        Fold(title = stringResource(R.string.fold_edge), summary = edgePhrasing(settings).text()) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Fold(title = stringResource(R.string.fold_edge), summary = edgePhrasing(settings, shaders).text()) {
+            Column {
+                OptionGroup(stringResource(R.string.edge_material)) {
+                    MaterialPicker(settings) { onEffect(settings.copy(edgeMaterial = it)) }
+                    OptionBody(materialBody(settings, shaders)) { body -> body.map { stringResource(it) }.joinToString(" ") }
+                }
                 // Motion and colour aren't plain from their names: what the picked one does, under it.
+                Spacer(Modifier.height(14.dp))
                 OptionGroup(stringResource(R.string.edge_motion)) {
                     ChipRow(EdgeMotion.entries, settings.edgeMotion) { onEffect(settings.copy(edgeMotion = it)) }
                     OptionBody(settings.edgeMotion) { stringResource(it.body) }
                 }
-                OptionGroup(stringResource(R.string.edge_color)) {
-                    ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
-                    OptionBody(settings.edgeColor) { stringResource(it.body) }
+                // Carries its own gap, so nothing jumps as it comes and goes.
+                Disclosure(visible = !(settings.elementalEdge && shaders)) {
+                    Box(Modifier.padding(top = 14.dp)) {
+                        OptionGroup(stringResource(R.string.edge_color)) {
+                            ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
+                            OptionBody(settings.edgeColor) { stringResource(it.body) }
+                        }
+                    }
                 }
+                Spacer(Modifier.height(14.dp))
                 OptionGroup(stringResource(R.string.edge_width)) {
                     ChipRow(EdgeWidth.entries, settings.edgeWidth) { onEffect(settings.copy(edgeWidth = it)) }
                 }
+                Spacer(Modifier.height(14.dp))
                 OptionGroup(stringResource(R.string.edge_glow)) {
                     ChipRow(EdgeGlow.entries, settings.edgeGlow) { onEffect(settings.copy(edgeGlow = it)) }
                 }
@@ -197,11 +221,77 @@ internal fun Phrasing.text(): String =
 
 internal fun sentence(text: String): String = text.replaceFirstChar { it.titlecase() }
 
-/** Edge Frame's options in one sentence: motion, colour, width and glow. */
-internal fun edgePhrasing(settings: GlowSettings) = Phrasing(
+/**
+ * Edge Frame's options in one sentence: motion, what it is made of (or its colour, as neon),
+ * width and glow. [shaders]: the element's frame can play here ([elementFramesSupported]).
+ */
+internal fun edgePhrasing(settings: GlowSettings, shaders: Boolean) = Phrasing(
     R.string.edge_summary,
-    listOf(settings.edgeMotion.phrase, settings.edgeColor.phrase, settings.edgeWidth.phrase, settings.edgeGlow.phrase),
+    listOf(
+        settings.edgeMotion.phrase,
+        if (settings.elementalEdge && shaders) elementFramePhrase(settings) else settings.edgeColor.phrase,
+        settings.edgeWidth.phrase,
+        settings.edgeGlow.phrase,
+    ),
 )
+
+/** The element's frame in a phrase: "as a burning fuse". Earth is mended in gold only in its own stone. */
+@StringRes
+private fun elementFramePhrase(settings: GlowSettings): Int = when (settings.element) {
+    SpawnElement.FIRE -> R.string.edge_material_fire_phrase
+    SpawnElement.WATER -> R.string.edge_material_water_phrase
+    SpawnElement.AIR -> R.string.edge_material_air_phrase
+    SpawnElement.EARTH ->
+        if (settings.earthColor == EarthColor.STONE) R.string.edge_material_earth_phrase else R.string.edge_material_earth_lit_phrase
+}
+
+/**
+ * What the chosen material does, as the sentences to say: the element's frame and where its
+ * colours come from, or why it plays as Neon for now.
+ */
+internal fun materialBody(settings: GlowSettings, shaders: Boolean): List<Int> = when {
+    settings.edgeMaterial == EdgeMaterial.NEON -> listOf(R.string.edge_material_neon_body)
+    !shaders -> listOf(R.string.edge_material_needs_shaders)
+    !settings.spawn -> listOf(R.string.edge_material_needs_spawn)
+    // Water's is the app's colour, as its wave is: it has no colours of its own to point to.
+    settings.element == SpawnElement.WATER -> listOf(R.string.edge_material_water_body)
+    else -> listOf(
+        when (settings.element) {
+            SpawnElement.FIRE -> R.string.edge_material_fire_body
+            SpawnElement.AIR -> R.string.edge_material_air_body
+            else -> R.string.edge_material_earth_body
+        },
+        R.string.edge_material_element_colours,
+    )
+}
+
+/**
+ * Neon or the element, as pictures: a phone's edge lit in neon, and the chosen element's glyph
+ * in its own colour, so the tile says what the frame will be made of.
+ */
+@Composable
+private fun MaterialPicker(settings: GlowSettings, onSelect: (EdgeMaterial) -> Unit) {
+    val element = settings.element
+    GlyphTiles(EdgeMaterial.entries, settings.edgeMaterial, onSelect, ::glyphStroke) { material, lit, stroke ->
+        when (material) {
+            EdgeMaterial.NEON -> {
+                val color = ink(lit, GlowPalette.Cyan)
+                // The edge's glow first, then the line on it.
+                drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, alpha = 0.22f * lit, style = Stroke(stroke.width * 2.6f))
+                drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, style = stroke)
+            }
+            EdgeMaterial.ELEMENT -> {
+                val color = ink(lit, element.accent)
+                element.glyph.forEach { drawPath(it, color, style = stroke) }
+            }
+        }
+    }
+}
+
+/** Neon's glyph: a phone's outline on the 24-unit grid, as tall as the element glyphs. */
+private val NeonGlyphAt = Offset(6.5f, 2.5f)
+private val NeonGlyphSize = Size(11f, 19f)
+private val NeonGlyphCorner = CornerRadius(3f)
 
 /**
  * The three styles as rows: a mini phone showing the style in [accent], and its name. A new
