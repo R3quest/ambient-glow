@@ -1145,23 +1145,16 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
             .drawWithCache {
                 val metrics = GlowMetrics.FullScreen
                 val line = metrics.stroke.toPx() * scale
-                val center: Offset
-                val radius: Float
                 val camera = geometry.lens(size.width, density, scale)
                 val lens = camera.radius
-                // The LED's own core: the dot, or the ring's thickness.
-                val ledCore = ledRadiusAt(settings.dotSize, scale).toPx()
-                if (ring) {
-                    center = camera.center
-                    radius = lens + (metrics.ringGap.toPx() + metrics.stroke.toPx() / 2f) * scale
-                } else {
-                    radius = ledCore
-                    center = dotCenter(settings.dotX, settings.dotY, size, radius * DOT_HALO_FACTOR)
-                }
-                val ledLine = ledCore * LED_RING_STROKE_FACTOR
-                val ledRing = lens + ledRingGapAt(scale).toPx() + ledLine / 2f
-                val ledStroke = Stroke(ledLine)
-                val ledHot = Stroke(ledLine * 0.4f)
+                // It plays where the LED lights, and its ember ends as that LED.
+                val led = ledLanding(settings, camera, size, scale)
+                val center = led.center
+                // The ring stands clear of the LED's at first and closes in on it as it ends.
+                val radius = if (ring) lens + (metrics.ringGap.toPx() + metrics.stroke.toPx() / 2f) * scale else led.light.core
+                val ledRing = led.light.ring
+                val ledStroke = Stroke(led.light.line)
+                val ledHot = Stroke(led.light.line * 0.4f)
                 // The ring never grows in over the lens it surrounds.
                 val minRing = lens + line / 2f
                 val origin = spawnOrigin(geometry, scale)

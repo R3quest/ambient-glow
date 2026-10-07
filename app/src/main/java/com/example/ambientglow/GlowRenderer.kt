@@ -155,6 +155,9 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?, v
 
 private const val HALO_ALPHA = 0.28f
 
+/** What [GlowGraphic] draws: the screen's edge, a ring round the camera, or a dot. */
+enum class GlowForm { EDGE, RING, DOT }
+
 /**
  * Draws one glow form. [alpha] is read inside a graphics layer, so the pulse animation
  * re-renders only the layer: no recomposition, no relayout, and no allocations per frame.

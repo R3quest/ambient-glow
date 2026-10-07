@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Brush
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.ceil
@@ -106,8 +108,7 @@ internal fun LedDot(
                 val center = if (onCamera) {
                     geometry.lens(width.toFloat(), this.density).center
                 } else {
-                    // Same margin as GlowGraphic, so the LED sits exactly where the dashboard showed it.
-                    dotCenter(dotX, dotY, Size(width.toFloat(), height.toFloat()), light.core * DOT_HALO_FACTOR)
+                    ledDotCenter(dotX, dotY, light.core, Size(width.toFloat(), height.toFloat()))
                 }
                 val side = light.side
                 val placeable = measurable.measure(Constraints.fixed(side, side))
@@ -176,4 +177,28 @@ internal fun ledLight(core: Float, onCamera: Boolean, lens: Float, ringGrowPx: F
     val line = core * LED_RING_STROKE_FACTOR
     val ring = lens + ringGap + line / 2f + ringGrowPx
     return LedLight(core, lens, line, ring, bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f))
+}
+
+/**
+ * The dot LED's centre on a canvas of [size]: kept on screen by its halo, with the same margin as
+ * [GlowGraphic], so the LED sits exactly where the dashboard showed it.
+ */
+internal fun ledDotCenter(dotX: Float, dotY: Float, core: Float, size: Size): Offset =
+    dotCenter(dotX, dotY, size, core * DOT_HALO_FACTOR)
+
+/** Where an effect lands: the LED's [light] and its [center] on the canvas. */
+@Immutable
+internal class LedLanding(val center: Offset, val light: LedLight)
+
+/**
+ * The LED as an effect at [scale] lands on it, round [lens] as that effect places the camera: lit
+ * as [LedDot] lights its first breath (no burn-in shift yet). The beacon's ember and the Edge
+ * Frame's hand-off both end in exactly this, so the LED that lights next doesn't jump.
+ */
+internal fun Density.ledLanding(settings: GlowSettings, lens: CutoutSpot, size: Size, scale: Float): LedLanding {
+    val core = ledRadiusAt(settings.dotSize, scale).toPx()
+    val onCamera = settings.ledOnCamera
+    val light = ledLight(core, onCamera, lens.radius, ringGrowPx = 0f, ringGap = ledRingGapAt(scale).toPx())
+    val center = if (onCamera) lens.center else ledDotCenter(settings.dotX, settings.dotY, core, size)
+    return LedLanding(center, light)
 }

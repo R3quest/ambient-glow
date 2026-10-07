@@ -70,6 +70,7 @@ import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -79,6 +80,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.ambientglow.R
 import com.example.ambientglow.ui.theme.GlowMotion
@@ -449,6 +451,8 @@ internal fun LinkRow(
     onClick: () -> Unit,
     leading: @Composable RowScope.() -> Unit = {},
 ) {
+    // The chevron points on, the way the text reads.
+    val turn = if (LocalLayoutDirection.current == LayoutDirection.Rtl) 90f else -90f
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -468,7 +472,7 @@ internal fun LinkRow(
             Text(text = summary, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
         }
         Spacer(Modifier.width(16.dp))
-        Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = -90f })
+        Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = turn })
     }
 }
 

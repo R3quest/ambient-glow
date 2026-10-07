@@ -186,17 +186,18 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val origin = camera.center
                 val around = settings.ledOnCamera
                 // The LED, as the glow screen lights it: the dot, or the ring round the lens.
-                val ledCore = ledRadiusAt(settings.dotSize, scale).toPx()
-                val ledLine = ledCore * LED_RING_STROKE_FACTOR
-                val ledRing = camera.radius + ledRingGapAt(scale).toPx() + ledLine / 2f
-                val target = if (around) origin else dotCenter(settings.dotX, settings.dotY, size, ledCore * DOT_HALO_FACTOR)
+                val led = ledLanding(settings, camera, size, scale)
+                val ledCore = led.light.core
+                val ledLine = led.light.line
+                val ledRing = led.light.ring
+                val target = led.center
                 val flies = around || (target - origin).getDistance() > HANDOFF_MIN_FLIGHT.toPx() * scale
                 val u = max(TOKEN_UNIT.toPx() * scale, TOKEN_UNIT_MIN_PX)
                 // Room for the token and the glow round its heart.
                 val path = HandOffPath(token, origin, target, around, ledRing, top = TOKEN_ROOM * u)
                 val look = TokenLook(token, settings, color, u)
                 // The LED's light, built about the origin and moved to the target.
-                val bloom = ledCore * LED_HALO_FACTOR
+                val bloom = led.light.bloom
                 val ledHalo = Brush.radialGradient(
                     0f to color.copy(alpha = 0.65f),
                     0.35f to color.copy(alpha = 0.22f),

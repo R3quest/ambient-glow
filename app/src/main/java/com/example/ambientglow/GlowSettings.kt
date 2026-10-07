@@ -29,9 +29,6 @@ enum class GlowStyle(@param:StringRes override val label: Int, @param:StringRes 
     EDGE_FRAME(R.string.style_edge_title, R.string.style_edge_body),
 }
 
-/** What [GlowGraphic] draws: the screen's edge, a ring round the camera, or a dot. */
-enum class GlowForm { EDGE, RING, DOT }
-
 /**
  * LED dot sizes, as on-screen radius. [LED] matches the ~1 mm notification LEDs that older
  * phones had in the bezel; the others step up for easier visibility.

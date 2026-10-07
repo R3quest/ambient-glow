@@ -205,8 +205,16 @@ internal fun LedGlyph(onCamera: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
+/** [ledPlace] for these settings, against this phone's spots. */
 @Composable
-internal fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
+@StringRes
+internal fun ledPlaceOf(settings: GlowSettings): Int {
+    val spots = rememberDotSpots(settings.dotSize)
+    return ledPlace(settings.dotX, settings.dotY, settings.ledOnCamera, spots)
+}
+
+@Composable
+private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
     val camera = LocalCamera.current
     val window = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current

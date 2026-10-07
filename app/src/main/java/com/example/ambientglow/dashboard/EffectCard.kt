@@ -129,7 +129,6 @@ internal fun EffectCard(
     onMoveLed: () -> Unit,
 ) {
     val color = SAMPLE_COLORS[sample].color
-    val spots = rememberDotSpots(settings.dotSize)
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
         // Preview beside the style list: what you pick is what plays, without scrolling.
@@ -149,7 +148,7 @@ internal fun EffectCard(
         // lead to where it moves, so the effect's place is never a setting hidden in another tab.
         LinkRow(
             title = stringResource(R.string.effect_led_title),
-            summary = stringResource(ledPlace(settings.dotX, settings.dotY, settings.ledOnCamera, spots)),
+            summary = stringResource(ledPlaceOf(settings)),
             action = stringResource(R.string.effect_led_action),
             onClick = onMoveLed,
         ) {
