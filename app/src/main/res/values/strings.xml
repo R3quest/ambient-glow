@@ -297,9 +297,14 @@
     <string name="edge_material_water_body">Liquid light in a glass tube: it ripples, swells into a wave where the light runs, and glints along its surface. A last drop falls into your LED.</string>
     <string name="edge_material_air_body">A slipstream: no solid line, only wind racing round the edge, carrying what the gust picks up. A last wisp curls into your LED.</string>
     <string name="edge_material_earth_body">A crack mended in light: the edge splits open, cracks branch in as it lights, and a sheen runs along the seam. The light closes into a gem that becomes your LED.</string>
-    <string name="edge_material_element_colours">Its colours are the element\'s, set in its options above.</string>
-    <string name="edge_material_needs_spawn">Made of the element the spawn wave takes after. Turn the wave on above to use it; until then the frame plays as Neon.</string>
-    <string name="edge_material_needs_shaders">Made of the element the spawn wave takes after. It needs Android 13 or later; on this phone the frame plays as Neon.</string>
+    <string name="beacon_material_neon_body">Pure light in the app\'s colour: it flares, pulses twice and settles into your LED.</string>
+    <string name="beacon_material_fire_body">It catches fire: flames lick out all round it, hottest where the light circles, flare on every pulse, then die down to the ember that becomes your LED.</string>
+    <string name="beacon_material_water_body">Liquid light wrapped round it: it ripples, swells where the light circles and on every pulse, glints on its surface, then settles into your LED.</string>
+    <string name="beacon_material_air_body">A whirlwind: lines of wind race round it, carrying what the gust picks up, gust on every pulse, then drop into your LED.</string>
+    <string name="beacon_material_earth_body">A crack mended in light opens round it: cracks branch out, a sheen runs round the seam, then it closes up into your LED.</string>
+    <string name="edge_material_element_colours">Its colours are the element\'s, set in its options below.</string>
+    <string name="edge_material_needs_spawn">Made of the element the spawn wave takes after. Turn the wave on below to use it; until then it plays as Neon.</string>
+    <string name="edge_material_needs_shaders">Made of the element the spawn wave takes after. It needs Android 13 or later; on this phone it plays as Neon.</string>
     <string name="edge_material_fire_phrase">as a burning fuse</string>
     <string name="edge_material_water_phrase">as liquid light</string>
     <string name="edge_material_air_phrase">as a slipstream</string>

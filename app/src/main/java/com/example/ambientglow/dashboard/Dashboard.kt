@@ -465,6 +465,7 @@ private fun EffectPage(
                         previewHeld = previewHeld,
                         loop = loop,
                         onStyle = { style -> onEffect(settings.copy(style = style)) },
+                        onMaterial = { material -> onEffect(settings.copy(material = material)) },
                         onSample = onSample,
                     )
                     // Edge Frame's options carry their own gap, so nothing jumps as they come and go.

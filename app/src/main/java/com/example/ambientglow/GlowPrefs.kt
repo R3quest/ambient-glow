@@ -50,7 +50,7 @@ object GlowPrefs {
     private const val KEY_EDGE_GLOW = "edge_glow"
     private const val KEY_EDGE_MOTION = "edge_motion"
     private const val KEY_EDGE_COLOR = "edge_color"
-    private const val KEY_EDGE_MATERIAL = "edge_material"
+    private const val KEY_MATERIAL = "edge_material"
 
     private val defaults = GlowSettings()
 
@@ -104,7 +104,7 @@ object GlowPrefs {
             edgeGlow = getEnum(KEY_EDGE_GLOW, defaults.edgeGlow),
             edgeMotion = getEnum(KEY_EDGE_MOTION, defaults.edgeMotion),
             edgeColor = getEnum(KEY_EDGE_COLOR, defaults.edgeColor),
-            edgeMaterial = getEnum(KEY_EDGE_MATERIAL, defaults.edgeMaterial),
+            material = getEnum(KEY_MATERIAL, defaults.material),
         )
     }
 
@@ -143,7 +143,7 @@ object GlowPrefs {
             putString(KEY_EDGE_GLOW, settings.edgeGlow.name)
             putString(KEY_EDGE_MOTION, settings.edgeMotion.name)
             putString(KEY_EDGE_COLOR, settings.edgeColor.name)
-            putString(KEY_EDGE_MATERIAL, settings.edgeMaterial.name)
+            putString(KEY_MATERIAL, settings.material.name)
         }
     }
 }

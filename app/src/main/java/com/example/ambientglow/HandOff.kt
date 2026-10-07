@@ -93,7 +93,7 @@ internal enum class HandOffToken { SPARK, EMBER, DROP, WISP, GEM }
 
 /** The token for this frame: its element's when it is made of one ([elementFramesSupported]), else a spark. */
 internal fun handOffToken(settings: GlowSettings, shaders: Boolean): HandOffToken =
-    if (!settings.elementalEdge || !shaders) {
+    if (!settings.elemental || !shaders) {
         HandOffToken.SPARK
     } else {
         when (settings.element) {

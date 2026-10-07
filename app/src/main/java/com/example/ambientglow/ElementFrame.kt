@@ -17,13 +17,14 @@ import kotlin.math.max
 // band, worked out in the frame unrolled into a strip: `s` along it, as [EdgeLight] measures it,
 // and `n` in from the screen's edge. The frame's reveal, comet heads and drain are the masks the
 // neon frame uses, laid on after; the shader only knows where the heads are, to burn, surge, rush
-// or shine hottest there.
+// or shine hottest there. The beacon wraps the same band round a circle (a rounded square whose
+// corner is half its side), drawn out from it.
 // ---------------------------------------------------------------------------------------------
 
 /**
  * Shared by every element. `frameAt` unrolls a pixel: `s` clockwise from the camera (`axis`),
- * folded for Twin (`mirror`) as [EdgeLight] folds it, `n` in from the rounded edge, and the frame's
- * length. Patterns along it repeat a whole number of times round (`cells`), so no seam shows
+ * folded for Twin (`mirror`) as [EdgeLight] folds it, `n` in from the rounded edge (out from it
+ * with `outward`), and the frame's length. Patterns along it repeat a whole number of times round (`cells`), so no seam shows
  * where `s` wraps. `heatAt` is 1 at a head, falling off over `tail` behind it and `lead` ahead,
  * and an even glow without heads (`focus` 0). `spread` is Pulse's breath, 1 elsewhere.
  */
@@ -32,6 +33,7 @@ uniform float2 size;
 uniform float corner;
 uniform float axis;
 uniform float mirror;
+uniform float outward;
 uniform float head;
 uniform float lead;
 uniform float tail;
@@ -82,6 +84,7 @@ float3 frameAt(float2 p) {
     float2 hx = size * 0.5 - corner;
     float2 k = a - hx;
     float n = corner - length(max(k, 0.0)) - min(max(k.x, k.y), 0.0);
+    if (outward > 0.5) n = -n;
     float quarter = hx.x + 1.5707963 * corner + hx.y;
     float per = 4.0 * quarter;
     float u;
@@ -514,7 +517,8 @@ internal val elementFramesSupported: Boolean get() = Build.VERSION.SDK_INT >= Bu
  * The element's frame for this effect, or null below Android 13 (no runtime shaders), where the
  * neon frame plays. [size] and [corner] as the neon frame's; [axis] where the heads come home, in
  * px along the top edge from its centre; [mirror] for Twin. [line], [reach], [peak], [lead] and
- * [tail] are the frame's, in px at this [scale]; [density] the screen's.
+ * [tail] are the frame's, in px at this [scale]; [density] the screen's. [outward]: drawn out from
+ * the shape rather than in from it, as the beacon's is.
  */
 internal fun elementFrame(
     settings: GlowSettings,
@@ -530,14 +534,15 @@ internal fun elementFrame(
     tail: Float,
     density: Float,
     scale: Float,
+    outward: Boolean = false,
 ): ElementFrame? {
     if (!elementFramesSupported) return null
-    return ElementFrameRuntime(settings, brand, size, corner, axis, mirror, line, reach, peak, lead, tail, density * scale)
+    return ElementFrameRuntime(settings, brand, size, corner, axis, mirror, outward, line, reach, peak, lead, tail, density * scale)
 }
 
 /** An element's frame the effect moves every frame through [update]; built once per size, never in the draw. */
 internal abstract class ElementFrame : ShaderBrush() {
-    /** How far in from the screen's edge it can draw anything, in px. */
+    /** How far in from the screen's edge (out from the shape, if outward) it can draw anything, in px. */
     abstract val inwardPx: Float
 
     /** The colour of the glint the heads land in at the camera. */
@@ -559,6 +564,7 @@ private class ElementFrameRuntime(
     corner: Float,
     axis: Float,
     mirror: Boolean,
+    outward: Boolean,
     line: Float,
     reach: Float,
     peak: Float,
@@ -656,6 +662,7 @@ private class ElementFrameRuntime(
         runtime.setFloatUniform("corner", corner)
         runtime.setFloatUniform("axis", axis)
         runtime.setFloatUniform("mirror", if (mirror) 1f else 0f)
+        runtime.setFloatUniform("outward", if (outward) 1f else 0f)
         runtime.setFloatUniform("lead", lead)
         runtime.setFloatUniform("tail", tail)
         runtime.setFloatUniform("dp", dp)

@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
@@ -207,6 +208,26 @@ private val RIPPLE_STROKE = 2.dp
 private val RING_RIPPLE_SPAN = 54.dp
 private val DOT_RIPPLE_SPAN = 42.dp
 private val BEACON_GLOW = 26.dp
+
+/**
+ * The beacon made of the element: the orb the element wraps at the dot (the ring wraps the lens),
+ * the element's size against the Edge Frame's, its own glow, and how much of the neon halo stays.
+ */
+private val BEACON_ORB = 9.dp
+private const val BEACON_ELEMENT_SCALE = 0.75f
+private val BEACON_ELEMENT_GLOW = 12.dp
+private const val BEACON_ELEMENT_PEAK = 0.5f
+private const val BEACON_ELEMENT_HALO = 0.55f
+
+/**
+ * The element beacon's light circles it once in this long, hot over part of the way round; it
+ * rises over [BEACON_RISE_MS] from ignition, and flares up by [BEACON_BEAT] on each pulse.
+ */
+private const val BEACON_TURN_MS = 1_600f
+private const val BEACON_FOCUS = 0.55f
+private const val BEACON_RISE_MS = 380f
+private const val BEACON_BEAT = 0.3f
+private const val BEACON_BEAT_MS = 130f
 
 /**
  * Where the wave's bright crest sits, as a fraction of its reach (the wash rim, the glass crest).
@@ -431,9 +452,9 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
     } finally {
         val seconds = (last - first) / 1e9f
         val what = if (settings.style == GlowStyle.EDGE_FRAME) {
-            "${settings.style} ${settings.edgeMaterial} ${settings.edgeMotion} ${settings.edgeColor} ${settings.edgeWidth} ${settings.edgeGlow}"
+            "${settings.style} ${settings.material} ${settings.edgeMotion} ${settings.edgeColor} ${settings.edgeWidth} ${settings.edgeGlow}"
         } else {
-            settings.style.name
+            "${settings.style} ${settings.material} ring=${settings.ledOnCamera}"
         }
         GlowLog.d {
             "effect ${if (preview) "preview" else "live"} $what spawn=${settings.spawn} " +
@@ -827,7 +848,7 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val reach = waveReach(origin)
                 val axis = origin.x - size.width / 2f
                 // Made of the element: one shader paints it in place of the glow, line and tint.
-                val element = if (settings.elementalEdge) {
+                val element = if (settings.elemental) {
                     elementFrame(
                         settings,
                         color,
@@ -1134,6 +1155,11 @@ private fun CacheDrawScope.cometSweep(): MovingShaderBrush {
  * ignites with a flare when the wave's crest reaches it (or on its own without the spawn),
  * settles, then sends out two double pulses. At the end the halo draws in and the core lingers as
  * an ember that takes the LED's exact shape before it goes, so the hand-over doesn't jump.
+ *
+ * Made of the element ([GlowSettings.elemental]), the element's band wraps a circle in place of
+ * the neon core ([elementFrame], drawn outward): round the camera, or round an orb at the dot with
+ * a hot heart. Its light circles it, it flares up on every pulse, and at the end it dies down as
+ * the LED's shape lights in its place.
  */
 @Composable
 private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
@@ -1164,6 +1190,44 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                 val ledHot = Stroke(ledLine * 0.4f)
                 // The ring never grows in over the lens it surrounds.
                 val minRing = lens + line / 2f
+                // The circle the element wraps: the ring's inner edge, or the dot's orb.
+                val orb = if (ring) lens + metrics.ringGap.toPx() * scale else max(ledCore, BEACON_ORB.toPx() * scale)
+                val element = if (settings.elemental) {
+                    elementFrame(
+                        settings,
+                        color,
+                        size = Size(2f * orb, 2f * orb),
+                        corner = orb,
+                        axis = 0f,
+                        mirror = false,
+                        line = line,
+                        reach = BEACON_ELEMENT_GLOW.toPx() * scale,
+                        peak = BEACON_ELEMENT_PEAK,
+                        lead = HEAD_LEAD.toPx() * scale,
+                        // The light circling it is hot over about half the way round.
+                        tail = PI.toFloat() * orb,
+                        density = density,
+                        scale = scale * BEACON_ELEMENT_SCALE,
+                        outward = true,
+                    )
+                } else {
+                    null
+                }
+                // The band from the circle out as far as the element draws, a pixel either side.
+                val elementBand = Stroke((element?.inwardPx ?: 0f) + 2f)
+                val elementAt = orb + (element?.inwardPx ?: 0f) / 2f
+                val elementShift = Offset(center.x - orb, center.y - orb)
+                val tone = element?.landing ?: color
+                // The orb's heart: white-hot in the middle, the element's colour out to the band.
+                val heart = Brush.radialGradient(
+                    0f to lerp(tone, Color.White, 0.75f),
+                    0.45f to lerp(tone, Color.White, 0.3f),
+                    1f to tone.copy(alpha = 0.85f),
+                    center = center,
+                    radius = orb,
+                )
+                // The beacon's body, which its glow and pulses spread from.
+                val body = if (element != null) orb + 0.4f * element.inwardPx else radius
                 val origin = spawnOrigin(geometry, scale)
                 val reach = waveReach(origin)
                 // Ignites as the wave's crest reaches the beacon; the ring not before the flash peaks.
@@ -1175,32 +1239,34 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                 }
                 val settleDepth = if (ring) RING_SETTLE else DOT_SETTLE
                 val span = (if (ring) RING_RIPPLE_SPAN else DOT_RIPPLE_SPAN).toPx() * scale
-                val glowRadius = radius + BEACON_GLOW.toPx() * scale
+                val glowRadius = body + BEACON_GLOW.toPx() * scale
                 // The dot's halo draws in to the LED's bloom.
                 val haloEnd = (radius * LED_HALO_FACTOR / glowRadius).coerceAtMost(1f)
                 // A ring lit inside the flash answers once the wave has passed: its first pair would
                 // be lost in the flash. Any pulse that can't play out before the closing fade is skipped.
                 val firstRipple = if (ring && spawn) 2 else 0
-                val inner = (radius / glowRadius).coerceIn(0f, 0.9f)
+                val inner = ((if (element != null) orb else radius) / glowRadius).coerceIn(0f, 0.9f)
                 // Fades end in their own colour at zero alpha, not transparent black, so no grey seams.
                 val glow = if (ring) {
                     Brush.radialGradient(
-                        0f to color.copy(alpha = 0f),
-                        inner * 0.6f to color.copy(alpha = 0f),
-                        inner to color.copy(alpha = 0.45f),
-                        1f to color.copy(alpha = 0f),
+                        0f to tone.copy(alpha = 0f),
+                        inner * 0.6f to tone.copy(alpha = 0f),
+                        inner to tone.copy(alpha = 0.45f),
+                        1f to tone.copy(alpha = 0f),
                         center = center,
                         radius = glowRadius,
                     )
                 } else {
                     Brush.radialGradient(
-                        0f to color.copy(alpha = 0.65f),
-                        0.35f to color.copy(alpha = 0.22f),
-                        1f to color.copy(alpha = 0f),
+                        0f to tone.copy(alpha = 0.65f),
+                        0.35f to tone.copy(alpha = 0.22f),
+                        1f to tone.copy(alpha = 0f),
                         center = center,
                         radius = glowRadius,
                     )
                 }
+                // The element lights the screen round it itself: its halo only adds to that.
+                val glowStrength = if (element != null) BEACON_ELEMENT_HALO else 1f
                 val hot = lerp(color, Color.White, 0.45f)
                 val core = Stroke(line)
                 val hotLine = Stroke(line * 0.4f)
@@ -1227,9 +1293,9 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                     val haloAlpha = lit * ember
                     val haloScale = if (ring) 1f - 0.45f * e * e else 1f + (haloEnd - 1f) * m
                     scale((1f + FLARE_GLOW * flare) * haloScale, center) {
-                        drawCircle(glow, glowRadius, center, alpha = haloAlpha)
+                        drawCircle(glow, glowRadius, center, alpha = haloAlpha * glowStrength)
                     }
-                    val base = radius * max(settle, 1f)
+                    val base = body * max(settle, 1f)
                     for (i in firstRipple until RIPPLE_AT_MS.size) {
                         if (igniteMs + RIPPLE_AT_MS[i] + 0.6f * RIPPLE_LIFE_MS > FADE_OUT_AT_MS) continue
                         val p = (t - RIPPLE_AT_MS[i]) / RIPPLE_LIFE_MS
@@ -1238,14 +1304,48 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                         val grow = glideAt(p) // leaves briskly, loses energy as it spreads
                         val birth = min(1f, p / RIPPLE_BIRTH) // fades in: no pop at the core
                         drawCircle(
-                            color,
+                            tone,
                             base + grow * span * RIPPLE_REACH,
                             center,
                             alpha = level * RIPPLE_STRENGTH[i] * 0.8f * birth * q * sqrt(q),
                             style = ripple,
                         )
                     }
-                    if (ring) {
+                    if (element != null) {
+                        // Rises as it lights, flares up on each pulse, and dies down under the fade.
+                        val rise = smoothstep(0f, BEACON_RISE_MS, t)
+                        val calm = ExitEasing.transform(e)
+                        var beat = 0f
+                        for (i in RIPPLE_AT_MS.indices) {
+                            val d = (t - RIPPLE_AT_MS[i]) / BEACON_BEAT_MS
+                            beat = max(beat, RIPPLE_STRENGTH[i] * exp(-d * d))
+                        }
+                        element.update(
+                            ms,
+                            (t / BEACON_TURN_MS) % 1f,
+                            BEACON_FOCUS,
+                            rise * (1f + BEACON_BEAT * beat) * (1f - ELEMENT_CALM * calm),
+                            rise * (1f - calm),
+                        )
+                        val was = coreAlpha * (1f - m)
+                        if (was > 0f) {
+                            translate(elementShift.x, elementShift.y) {
+                                drawCircle(element, elementAt, Offset(orb, orb), alpha = was, style = elementBand)
+                            }
+                            // The orb's heart draws in to the dot as the LED takes its place.
+                            if (!ring) drawCircle(heart, orb + (ledCore - orb) * m, center, alpha = was)
+                        }
+                        if (m > 0f) {
+                            val now = coreAlpha * m
+                            if (ring) {
+                                drawCircle(color, ledRing, center, alpha = now, style = ledStroke)
+                                drawCircle(hot, ledRing, center, alpha = now, style = ledHot)
+                            } else {
+                                drawCircle(color, ledCore, center, alpha = now)
+                                drawCircle(hot, ledCore * 0.5f, center, alpha = now)
+                            }
+                        }
+                    } else if (ring) {
                         val r = max(radius * settle, minRing) + (ledRing - max(radius * settle, minRing)) * m
                         val was = coreAlpha * (1f - m)
                         drawCircle(color, r, center, alpha = was, style = core)

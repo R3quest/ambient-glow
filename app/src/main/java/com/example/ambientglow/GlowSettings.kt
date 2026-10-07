@@ -112,14 +112,15 @@ enum class EdgeColor(
 }
 
 /**
- * What the Edge Frame is made of.
- * - NEON: a line of light in the colours [EdgeColor] picks.
- * - ELEMENT: the element the spawn wave takes after ([ElementFrame]): Fire a burning fuse, Water
- *   liquid light in a glass tube, Air a slipstream of wind lines, Earth a crack mended in gold.
- *   It takes the element's colours, so [EdgeColor] has no say. Needs the spawn wave, whose element
- *   it is, and runtime shaders (Android 13+); without either it plays as NEON.
+ * What the effect is made of, whichever style plays it.
+ * - NEON: light: the beacon in the app's colour, the Edge Frame in the colours [EdgeColor] picks.
+ * - ELEMENT: the element the spawn wave takes after ([ElementFrame]). The Edge Frame: Fire a
+ *   burning fuse, Water liquid light in a glass tube, Air a slipstream of wind lines, Earth a crack
+ *   mended in gold. The beacon: the same, wrapped round the camera or the dot. It takes the
+ *   element's colours, so [EdgeColor] has no say. Needs the spawn wave, whose element it is, and
+ *   runtime shaders (Android 13+); without either it plays as NEON.
  */
-enum class EdgeMaterial(@param:StringRes override val label: Int) : Labeled {
+enum class GlowMaterial(@param:StringRes override val label: Int) : Labeled {
     NEON(R.string.edge_material_neon),
     ELEMENT(R.string.edge_material_element),
 }
@@ -452,13 +453,13 @@ data class GlowSettings(
     val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
     val edgeColor: EdgeColor = EdgeColor.APP,
-    val edgeMaterial: EdgeMaterial = EdgeMaterial.ELEMENT,
+    val material: GlowMaterial = GlowMaterial.ELEMENT,
 ) {
     /**
-     * The Edge Frame is made of the element: chosen, and the spawn wave is on to carry it.
+     * The effect is made of the element: chosen, and the spawn wave is on to carry it.
      * Below Android 13 it still plays as Neon, as every shader falls back ([elementFrame]).
      */
-    val elementalEdge: Boolean get() = edgeMaterial == EdgeMaterial.ELEMENT && spawn
+    val elemental: Boolean get() = material == GlowMaterial.ELEMENT && spawn
 
     /** The spawn wave rolls in like the iPhone's: a soft, shimmering crest of light and a trailing ripple. */
     val glass: Boolean get() = element == SpawnElement.WATER
