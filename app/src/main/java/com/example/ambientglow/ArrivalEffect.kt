@@ -57,7 +57,7 @@ import kotlinx.coroutines.withContext
 // ---------------------------------------------------------------------------------------------
 
 /** Whole effect. Ends before the LED takes the lock screen back (2.5 s after the wake). */
-private const val ARRIVAL_MS = 2_300
+internal const val ARRIVAL_MS = 2_300
 
 /** Light pools in the camera before the wave is released: the flash is the cause, the wave its effect. */
 internal const val SPAWN_GATHER_MS = 110f
@@ -98,9 +98,9 @@ private val ExitEasing = CubicBezierEasing(0.45f, 0f, 0.2f, 1f)
 private const val EDGE_FADE_AT_MS = 2_000f
 
 /** The heads land on the camera with a small glint, this long into the effect. */
-private const val LANDING_MS = 1_830f
+internal const val LANDING_MS = 1_830f
 private const val LANDING_SPREAD_MS = 110f
-private val LANDING_GLINT = 16.dp
+internal val LANDING_GLINT = 16.dp
 
 /** Flash peaks this long after release, as the ring leaves it. */
 private const val BLOOM_PEAK_MS = 40f
@@ -316,7 +316,8 @@ private const val COMET_BASE = 0.15f
  *
  * With [GlowSettings.spawn], an AirDrop-style wave bursts out of the camera, washes across the
  * screen, and lights the chosen style as its rim passes. Then the style plays: the Edge Frame in
- * its chosen motion and colours, the Camera Ring and Custom Dot as a beacon sending out ripples.
+ * its chosen motion and colours, its last light flying to the LED ([LedHandOff]), the Camera Ring
+ * and Custom Dot as a beacon sending out ripples.
  *
  * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]); with
  * [GlowSettings.air], a gust of wind ([AirWave]); with [GlowSettings.earth], a quake ([EarthWave]).
@@ -374,7 +375,10 @@ fun ArrivalEffect(
             }
         }
         when (settings.style) {
-            GlowStyle.EDGE_FRAME -> EdgeArrival(settings, glow, geometry, scale, time)
+            GlowStyle.EDGE_FRAME -> {
+                EdgeArrival(settings, glow, geometry, scale, time)
+                LedHandOff(settings, glow, geometry, scale, time)
+            }
             GlowStyle.CAMERA_RING, GlowStyle.CUSTOM_DOT -> BeaconArrival(settings, glow, geometry, scale, time)
         }
     }

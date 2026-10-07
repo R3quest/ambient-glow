@@ -479,19 +479,14 @@ data class GlowSettings(
  * This look as the arrival effect sees it: LED-only fields reset, so moving or sizing the LED
  * doesn't restart effect previews. Keep in step with what ArrivalEffect reads: BeaconArrival
  * reads the dot and [GlowSettings.ledOnCamera] for Custom Dot, and for Camera Ring the LED's size
- * and [GlowSettings.ledOnCamera], since its ember becomes the LED ring. The lens fit reaches the
+ * and [GlowSettings.ledOnCamera], since its ember becomes the LED ring; the Edge Frame's last
+ * light flies to the LED ([LedHandOff]), so it reads all of them. The lens fit reaches the
  * effect through its geometry instead.
  */
 fun GlowSettings.forPreview(): GlowSettings {
     val base = copy(ledBrightness = LedBrightness.MAX, lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
     return when (style) {
-        GlowStyle.CUSTOM_DOT -> base
+        GlowStyle.CUSTOM_DOT, GlowStyle.EDGE_FRAME -> base
         GlowStyle.CAMERA_RING -> base.copy(dotX = GlowSettings.DEFAULT_DOT_X, dotY = GlowSettings.DEFAULT_DOT_Y)
-        GlowStyle.EDGE_FRAME -> base.copy(
-            dotX = GlowSettings.DEFAULT_DOT_X,
-            dotY = GlowSettings.DEFAULT_DOT_Y,
-            dotSize = DotSize.LED,
-            ledOnCamera = false,
-        )
     }
 }

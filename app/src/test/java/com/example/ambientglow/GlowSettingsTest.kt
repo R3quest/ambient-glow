@@ -7,10 +7,13 @@ import org.junit.Test
 class GlowSettingsTest {
 
     @Test
-    fun movingTheLedDoesNotRestartAnEdgeFramePreview() {
+    fun movingTheLedRestartsAnEdgeFramePreviewWhoseLastLightFliesThere() {
         val edge = GlowSettings(style = GlowStyle.EDGE_FRAME)
-        val moved = edge.copy(dotX = 0.7f, dotY = 0.4f, dotSize = DotSize.LARGE, ledOnCamera = true, lensGrowDp = 2f)
-        assertEquals(edge.forPreview(), moved.forPreview())
+        assertNotEquals(edge.forPreview(), edge.copy(dotX = 0.7f).forPreview())
+        assertNotEquals(edge.forPreview(), edge.copy(dotSize = DotSize.LARGE).forPreview())
+        assertNotEquals(edge.forPreview(), edge.copy(ledOnCamera = true).forPreview())
+        // The lens fit still reaches it only through its geometry.
+        assertEquals(edge.forPreview(), edge.copy(lensGrowDp = 2f).forPreview())
     }
 
     @Test
