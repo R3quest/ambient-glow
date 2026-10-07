@@ -3,6 +3,7 @@ package com.example.ambientglow
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import kotlin.enums.enumEntries
 
 /**
  * Plain SharedPreferences storage for [GlowSettings], read once per event and written on user
@@ -53,6 +54,11 @@ object GlowPrefs {
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     fun load(context: Context): GlowSettings = load(prefs(context))
+
+    /** Starts reading the file in the background, so the first message's [load] doesn't wait on disk. */
+    fun warm(context: Context) {
+        prefs(context)
+    }
 
     /** Writes every choice at once: a handful of keys, applied asynchronously. */
     fun save(context: Context, settings: GlowSettings) = save(prefs(context), settings)
@@ -139,5 +145,5 @@ object GlowPrefs {
 /** The enum constant stored under [key] by name, or [default] if it is missing or no longer exists. */
 private inline fun <reified E : Enum<E>> SharedPreferences.getEnum(key: String, default: E): E {
     val name = getString(key, null) ?: return default
-    return enumValues<E>().firstOrNull { it.name == name } ?: default
+    return enumEntries<E>().firstOrNull { it.name == name } ?: default
 }

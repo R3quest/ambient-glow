@@ -337,7 +337,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
         if (face.value == Face.LED) {
             window.hideBarsOnBlack()
-            acquireKeepOn()
+            // Ending: the screen is meant to time out; holding it on here would keep it lit for good.
+            if (!ending.value) acquireKeepOn()
         }
     }
 
@@ -575,7 +576,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun watchForSleep() {
         timers.removeCallbacks(sleepWatch)
-        if (face.value == Face.LOCK_SCREEN && power.isInteractive) {
+        // Not during a call: onGoingToSleep would bail anyway, and a screen the call keeps on
+        // would be polled for the whole call. Afterwards SCREEN_OFF still brings the LED back.
+        if (face.value == Face.LOCK_SCREEN && power.isInteractive && !audio.inCall) {
             timers.postDelayed(sleepWatch, SLEEP_WATCH_MS)
         }
     }

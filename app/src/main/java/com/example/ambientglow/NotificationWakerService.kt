@@ -70,6 +70,7 @@ class NotificationWakerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         GlowLauncher.ensureChannel(this)
+        GlowPrefs.warm(this)
         brandColors.prepare()
         pruneStalePending()
         if (!screenReceiverRegistered) {
