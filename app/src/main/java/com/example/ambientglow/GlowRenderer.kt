@@ -156,12 +156,12 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?, v
 private const val HALO_ALPHA = 0.28f
 
 /**
- * Draws one glow style. [alpha] is read inside a graphics layer, so the pulse animation
+ * Draws one glow form. [alpha] is read inside a graphics layer, so the pulse animation
  * re-renders only the layer: no recomposition, no relayout, and no allocations per frame.
  */
 @Composable
 fun GlowGraphic(
-    style: GlowStyle,
+    form: GlowForm,
     color: Color,
     alpha: () -> Float,
     dotX: Float,
@@ -190,8 +190,8 @@ fun GlowGraphic(
     val cornerRadius = geometry.cornerRadiusPx ?: px.cornerRadius
 
     Canvas(modifier.graphicsLayer { this.alpha = alpha() }) {
-        when (style) {
-            GlowStyle.EDGE_FRAME -> {
+        when (form) {
+            GlowForm.EDGE -> {
                 val inset = px.stroke / 2f
                 val haloInset = px.stroke + px.haloStroke / 2f
                 drawRoundRect(
@@ -210,7 +210,7 @@ fun GlowGraphic(
                 )
             }
 
-            GlowStyle.CAMERA_RING -> {
+            GlowForm.RING -> {
                 val lens = geometry.lens(size.width, this.density, metrics = metrics)
                 val center = lens.center
                 val ringRadius = lens.radius + px.ringGap + px.stroke / 2f
@@ -223,7 +223,7 @@ fun GlowGraphic(
                 drawCircle(color = color, radius = ringRadius, center = center, style = stroke)
             }
 
-            GlowStyle.CUSTOM_DOT -> {
+            GlowForm.DOT -> {
                 val center = dotCenter(dotX, dotY, size, px.haloDotRadius)
                 drawCircle(color = halo, radius = px.haloDotRadius, center = center)
                 drawCircle(color = color, radius = px.dotRadius, center = center)

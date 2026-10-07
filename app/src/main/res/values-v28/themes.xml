@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Draw into the punch-hole area so the Camera Ring can surround the lens. -->
+    <!-- Draw into the punch-hole area so the ring can surround the lens. -->
     <style name="Theme.AmbientGlow.Wake" parent="Base.Theme.AmbientGlow.Wake">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>

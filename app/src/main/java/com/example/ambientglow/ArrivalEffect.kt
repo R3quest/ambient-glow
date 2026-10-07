@@ -44,7 +44,6 @@ import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.round
 import kotlin.math.sqrt
 import kotlinx.coroutines.coroutineScope
@@ -322,8 +321,8 @@ private const val COMET_BASE = 0.15f
  *
  * With [GlowSettings.spawn], an AirDrop-style wave bursts out of the camera, washes across the
  * screen, and lights the chosen style as its rim passes. Then the style plays: the Edge Frame in
- * its chosen motion and colours, its last light flying to the LED ([LedHandOff]), the Camera Ring
- * and Custom Dot as a beacon sending out ripples.
+ * its chosen motion and colours, its last light flying to the LED ([LedHandOff]); the LED Beacon
+ * where the LED waits, in its form, sending out ripples.
  *
  * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]); with
  * [GlowSettings.air], a gust of wind ([AirWave]); with [GlowSettings.earth], a quake ([EarthWave]).
@@ -385,7 +384,7 @@ fun ArrivalEffect(
                 EdgeArrival(settings, glow, geometry, scale, time)
                 LedHandOff(settings, glow, geometry, scale, time)
             }
-            GlowStyle.CAMERA_RING, GlowStyle.CUSTOM_DOT -> BeaconArrival(settings, glow, geometry, scale, time)
+            GlowStyle.BEACON -> BeaconArrival(settings, glow, geometry, scale, time)
         }
     }
 }
@@ -736,8 +735,7 @@ private fun SpawnWave(
  */
 internal fun CacheDrawScope.spawnFlash(color: Color, settings: GlowSettings, geometry: ScreenGeometry, scale: Float, origin: Offset): Brush {
     val bloomRadius = BLOOM_RADIUS.toPx() * scale
-    val ringSource = settings.style != GlowStyle.EDGE_FRAME &&
-        (settings.style == GlowStyle.CAMERA_RING || settings.ledOnCamera)
+    val ringSource = settings.style == GlowStyle.BEACON && settings.ledOnCamera
     return if (ringSource) {
         val metrics = GlowMetrics.FullScreen
         val lens = geometry.lens(size.width, density, scale).radius
@@ -1132,16 +1130,15 @@ private fun CacheDrawScope.cometSweep(): MovingShaderBrush {
 }
 
 /**
- * Camera Ring and Custom Dot: a beacon that ignites with a flare when the wave's crest reaches it
- * (or on its own without the spawn), settles, then sends out two double pulses. At the end the
- * halo draws in and the core lingers as an ember that becomes the LED: where the LED lights the
- * same spot, the ember takes its exact shape before it goes, so the hand-over doesn't jump.
+ * The LED Beacon: where the LED waits, in its form (a dot, or a ring round the camera), a beacon
+ * ignites with a flare when the wave's crest reaches it (or on its own without the spawn),
+ * settles, then sends out two double pulses. At the end the halo draws in and the core lingers as
+ * an ember that takes the LED's exact shape before it goes, so the hand-over doesn't jump.
  */
 @Composable
 private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
     val spawn = settings.spawn
-    // Custom Dot plays where the LED sits, so with the LED on the camera it is the ring too.
-    val ring = settings.style == GlowStyle.CAMERA_RING || settings.ledOnCamera
+    val ring = settings.ledOnCamera
     Spacer(
         Modifier
             .fillMaxSize()
@@ -1161,8 +1158,6 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                     radius = ledCore
                     center = dotCenter(settings.dotX, settings.dotY, size, radius * DOT_HALO_FACTOR)
                 }
-                // Ring: the LED lights here too only when it is on the camera; the dot always.
-                val ledHere = !ring || settings.ledOnCamera
                 val ledLine = ledCore * LED_RING_STROKE_FACTOR
                 val ledRing = lens + ledRingGapAt(scale).toPx() + ledLine / 2f
                 val ledStroke = Stroke(ledLine)
@@ -1222,15 +1217,15 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                     val flare = min(1f, t / FLARE_RISE_MS) * exp(-t / FLARE_TAU_MS)
                     val settle = 1f - settleDepth * exp(-t / SETTLE_TAU_MS) * cos(2f * PI.toFloat() * t / SETTLE_PERIOD_MS)
                     // The closing fade: the halo draws in and the core lingers as an ember, which
-                    // where the LED will light takes the LED's shape and ends at a true zero with
-                    // no slope (the panel steps its brightness in BLACK mode, so no dim tail).
+                    // takes the LED's shape and ends at a true zero with no slope (the panel
+                    // steps its brightness in BLACK mode, so no dim tail).
                     val e = ((ms - FADE_OUT_AT_MS) / FADE_OUT_MS).coerceIn(0f, 1f)
                     val k = 1f - e * e
                     val ember = k * k
-                    val m = if (ledHere) smoothstep(0f, 0.6f, e) else 0f
-                    val coreAlpha = lit * (if (ledHere) ember else out.pow(0.6f))
-                    val haloAlpha = lit * (if (ledHere) ember else out.pow(1.6f))
-                    val haloScale = if (ledHere && !ring) 1f + (haloEnd - 1f) * m else 1f - 0.45f * e * e
+                    val m = smoothstep(0f, 0.6f, e)
+                    val coreAlpha = lit * ember
+                    val haloAlpha = lit * ember
+                    val haloScale = if (ring) 1f - 0.45f * e * e else 1f + (haloEnd - 1f) * m
                     scale((1f + FLARE_GLOW * flare) * haloScale, center) {
                         drawCircle(glow, glowRadius, center, alpha = haloAlpha)
                     }

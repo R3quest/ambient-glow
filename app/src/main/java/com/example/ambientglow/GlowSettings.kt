@@ -20,11 +20,17 @@ interface Labeled {
     val label: Int
 }
 
-enum class GlowStyle(@param:StringRes override val label: Int) : Labeled {
-    EDGE_FRAME(R.string.style_edge_title),
-    CAMERA_RING(R.string.style_ring_title),
-    CUSTOM_DOT(R.string.style_dot_title),
+/**
+ * How a new message arrives. [BEACON] lights where the LED waits, so it takes the LED's form: a
+ * dot, or a ring round the camera ([GlowSettings.ledOnCamera]). Every phone has a place for it.
+ */
+enum class GlowStyle(@param:StringRes override val label: Int, @param:StringRes val body: Int) : Labeled {
+    BEACON(R.string.style_beacon_title, R.string.style_beacon_body),
+    EDGE_FRAME(R.string.style_edge_title, R.string.style_edge_body),
 }
+
+/** What [GlowGraphic] draws: the screen's edge, a ring round the camera, or a dot. */
+enum class GlowForm { EDGE, RING, DOT }
 
 /**
  * LED dot sizes, as on-screen radius. [LED] matches the ~1 mm notification LEDs that older
@@ -410,7 +416,7 @@ enum class ArrivalMode(@param:StringRes override val label: Int, @param:StringRe
  */
 @Immutable
 data class GlowSettings(
-    val style: GlowStyle = GlowStyle.CUSTOM_DOT,
+    val style: GlowStyle = GlowStyle.BEACON,
     val dotX: Float = DEFAULT_DOT_X,
     val dotY: Float = DEFAULT_DOT_Y,
     val dotSize: DotSize = DotSize.LED,
@@ -471,7 +477,7 @@ data class GlowSettings(
     val earth: Boolean get() = element == SpawnElement.EARTH
 
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
-    val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT
+    val ledForm: GlowForm get() = if (ledOnCamera) GlowForm.RING else GlowForm.DOT
 
     /** On a screen with no camera (the default ring, or one restored from another phone), the ring is a dot where it sat. */
     fun forScreen(geometry: ScreenGeometry): GlowSettings =
@@ -486,17 +492,11 @@ data class GlowSettings(
 }
 
 /**
- * This look as the arrival effect sees it: LED-only fields reset, so moving or sizing the LED
- * doesn't restart effect previews. Keep in step with what ArrivalEffect reads: BeaconArrival
- * reads the dot and [GlowSettings.ledOnCamera] for Custom Dot, and for Camera Ring the LED's size
- * and [GlowSettings.ledOnCamera], since its ember becomes the LED ring; the Edge Frame's last
- * light flies to the LED ([LedHandOff]), so it reads all of them. The lens fit reaches the
- * effect through its geometry instead.
+ * This look as the arrival effect sees it: LED-only fields reset, so changing the LED's brightness
+ * or the lens fit doesn't restart effect previews. Where the LED sits and its size stay: the
+ * beacon plays there and becomes it, and the Edge Frame's last light flies to it ([LedHandOff]).
+ * The lens fit reaches the effect through its geometry instead.
  */
-fun GlowSettings.forPreview(): GlowSettings {
-    val base = copy(ledBrightness = LedBrightness.MAX, lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
-    return when (style) {
-        GlowStyle.CUSTOM_DOT, GlowStyle.EDGE_FRAME -> base
-        GlowStyle.CAMERA_RING -> base.copy(dotX = GlowSettings.DEFAULT_DOT_X, dotY = GlowSettings.DEFAULT_DOT_Y)
-    }
-}
+fun GlowSettings.forPreview(): GlowSettings =
+    copy(ledBrightness = LedBrightness.MAX, lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
+

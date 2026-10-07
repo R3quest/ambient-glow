@@ -8,7 +8,7 @@ class GlowSettingsTest {
 
     @Test
     fun movingTheLedRestartsAnEdgeFramePreviewWhoseLastLightFliesThere() {
-        val edge = GlowSettings(style = GlowStyle.EDGE_FRAME)
+        val edge = GlowSettings(style = GlowStyle.EDGE_FRAME, ledOnCamera = false)
         assertNotEquals(edge.forPreview(), edge.copy(dotX = 0.7f).forPreview())
         assertNotEquals(edge.forPreview(), edge.copy(dotSize = DotSize.LARGE).forPreview())
         assertNotEquals(edge.forPreview(), edge.copy(ledOnCamera = true).forPreview())
@@ -17,14 +17,15 @@ class GlowSettingsTest {
     }
 
     @Test
-    fun movingTheDotRestartsACustomDotPreview() {
-        val dot = GlowSettings(style = GlowStyle.CUSTOM_DOT)
-        assertNotEquals(dot.forPreview(), dot.copy(dotX = 0.7f).forPreview())
+    fun movingTheLedRestartsABeaconPreviewThatPlaysThere() {
+        val beacon = GlowSettings(style = GlowStyle.BEACON, ledOnCamera = false)
+        assertNotEquals(beacon.forPreview(), beacon.copy(dotX = 0.7f).forPreview())
+        assertNotEquals(beacon.forPreview(), beacon.copy(ledOnCamera = true).forPreview())
     }
 
     @Test
     fun ledBrightnessAndLensFitNeverReachThePreview() {
-        val base = GlowSettings(style = GlowStyle.CAMERA_RING)
+        val base = GlowSettings(style = GlowStyle.BEACON, ledOnCamera = true)
         val changed = base.copy(ledBrightness = LedBrightness.SOFT, lensOffsetDp = 3f, lensOffsetXDp = -1f)
         assertEquals(base.forPreview(), changed.forPreview())
     }

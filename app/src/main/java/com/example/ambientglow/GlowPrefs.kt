@@ -26,6 +26,7 @@ object GlowPrefs {
 
     /** Before elements, the glass wave was a switch: no longer read, only cleared. */
     private const val KEY_GLASS = "glass"
+
     private const val KEY_GLASS_BLUR = "glass_blur"
     private const val KEY_GLASS_AREA = "glass_area"
     private const val KEY_GLASS_FROST = "glass_frost"
@@ -65,6 +66,8 @@ object GlowPrefs {
 
     internal fun load(prefs: SharedPreferences): GlowSettings = with(prefs) {
         GlowSettings(
+            // Camera Ring and Custom Dot, the beacon's old names, fall back to it as the default.
+            // It plays where the LED was left: the LED is placed on purpose and waits for hours.
             style = getEnum(KEY_STYLE, defaults.style),
             dotX = getFloat(KEY_DOT_X, defaults.dotX).coerceIn(0f, 1f),
             dotY = getFloat(KEY_DOT_Y, defaults.dotY).coerceIn(0f, 1f),

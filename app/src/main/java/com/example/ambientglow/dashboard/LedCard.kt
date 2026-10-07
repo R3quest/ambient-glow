@@ -238,7 +238,7 @@ internal fun LedCard(
                     modifier = Modifier.fillMaxSize(),
                 )
                 GlowGraphic(
-                    style = settings.ledStyle,
+                    form = settings.ledForm,
                     color = GlowPalette.Cyan,
                     alpha = { 1f },
                     dotX = dotX,
