@@ -63,6 +63,7 @@ import com.example.ambientglow.EdgeMaterial
 import com.example.ambientglow.EdgeGlow
 import com.example.ambientglow.EdgeMotion
 import com.example.ambientglow.EdgeWidth
+import com.example.ambientglow.GlowForm
 import com.example.ambientglow.GlowGraphic
 import com.example.ambientglow.GlowMetrics
 import com.example.ambientglow.GlowSettings
@@ -134,6 +135,7 @@ internal fun EffectCard(
             ) {
                 SectionLabel(stringResource(R.string.effect_style))
                 StylePicker(settings, color, onStyle)
+                OptionBody(settings.style) { stringResource(it.body) }
             }
         }
         OptionGroup(stringResource(R.string.effect_sample_color)) {
@@ -341,8 +343,9 @@ private val CometHead = Path().apply {
 }
 
 /**
- * The three styles as rows: a mini phone showing the style in [accent], and its name. A new
- * pick crossfades rather than slides, since rows can differ in height at large font sizes.
+ * The styles as rows: a mini phone showing the style in [accent], and its name. The beacon's
+ * phone shows the LED's form, a dot or the camera ring, as that is where it plays. A new pick
+ * crossfades rather than slides, since rows can differ in height at large font sizes.
  */
 @Composable
 private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowStyle) -> Unit) {
@@ -387,7 +390,7 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                     shape = RoundedCornerShape(PickerPhoneCorner),
                 ) { mockGeometry ->
                     GlowGraphic(
-                        style = if (style == GlowStyle.CUSTOM_DOT) settings.ledStyle else style,
+                        form = if (style == GlowStyle.EDGE_FRAME) GlowForm.EDGE else settings.ledForm,
                         color = glyph,
                         alpha = { 1f },
                         dotX = settings.dotX,

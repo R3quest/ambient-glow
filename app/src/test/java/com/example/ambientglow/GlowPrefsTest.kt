@@ -4,6 +4,7 @@ import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlowPrefsTest {
@@ -75,6 +76,21 @@ class GlowPrefsTest {
         for (gone in listOf("NONE", "PLAIN")) {
             assertEquals(SpawnElement.WATER, GlowPrefs.load(FakePrefs(mapOf("element" to gone))).element)
         }
+    }
+
+    @Test
+    fun theOldCameraRingLoadsAsTheBeaconOnTheCamera() {
+        val loaded = GlowPrefs.load(FakePrefs(mapOf("style" to "CAMERA_RING", "led_camera" to false)))
+        assertEquals(GlowStyle.BEACON, loaded.style)
+        assertTrue(loaded.ledOnCamera)
+    }
+
+    @Test
+    fun theOldCustomDotLoadsAsTheBeaconWhereTheLedIs() {
+        val loaded = GlowPrefs.load(FakePrefs(mapOf("style" to "CUSTOM_DOT", "dot_x" to 0.3f)))
+        assertEquals(GlowStyle.BEACON, loaded.style)
+        assertFalse(loaded.ledOnCamera)
+        assertEquals(0.3f, loaded.dotX, 0f)
     }
 
     @Test

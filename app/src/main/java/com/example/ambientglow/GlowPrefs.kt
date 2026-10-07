@@ -26,6 +26,10 @@ object GlowPrefs {
 
     /** Before elements, the glass wave was a switch: no longer read, only cleared. */
     private const val KEY_GLASS = "glass"
+
+    /** Camera Ring was a style of its own before the beacon took the LED's form: it is the beacon on the camera. */
+    private const val OLD_CAMERA_RING = "CAMERA_RING"
+
     private const val KEY_GLASS_BLUR = "glass_blur"
     private const val KEY_GLASS_AREA = "glass_area"
     private const val KEY_GLASS_FROST = "glass_frost"
@@ -64,12 +68,14 @@ object GlowPrefs {
     fun save(context: Context, settings: GlowSettings) = save(prefs(context), settings)
 
     internal fun load(prefs: SharedPreferences): GlowSettings = with(prefs) {
+        val cameraRing = getString(KEY_STYLE, null) == OLD_CAMERA_RING
         GlowSettings(
+            // Custom Dot, the beacon's other old name, falls back to it as the default.
             style = getEnum(KEY_STYLE, defaults.style),
             dotX = getFloat(KEY_DOT_X, defaults.dotX).coerceIn(0f, 1f),
             dotY = getFloat(KEY_DOT_Y, defaults.dotY).coerceIn(0f, 1f),
             dotSize = getEnum(KEY_DOT_SIZE, defaults.dotSize),
-            ledOnCamera = getBoolean(KEY_LED_CAMERA, defaults.ledOnCamera),
+            ledOnCamera = cameraRing || getBoolean(KEY_LED_CAMERA, defaults.ledOnCamera),
             lensOffsetDp = getFloat(KEY_LENS_OFFSET, defaults.lensOffsetDp),
             lensOffsetXDp = getFloat(KEY_LENS_OFFSET_X, defaults.lensOffsetXDp),
             lensGrowDp = getFloat(KEY_LENS_GROW, defaults.lensGrowDp),

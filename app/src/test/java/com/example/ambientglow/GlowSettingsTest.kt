@@ -17,14 +17,15 @@ class GlowSettingsTest {
     }
 
     @Test
-    fun movingTheDotRestartsACustomDotPreview() {
-        val dot = GlowSettings(style = GlowStyle.CUSTOM_DOT)
-        assertNotEquals(dot.forPreview(), dot.copy(dotX = 0.7f).forPreview())
+    fun movingTheLedRestartsABeaconPreviewThatPlaysThere() {
+        val beacon = GlowSettings(style = GlowStyle.BEACON)
+        assertNotEquals(beacon.forPreview(), beacon.copy(dotX = 0.7f).forPreview())
+        assertNotEquals(beacon.forPreview(), beacon.copy(ledOnCamera = true).forPreview())
     }
 
     @Test
     fun ledBrightnessAndLensFitNeverReachThePreview() {
-        val base = GlowSettings(style = GlowStyle.CAMERA_RING)
+        val base = GlowSettings(style = GlowStyle.BEACON, ledOnCamera = true)
         val changed = base.copy(ledBrightness = LedBrightness.SOFT, lensOffsetDp = 3f, lensOffsetXDp = -1f)
         assertEquals(base.forPreview(), changed.forPreview())
     }

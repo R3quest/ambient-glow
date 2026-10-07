@@ -204,9 +204,10 @@
     <string name="access_restricted_body">Android says \"Restricted setting\"? Open App info, tap ⋮ in the top corner, choose Allow restricted settings, then come back and try again.</string>
     <string name="access_restricted_action">App info</string>
 
+    <string name="style_beacon_title">LED Beacon</string>
     <string name="style_edge_title">Edge Frame</string>
-    <string name="style_ring_title">Camera Ring</string>
-    <string name="style_dot_title">Custom Dot</string>
+    <string name="style_beacon_body">Lights up where the LED waits, then becomes it. Move it in the LED tab.</string>
+    <string name="style_edge_body">Light runs round the edge of the screen, then flies to the LED.</string>
 
     <string name="dot_body">Only these pixels light up. Drag the dot or tap where it should go; it snaps to the spots below and the ruler marks. The real LED shows on this screen as you change it.</string>
     <string name="dot_size">SIZE</string>
