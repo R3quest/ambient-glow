@@ -26,7 +26,6 @@ object GlowPrefs {
 
     /** Before elements, the glass wave was a switch: no longer read, only cleared. */
     private const val KEY_GLASS = "glass"
-
     private const val KEY_GLASS_BLUR = "glass_blur"
     private const val KEY_GLASS_AREA = "glass_area"
     private const val KEY_GLASS_FROST = "glass_frost"

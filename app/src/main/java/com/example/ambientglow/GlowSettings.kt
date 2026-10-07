@@ -496,4 +496,3 @@ data class GlowSettings(
  */
 fun GlowSettings.forPreview(): GlowSettings =
     copy(ledBrightness = LedBrightness.MAX, lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
-

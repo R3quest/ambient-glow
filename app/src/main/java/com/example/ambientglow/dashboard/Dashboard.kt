@@ -451,9 +451,10 @@ private fun ScreenPage(
 
 /**
  * Main choices first, fine-tuning last: the look and its preview (with a way to the LED it ends
- * in, [onMoveLed]), the element, the wave it rides, then Edge Frame's own options. Each change plays at real size ([onShowcase]). With Just the LED
- * nothing here would do anything, so the options give way to a card that says so and leads back
- * to the screen choice; each side carries its own gap, so the swap is one movement.
+ * in, [onMoveLed]), the element, the wave it rides, then Edge Frame's own options. Each change
+ * plays at real size ([onShowcase]). With Just the LED nothing here would do anything, so the
+ * options give way to a card that says so and leads back to the screen choice; each side carries
+ * its own gap, so the swap is one movement.
  */
 @Composable
 private fun EffectPage(
