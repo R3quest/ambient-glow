@@ -61,6 +61,7 @@ import com.example.ambientglow.RealTimeMotion
 import com.example.ambientglow.forPreview
 import com.example.ambientglow.glassHaze
 import com.example.ambientglow.ledBreathAt
+import com.example.ambientglow.ledRingGapAt
 import com.example.ambientglow.ui.components.Chevron
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
@@ -261,7 +262,7 @@ internal fun EffectPreview(
                 radius = previewDotRadius(settings.dotSize, scale),
                 onCamera = settings.ledOnCamera,
                 geometry = mockGeometry,
-                ringGap = (1.5.dp * scale).coerceAtLeast(0.5.dp),
+                ringGap = ledRingGapAt(scale),
                 modifier = Modifier.fillMaxSize(),
             )
         }

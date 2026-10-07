@@ -40,7 +40,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInParent
@@ -163,7 +165,7 @@ internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> U
                 // Motion and colour aren't plain from their names: what the picked one does, under it.
                 Spacer(Modifier.height(14.dp))
                 OptionGroup(stringResource(R.string.edge_motion)) {
-                    ChipRow(EdgeMotion.entries, settings.edgeMotion) { onEffect(settings.copy(edgeMotion = it)) }
+                    MotionPicker(settings) { onEffect(settings.copy(edgeMotion = it)) }
                     OptionBody(settings.edgeMotion) { stringResource(it.body) }
                 }
                 // Carries its own gap, so nothing jumps as it comes and goes.
@@ -292,6 +294,51 @@ private fun MaterialPicker(settings: GlowSettings, onSelect: (EdgeMaterial) -> U
 private val NeonGlyphAt = Offset(6.5f, 2.5f)
 private val NeonGlyphSize = Size(11f, 19f)
 private val NeonGlyphCorner = CornerRadius(3f)
+
+/**
+ * The motions as pictures on the same phone: Pulse its edge with a breath inside it, Comet the
+ * left side lit up to a head at the camera, Twin both sides meeting there. They light in what the
+ * frame is made of: the element's colour, or neon's cyan.
+ */
+@Composable
+private fun MotionPicker(settings: GlowSettings, onSelect: (EdgeMotion) -> Unit) {
+    val accent = if (settings.elementalEdge && elementFramesSupported) settings.element.accent else GlowPalette.Cyan
+    GlyphTiles(EdgeMotion.entries, settings.edgeMotion, onSelect, ::glyphStroke) { motion, lit, stroke ->
+        val color = ink(lit, accent)
+        if (motion == EdgeMotion.PULSE) {
+            drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, style = stroke)
+            drawRoundRect(color, PulseInnerAt, PulseInnerSize, PulseInnerCorner, alpha = 0.45f, style = stroke)
+        } else {
+            // The frame faint behind the light running round it, a fading tail and a head at the camera.
+            drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, alpha = 0.3f, style = stroke)
+            drawPath(CometTail, color, alpha = 0.55f, style = stroke)
+            drawPath(CometHead, color, style = stroke)
+            if (motion == EdgeMotion.TWIN) {
+                scale(-1f, 1f, Offset(12f, 0f)) {
+                    drawPath(CometTail, color, alpha = 0.55f, style = stroke)
+                    drawPath(CometHead, color, style = stroke)
+                }
+            }
+            drawCircle(color, 1.5f, Offset(12f, 2.5f))
+        }
+    }
+}
+
+private val PulseInnerAt = Offset(9f, 5f)
+private val PulseInnerSize = Size(6f, 14f)
+private val PulseInnerCorner = CornerRadius(1.5f)
+
+/** Comet's light up the phone's left side: the tail low down, then up round the corner to the camera. */
+private val CometTail = Path().apply {
+    moveTo(6.5f, 17f)
+    lineTo(6.5f, 11f)
+}
+private val CometHead = Path().apply {
+    moveTo(6.5f, 11f)
+    lineTo(6.5f, 5.5f)
+    quadraticTo(6.5f, 2.5f, 9.5f, 2.5f)
+    lineTo(12f, 2.5f)
+}
 
 /**
  * The three styles as rows: a mini phone showing the style in [accent], and its name. A new

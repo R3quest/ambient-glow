@@ -259,6 +259,12 @@ private const val DUO_HUE_SHIFT = 55f
 private val HEAD_LEAD = 5.dp
 private const val HEAD_TAIL_PX = 420f
 
+/** An element's comet heads fade in ahead of them over this share of how far in its frame reaches. */
+private const val ELEMENT_HEAD_LEAD = 0.35f
+
+/** How far the element's frame dies down as it drains into the camera, as a share of its spread. */
+private const val ELEMENT_CALM = 0.7f
+
 /** The element's frame ([ElementFrame]) runs hottest over this share of a head's tail. */
 private const val ELEMENT_HEAT_TAIL = 0.6f
 
@@ -851,14 +857,17 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val tint = if (element == null) edgeTint(settings.edgeColor, color) else null
                 val center = Offset(size.width / 2f, size.height / 2f)
 
-                // The heads: in perimeter space where runtime shaders exist, as a sweep below.
+                // The heads: in perimeter space where runtime shaders exist, as a sweep below. An
+                // element's frame reaches far in from the edge, so its heads lead with a longer
+                // fade: cut as close as a neon line's, the light ahead of them ends in a square edge.
+                val headLead = max(HEAD_LEAD.toPx() * scale, ELEMENT_HEAD_LEAD * (element?.inwardPx ?: 0f))
                 val heads = if (motion == EdgeMotion.PULSE) {
                     null
                 } else {
                     edgeLight(
                         size,
                         corner,
-                        lead = HEAD_LEAD.toPx() * scale,
+                        lead = headLead,
                         tail = HEAD_TAIL_PX * scale,
                         base = COMET_BASE,
                         mirror = motion == EdgeMotion.TWIN,
@@ -913,7 +922,17 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                     val spread = 0.55f + 0.45f * b
                     if (element != null) {
                         val focus = if (motion == EdgeMotion.PULSE) 0f else motionAt(ms, spawn)
-                        element.update(ms, headAt(ms, spawn), focus, spread, crackGrowthAt(ms, spawn))
+                        // As the light drains into the camera the element dies down with it, rather
+                        // than only being cut away: flames sink, the liquid ebbs, the wind drops and
+                        // the cracks close up, their light gathering into the hand-off's token.
+                        val calm = ExitEasing.transform(smoothstep(EXIT_AT_MS, ARRIVAL_MS.toFloat(), ms))
+                        element.update(
+                            ms,
+                            headAt(ms, spawn),
+                            focus,
+                            spread * (1f - ELEMENT_CALM * calm),
+                            crackGrowthAt(ms, spawn) * (1f - calm),
+                        )
                         drawRoundRect(element, Offset.Zero, size, bandCorner, style = band)
                     } else {
                         for (i in 0 until rings) {
@@ -1134,7 +1153,7 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                 val camera = geometry.lens(size.width, density, scale)
                 val lens = camera.radius
                 // The LED's own core: the dot, or the ring's thickness.
-                val ledCore = settings.dotSize.radius.toPx() * scale
+                val ledCore = ledRadiusAt(settings.dotSize, scale).toPx()
                 if (ring) {
                     center = camera.center
                     radius = lens + (metrics.ringGap.toPx() + metrics.stroke.toPx() / 2f) * scale
@@ -1145,7 +1164,7 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                 // Ring: the LED lights here too only when it is on the camera; the dot always.
                 val ledHere = !ring || settings.ledOnCamera
                 val ledLine = ledCore * LED_RING_STROKE_FACTOR
-                val ledRing = lens + LED_RING_GAP.toPx() * scale + ledLine / 2f
+                val ledRing = lens + ledRingGapAt(scale).toPx() + ledLine / 2f
                 val ledStroke = Stroke(ledLine)
                 val ledHot = Stroke(ledLine * 0.4f)
                 // The ring never grows in over the lens it surrounds.

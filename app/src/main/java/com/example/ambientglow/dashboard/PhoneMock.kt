@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.example.ambientglow.CutoutSpot
 import com.example.ambientglow.DotSize
 import com.example.ambientglow.ScreenGeometry
+import com.example.ambientglow.ledRadiusAt
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
 
@@ -82,8 +83,5 @@ internal fun PhoneMock(
 /** How much smaller a style tile's mini phone is than the screen. */
 internal const val TILE_PREVIEW_SCALE = 0.22f
 
-private val MIN_PREVIEW_DOT = 1.4.dp
-
 /** The real dot scaled down to a mock-up, kept just large enough to see. */
-internal fun previewDotRadius(size: DotSize, scale: Float): Dp =
-    (size.radius * scale).coerceAtLeast(MIN_PREVIEW_DOT)
+internal fun previewDotRadius(size: DotSize, scale: Float): Dp = ledRadiusAt(size, scale)

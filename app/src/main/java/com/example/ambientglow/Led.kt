@@ -52,6 +52,20 @@ internal object RealTimeMotion : MotionDurationScale {
 internal const val LED_RING_STROKE_FACTOR = 0.6f
 internal val LED_RING_GAP = 1.5.dp
 
+/** A scaled-down LED (a mock-up's) is kept at least this big, and its ring at least this clear of the lens. */
+private val MIN_SCALED_LED = 1.4.dp
+private val MIN_SCALED_RING_GAP = 0.5.dp
+
+/**
+ * The LED's radius at [scale]: the real dot, or scaled down to a mock-up and kept just large
+ * enough to see. Whatever draws the LED or lands on it (the effects' endings) uses this, so the
+ * light lands exactly on the dot the mock-up then breathes.
+ */
+internal fun ledRadiusAt(size: DotSize, scale: Float): Dp = (size.radius * scale).coerceAtLeast(MIN_SCALED_LED)
+
+/** The ring LED's clearance from the lens at [scale], as [ledRadiusAt] is its size. */
+internal fun ledRingGapAt(scale: Float): Dp = (LED_RING_GAP * scale).coerceAtLeast(MIN_SCALED_RING_GAP)
+
 /**
  * A bright core, a hot white centre and a soft radial bloom. The brush is built once per
  * colour/size change in drawWithCache; each breath frame only changes the layer alpha.

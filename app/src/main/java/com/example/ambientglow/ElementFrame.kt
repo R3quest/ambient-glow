@@ -340,9 +340,10 @@ half4 main(float2 p) {
             float t = (fract(u) * L - off) / len;
             if (t > 0.0 && t < 1.0) {
                 float wig = 0.18 * sin(t * 3.0 + time * 5.0 + r * 20.0);
-                float thick = (0.3 * dp + (0.6 * dp + 0.12 * line) * t * t) * (1.0 - 0.4 * depthT) * (0.6 + 0.4 * spread);
+                // Never thinner than about a pixel, so a shrunken preview's lines don't flicker out between pixels.
+                float thick = max(0.55, (0.3 * dp + (0.6 * dp + 0.12 * line) * t * t) * (1.0 - 0.4 * depthT) * (0.6 + 0.4 * spread));
                 float dy = abs(yl - wig) * lane;
-                float a = smoothstep(thick + 0.7, thick - 0.7, dy) * pow(t, 1.4) * smoothstep(1.0, 0.94, t) * (0.5 + 0.5 * heat);
+                float a = smoothstep(thick + 0.7, thick - 0.7, dy) * pow(t, 1.4) * smoothstep(1.0, 0.94, t) * (0.5 + 0.5 * heat) * (0.3 + 0.7 * spread);
                 float3 c = mix(float3(shade.rgb), float3(glow.rgb), smoothstep(0.0, 0.5, t));
                 c = mix(c, float3(core.rgb), smoothstep(0.7, 0.97, t));
                 col = over(float4(c * a, a), col);
@@ -492,6 +493,9 @@ private const val WATER_DEPTH_DP = 3f
 private const val AIR_LANE_DP = 3.2f
 private const val AIR_LANES = 6f
 
+/** Air: never shallower lanes than this, so a shrunken preview's lines stay apart. */
+private const val AIR_LANE_MIN_PX = 3.5f
+
 /** Air: what the gust carries is this size along the frame, as a share of the wave's. */
 private const val AIR_CARRY_SIZE = 0.75f
 
@@ -602,7 +606,7 @@ private class ElementFrameRuntime(
             }
             SpawnElement.AIR -> {
                 val palette = airPalette(settings.airColor, brand)
-                val lane = AIR_LANE_DP * dp + 0.3f * line
+                val lane = max(AIR_LANE_DP * dp + 0.3f * line, AIR_LANE_MIN_PX)
                 val carry = settings.airCarry
                 runtime = RuntimeShader(AIR_FRAME_AGSL).apply {
                     setFloatUniform("lane", lane)

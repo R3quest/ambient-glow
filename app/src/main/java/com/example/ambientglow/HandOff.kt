@@ -186,9 +186,9 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val origin = camera.center
                 val around = settings.ledOnCamera
                 // The LED, as the glow screen lights it: the dot, or the ring round the lens.
-                val ledCore = settings.dotSize.radius.toPx() * scale
+                val ledCore = ledRadiusAt(settings.dotSize, scale).toPx()
                 val ledLine = ledCore * LED_RING_STROKE_FACTOR
-                val ledRing = camera.radius + LED_RING_GAP.toPx() * scale + ledLine / 2f
+                val ledRing = camera.radius + ledRingGapAt(scale).toPx() + ledLine / 2f
                 val target = if (around) origin else dotCenter(settings.dotX, settings.dotY, size, ledCore * DOT_HALO_FACTOR)
                 val flies = around || (target - origin).getDistance() > HANDOFF_MIN_FLIGHT.toPx() * scale
                 val u = max(TOKEN_UNIT.toPx() * scale, TOKEN_UNIT_MIN_PX)
