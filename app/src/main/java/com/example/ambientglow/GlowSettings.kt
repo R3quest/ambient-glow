@@ -39,8 +39,8 @@ enum class DotSize(val radius: Dp, @param:StringRes override val label: Int) : L
 
 /**
  * How bright the LED dot's own light is, as its alpha over the black panel. Window brightness is
- * left alone ([LED_WINDOW_BRIGHTNESS] on the LED screen, the system's in the dashboard preview),
- * so this dims the dot and nothing else.
+ * left alone (full on the LED screen, the system's in the dashboard preview), so this dims the
+ * dot and nothing else.
  */
 enum class LedBrightness(val level: Float, @param:StringRes override val label: Int) : Labeled {
     SOFT(0.35f, R.string.led_brightness_soft),
@@ -473,7 +473,7 @@ data class GlowSettings(
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
     val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT
 
-    /** On a screen with no camera (settings restored from another phone), the ring is a dot where it sat. */
+    /** On a screen with no camera (the default ring, or one restored from another phone), the ring is a dot where it sat. */
     fun forScreen(geometry: ScreenGeometry): GlowSettings =
         if (ledOnCamera && geometry.noCamera) copy(ledOnCamera = false) else this
 

@@ -72,8 +72,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
@@ -268,15 +268,17 @@ internal fun Dashboard(reported: ScreenGeometry) {
             if (save) GlowPrefs.save(context, settings)
         }
     }
-    // No punch-hole for the ring (the default, or restored from another phone): store the dot
-    // that stands in for it, at the centre of the status bar's line, so its chip shows picked.
+    // The ring (the default, or restored from another phone) sits on this screen's lens spot, so
+    // its pin and the crosshair line up and a step starts there. Without a punch-hole that spot
+    // is the centre dot on the status bar's line, which stands in for the ring.
     val camera = rememberCamera(geometry)
     val window = LocalWindowInfo.current.containerSize
     val screenDensity = LocalDensity.current
-    LaunchedEffect(geometry.noCamera, window) {
-        if (!geometry.noCamera || !settings.ledOnCamera || window.width == 0) return@LaunchedEffect
-        val centre = dotSpots(camera, window, settings.dotSize, screenDensity).first { it.atLens }
-        edit(save = true) { it.copy(ledOnCamera = false, dotX = centre.x, dotY = centre.y) }
+    LaunchedEffect(geometry.measured, window) {
+        if (!geometry.measured || !settings.ledOnCamera || window.width == 0) return@LaunchedEffect
+        val lens = dotSpots(camera, window, settings.dotSize, screenDensity).first { it.atLens }
+        if (lens.camera && lens.matches(settings.dotX, settings.dotY)) return@LaunchedEffect
+        edit(save = true) { it.copy(ledOnCamera = lens.camera, dotX = lens.x, dotY = lens.y) }
     }
     val openScreenTab: () -> Unit = {
         scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.SCREEN)) }

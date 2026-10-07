@@ -995,6 +995,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 }
 
+/** Window brightness while the dot is lit: fixed, so [LedBrightness] dims only the dot's pixels. */
+private const val LED_WINDOW_BRIGHTNESS = 1f
+
 /** Dark between breaths; with the breath it keeps a ~3.37 s period. */
 private const val LED_DARK_MS = 1_510L
 
