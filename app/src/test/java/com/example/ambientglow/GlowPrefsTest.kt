@@ -43,7 +43,7 @@ class GlowPrefsTest {
         edgeGlow = EdgeGlow.STRONG,
         edgeMotion = EdgeMotion.PULSE,
         edgeColor = EdgeColor.SPECTRUM,
-        material = GlowMaterial.NEON,
+        edgeMaterial = EdgeMaterial.NEON,
     )
 
     @Test

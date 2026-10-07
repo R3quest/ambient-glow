@@ -59,12 +59,12 @@ import androidx.compose.ui.unit.dp
 import com.example.ambientglow.DEFAULT_GLOW_COLOR
 import com.example.ambientglow.EarthColor
 import com.example.ambientglow.EdgeColor
+import com.example.ambientglow.EdgeMaterial
 import com.example.ambientglow.EdgeGlow
 import com.example.ambientglow.EdgeMotion
 import com.example.ambientglow.EdgeWidth
 import com.example.ambientglow.GlowForm
 import com.example.ambientglow.GlowGraphic
-import com.example.ambientglow.GlowMaterial
 import com.example.ambientglow.GlowMetrics
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.GlowStyle
@@ -86,7 +86,7 @@ import com.example.ambientglow.ui.theme.GlowShapes
 import kotlin.math.ceil
 
 // ---------------------------------------------------------------------------------------------
-// The EFFECT tab: the look (live preview, style, material, try-out colour), Edge Frame's options, and the
+// The EFFECT tab: the look (live preview, style, try-out colour), Edge Frame's options, and the
 // card that stands in for them all with Just the LED. The spawn wave and its element are in ElementCard.
 // ---------------------------------------------------------------------------------------------
 
@@ -123,11 +123,9 @@ internal fun EffectCard(
     previewHeld: PreviewPhase?,
     loop: Boolean,
     onStyle: (GlowStyle) -> Unit,
-    onMaterial: (GlowMaterial) -> Unit,
     onSample: (Int) -> Unit,
 ) {
     val color = SAMPLE_COLORS[sample].color
-    val shaders = elementFramesSupported
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
         // Preview beside the style list: what you pick is what plays, without scrolling.
@@ -143,11 +141,6 @@ internal fun EffectCard(
                 OptionBody(settings.style) { stringResource(it.body) }
             }
         }
-        // What either style is made of: under the style, as the two make the look together.
-        OptionGroup(stringResource(R.string.edge_material)) {
-            MaterialPicker(settings, onMaterial)
-            OptionBody(materialBody(settings, shaders)) { body -> body.map { stringResource(it) }.joinToString(" ") }
-        }
         OptionGroup(stringResource(R.string.effect_sample_color)) {
             SampleColorRow(selected = sample, onSelect = onSample)
             Text(
@@ -160,9 +153,9 @@ internal fun EffectCard(
 }
 
 /**
- * Edge Frame's own options, folded under what they are set to; the beacon has none. Made of the
- * element (the material, picked with the style), the frame takes the element's colours, so its
- * own colour row steps aside.
+ * Edge Frame's own options, folded under what they are set to; the other styles have none. The
+ * material leads: made of the element, the frame takes the element's colours, so its own
+ * colour row steps aside.
  */
 @Composable
 internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
@@ -170,13 +163,18 @@ internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> U
     Column(Modifier.glowCard(vertical = 10.dp)) {
         Fold(title = stringResource(R.string.fold_edge), summary = edgePhrasing(settings, shaders).text()) {
             Column {
+                OptionGroup(stringResource(R.string.edge_material)) {
+                    MaterialPicker(settings) { onEffect(settings.copy(edgeMaterial = it)) }
+                    OptionBody(materialBody(settings, shaders)) { body -> body.map { stringResource(it) }.joinToString(" ") }
+                }
                 // Motion and colour aren't plain from their names: what the picked one does, under it.
+                Spacer(Modifier.height(14.dp))
                 OptionGroup(stringResource(R.string.edge_motion)) {
                     MotionPicker(settings) { onEffect(settings.copy(edgeMotion = it)) }
                     OptionBody(settings.edgeMotion) { stringResource(it.body) }
                 }
                 // Carries its own gap, so nothing jumps as it comes and goes.
-                Disclosure(visible = !(settings.elemental && shaders)) {
+                Disclosure(visible = !(settings.elementalEdge && shaders)) {
                     Box(Modifier.padding(top = 14.dp)) {
                         OptionGroup(stringResource(R.string.edge_color)) {
                             ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
@@ -238,7 +236,7 @@ internal fun edgePhrasing(settings: GlowSettings, shaders: Boolean) = Phrasing(
     R.string.edge_summary,
     listOf(
         settings.edgeMotion.phrase,
-        if (settings.elemental && shaders) elementFramePhrase(settings) else settings.edgeColor.phrase,
+        if (settings.elementalEdge && shaders) elementFramePhrase(settings) else settings.edgeColor.phrase,
         settings.edgeWidth.phrase,
         settings.edgeGlow.phrase,
     ),
@@ -255,52 +253,41 @@ private fun elementFramePhrase(settings: GlowSettings): Int = when (settings.ele
 }
 
 /**
- * What the chosen material does in the chosen style, as the sentences to say: the element's
- * frame or beacon and where its colours come from, or why it plays as Neon for now.
+ * What the chosen material does, as the sentences to say: the element's frame and where its
+ * colours come from, or why it plays as Neon for now.
  */
-internal fun materialBody(settings: GlowSettings, shaders: Boolean): List<Int> {
-    val beacon = settings.style == GlowStyle.BEACON
-    return when {
-        settings.material == GlowMaterial.NEON ->
-            listOf(if (beacon) R.string.beacon_material_neon_body else R.string.edge_material_neon_body)
-        !shaders -> listOf(R.string.edge_material_needs_shaders)
-        !settings.spawn -> listOf(R.string.edge_material_needs_spawn)
-        else -> {
-            val look = when (settings.element) {
-                SpawnElement.FIRE -> if (beacon) R.string.beacon_material_fire_body else R.string.edge_material_fire_body
-                SpawnElement.WATER -> if (beacon) R.string.beacon_material_water_body else R.string.edge_material_water_body
-                SpawnElement.AIR -> if (beacon) R.string.beacon_material_air_body else R.string.edge_material_air_body
-                SpawnElement.EARTH -> if (beacon) R.string.beacon_material_earth_body else R.string.edge_material_earth_body
-            }
-            // Water's is the app's colour, as its wave is: it has no colours of its own to point to.
-            if (settings.element == SpawnElement.WATER) listOf(look) else listOf(look, R.string.edge_material_element_colours)
-        }
-    }
+internal fun materialBody(settings: GlowSettings, shaders: Boolean): List<Int> = when {
+    settings.edgeMaterial == EdgeMaterial.NEON -> listOf(R.string.edge_material_neon_body)
+    !shaders -> listOf(R.string.edge_material_needs_shaders)
+    !settings.spawn -> listOf(R.string.edge_material_needs_spawn)
+    // Water's is the app's colour, as its wave is: it has no colours of its own to point to.
+    settings.element == SpawnElement.WATER -> listOf(R.string.edge_material_water_body)
+    else -> listOf(
+        when (settings.element) {
+            SpawnElement.FIRE -> R.string.edge_material_fire_body
+            SpawnElement.AIR -> R.string.edge_material_air_body
+            else -> R.string.edge_material_earth_body
+        },
+        R.string.edge_material_element_colours,
+    )
 }
 
 /**
- * Neon or the element, as pictures: neon light in the style's shape (a phone's edge, or the
- * beacon's ring), and the chosen element's glyph in its own colour, so the tile says what the
- * effect will be made of.
+ * Neon or the element, as pictures: a phone's edge lit in neon, and the chosen element's glyph
+ * in its own colour, so the tile says what the frame will be made of.
  */
 @Composable
-private fun MaterialPicker(settings: GlowSettings, onSelect: (GlowMaterial) -> Unit) {
+private fun MaterialPicker(settings: GlowSettings, onSelect: (EdgeMaterial) -> Unit) {
     val element = settings.element
-    GlyphTiles(GlowMaterial.entries, settings.material, onSelect, ::glyphStroke) { material, lit, stroke ->
+    GlyphTiles(EdgeMaterial.entries, settings.edgeMaterial, onSelect, ::glyphStroke) { material, lit, stroke ->
         when (material) {
-            GlowMaterial.NEON -> {
+            EdgeMaterial.NEON -> {
                 val color = ink(lit, GlowPalette.Cyan)
-                // The glow first, then the line on it.
-                val glow = Stroke(stroke.width * 2.6f)
-                if (settings.style == GlowStyle.BEACON) {
-                    drawCircle(color, NeonRingRadius, NeonRingCenter, alpha = 0.22f * lit, style = glow)
-                    drawCircle(color, NeonRingRadius, NeonRingCenter, style = stroke)
-                } else {
-                    drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, alpha = 0.22f * lit, style = glow)
-                    drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, style = stroke)
-                }
+                // The edge's glow first, then the line on it.
+                drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, alpha = 0.22f * lit, style = Stroke(stroke.width * 2.6f))
+                drawRoundRect(color, NeonGlyphAt, NeonGlyphSize, NeonGlyphCorner, style = stroke)
             }
-            GlowMaterial.ELEMENT -> {
+            EdgeMaterial.ELEMENT -> {
                 val color = ink(lit, element.accent)
                 element.glyph.forEach { drawPath(it, color, style = stroke) }
             }
@@ -313,10 +300,6 @@ private val NeonGlyphAt = Offset(6.5f, 2.5f)
 private val NeonGlyphSize = Size(11f, 19f)
 private val NeonGlyphCorner = CornerRadius(3f)
 
-/** Neon's glyph for the beacon: a ring on the 24-unit grid. */
-private val NeonRingCenter = Offset(12f, 12f)
-private const val NeonRingRadius = 7f
-
 /**
  * The motions as pictures on the same phone: Pulse its edge with a breath inside it, Comet the
  * left side lit up to a head at the camera, Twin both sides meeting there. They light in what the
@@ -324,7 +307,7 @@ private const val NeonRingRadius = 7f
  */
 @Composable
 private fun MotionPicker(settings: GlowSettings, onSelect: (EdgeMotion) -> Unit) {
-    val accent = if (settings.elemental && elementFramesSupported) settings.element.accent else GlowPalette.Cyan
+    val accent = if (settings.elementalEdge && elementFramesSupported) settings.element.accent else GlowPalette.Cyan
     GlyphTiles(EdgeMotion.entries, settings.edgeMotion, onSelect, ::glyphStroke) { motion, lit, stroke ->
         val color = ink(lit, accent)
         if (motion == EdgeMotion.PULSE) {

@@ -82,13 +82,13 @@ class HandOffTest {
 
     @Test
     fun theTokenIsTheElementsOnlyWhenTheFrameIsMadeOfIt() {
-        val elemental = GlowSettings(material = GlowMaterial.ELEMENT, spawn = true)
+        val elemental = GlowSettings(edgeMaterial = EdgeMaterial.ELEMENT, spawn = true)
         assertEquals(HandOffToken.EMBER, handOffToken(elemental.copy(element = SpawnElement.FIRE), shaders = true))
         assertEquals(HandOffToken.DROP, handOffToken(elemental.copy(element = SpawnElement.WATER), shaders = true))
         assertEquals(HandOffToken.WISP, handOffToken(elemental.copy(element = SpawnElement.AIR), shaders = true))
         assertEquals(HandOffToken.GEM, handOffToken(elemental.copy(element = SpawnElement.EARTH), shaders = true))
         // Neon, or an element frame that plays as neon, hands over a plain spark.
-        assertEquals(HandOffToken.SPARK, handOffToken(elemental.copy(material = GlowMaterial.NEON), shaders = true))
+        assertEquals(HandOffToken.SPARK, handOffToken(elemental.copy(edgeMaterial = EdgeMaterial.NEON), shaders = true))
         assertEquals(HandOffToken.SPARK, handOffToken(elemental.copy(spawn = false), shaders = true))
         assertEquals(HandOffToken.SPARK, handOffToken(elemental, shaders = false))
     }
