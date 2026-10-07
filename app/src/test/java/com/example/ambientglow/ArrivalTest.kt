@@ -64,6 +64,14 @@ class ArrivalTest {
     }
 
     @Test
+    fun earthHasALookOfItsOwnAndIsTheOnlyEarthWave() {
+        assertTrue(SpawnElement.EARTH.ready)
+        SpawnElement.entries.forEach { element ->
+            assertEquals(element.name, element == SpawnElement.EARTH, GlowSettings(element = element).earth)
+        }
+    }
+
+    @Test
     fun onlyWaterAndAirBlurTheScreenAndEachByItsOwnChoice() {
         val blurred = GlowSettings(glassBlur = GlassBlur.STRONG, airBlur = GlassBlur.LIGHT)
         assertEquals(GlassBlur.STRONG, blurred.copy(element = SpawnElement.WATER).hazeBlur)

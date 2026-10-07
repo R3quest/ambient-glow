@@ -50,7 +50,7 @@ import com.example.ambientglow.ui.theme.GlowPalette
 // ---------------------------------------------------------------------------------------------
 // The spawn wave's switch, then the element it takes after: a row of tiles, each a line-drawn
 // glyph over its name (a sparkle on the premium ones), what the chosen one does, and its own
-// options (Water's glass, Fire's flames, Air's wind).
+// options (Water's glass, Fire's flames, Air's wind, Earth's stone).
 // ---------------------------------------------------------------------------------------------
 
 private val TILE_HEIGHT = 64.dp
@@ -67,8 +67,8 @@ private val PremiumTint = GlowPalette.Magenta
  * The spawn wave and the element it takes after, under the preview that shows it. The wave's
  * switch heads the card since every element is a look of it; with it off the elements and their
  * options dim and can't be changed. Each element folds its own options under the picker, so
- * adding one adds a fold, not a wall of chips. [accent] is the preview colour, which Fire's and
- * Air's colour chips show.
+ * adding one adds a fold, not a wall of chips. [accent] is the preview colour, which Fire's, Air's
+ * and Earth's colour chips show.
  */
 @Composable
 internal fun ElementCard(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
@@ -136,6 +136,19 @@ internal fun ElementCard(settings: GlowSettings, accent: Color, onEffect: (GlowS
                         enabled = settings.spawn,
                     ) {
                         AirOptions(settings, accent, onEffect)
+                    }
+                }
+            }
+            Disclosure(visible = element == SpawnElement.EARTH) {
+                Column(Modifier.padding(top = 12.dp)) {
+                    CardDivider()
+                    Spacer(Modifier.height(10.dp))
+                    Fold(
+                        title = stringResource(R.string.fold_earth),
+                        summary = earthPhrasing(settings).text(),
+                        enabled = settings.spawn,
+                    ) {
+                        EarthOptions(settings, accent, onEffect)
                     }
                 }
             }
@@ -213,7 +226,8 @@ internal val SpawnElement.accent: Color
         SpawnElement.FIRE -> Color(0xFFFF7A2F)
         SpawnElement.WATER -> GlowPalette.Cyan
         SpawnElement.AIR -> Color(0xFFB8D4E3)
-        SpawnElement.EARTH -> Color(0xFF7BD66B)
+        // Stone lit gold, as Earth's cracks glow.
+        SpawnElement.EARTH -> Color(0xFFE2B062)
     }
 
 /** Fire's flame on the glyphs' grid, standing on y 21 between x 6 and 18; Fire's options draw it too. */
@@ -240,12 +254,11 @@ private val GLYPHS: Map<SpawnElement, List<Path>> = mapOf(
         "M3 13 L18.6 13 C20.3 13 21.4 14.2 21.4 15.6 C21.4 17 20.3 18.1 18.9 18.1 C17.6 18.1 16.7 17.2 16.7 16",
         "M3 17 L11 17",
     ),
-    // A sprout from the ground.
+    // A faceted boulder: its outline, and the ridges between its faces.
     SpawnElement.EARTH to listOf(
-        "M12 20.5 L12 11.5",
-        "M12 14 C12 10.2 9.4 7.8 5.2 7.8 C5.2 11.6 7.8 14 12 14 Z",
-        "M12 11.5 C12 7.4 14.8 4.6 19.2 4.6 C19.2 8.8 16.4 11.5 12 11.5 Z",
-        "M6.5 20.5 L17.5 20.5",
+        "M3.5 19.5 L6 10.5 L11.5 4.5 L17.5 6.5 L20.5 13 L19 19.5 Z",
+        "M6 10.5 L12.5 12 L17.5 6.5",
+        "M12.5 12 L14 19.5",
     ),
 ).mapValues { (_, paths) -> paths.map { PathParser().parsePathString(it).toPath() } }
 

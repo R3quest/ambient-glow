@@ -5,6 +5,10 @@ import com.example.ambientglow.AirColor
 import com.example.ambientglow.AirFlow
 import com.example.ambientglow.AirGust
 import com.example.ambientglow.ArrivalMode
+import com.example.ambientglow.EarthColor
+import com.example.ambientglow.EarthDebris
+import com.example.ambientglow.EarthForce
+import com.example.ambientglow.EarthForm
 import com.example.ambientglow.EdgeColor
 import com.example.ambientglow.EdgeGlow
 import com.example.ambientglow.EdgeMotion
@@ -182,5 +186,41 @@ class SummaryTest {
         assertEquals("Two lights in the app's colour.", sentence("two lights in the app's colour."))
         assertEquals("LED", sentence("LED"))
         assertEquals("", sentence(""))
+    }
+
+    private val earth = GlowSettings(
+        earthForce = EarthForce.QUAKE,
+        earthForm = EarthForm.SPIRES,
+        earthColor = EarthColor.STONE,
+        earthDebris = EarthDebris.DUST,
+    )
+
+    @Test
+    fun earthSaysForceGroundColourAndWhatItThrowsUp() {
+        assertEquals(
+            Phrasing(
+                R.string.earth_summary_debris,
+                listOf(
+                    R.string.earth_force_quake_phrase,
+                    R.string.earth_form_spires_phrase,
+                    R.string.earth_color_stone_phrase,
+                    R.string.earth_debris_dust_phrase,
+                ),
+            ),
+            earthPhrasing(earth),
+        )
+    }
+
+    @Test
+    fun earthLeavesOutWhatItThrowsUpWhenNothing() {
+        assertEquals(
+            Phrasing(
+                R.string.earth_summary,
+                listOf(R.string.earth_force_tremor_phrase, R.string.earth_form_faults_phrase, R.string.earth_color_crystal_phrase),
+            ),
+            earthPhrasing(
+                earth.copy(earthForce = EarthForce.TREMOR, earthForm = EarthForm.FAULTS, earthColor = EarthColor.CRYSTAL, earthDebris = EarthDebris.NONE),
+            ),
+        )
     }
 }

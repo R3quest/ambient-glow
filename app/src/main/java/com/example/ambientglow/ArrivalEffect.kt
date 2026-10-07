@@ -312,7 +312,7 @@ private const val COMET_BASE = 0.15f
  * its chosen motion and colours, the Camera Ring and Custom Dot as a beacon sending out ripples.
  *
  * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]); with
- * [GlowSettings.air], a gust of wind ([AirWave]).
+ * [GlowSettings.air], a gust of wind ([AirWave]); with [GlowSettings.earth], a quake ([EarthWave]).
  *
  * With a blur ([GlowSettings.hazes]: Water's glass or Air's gust), [onBlurBehind] is told every
  * frame of the wave how blurred the screen under it should be and where ([GlassHazeTarget]), and
@@ -362,6 +362,7 @@ fun ArrivalEffect(
             when {
                 settings.fire -> FireWave(glow, settings, geometry, scale, overBlack, time)
                 settings.air -> AirWave(glow, settings, geometry, scale, time)
+                settings.earth -> EarthWave(glow, settings, geometry, scale, time)
                 else -> SpawnWave(glow, settings, geometry, scale, overBlack, time)
             }
         }
@@ -422,7 +423,8 @@ private suspend fun traceFrames(settings: GlowSettings, preview: Boolean) {
             "effect ${if (preview) "preview" else "live"} $what spawn=${settings.spawn} " +
                 "${settings.element} glass=${settings.glassBlur}/${settings.glassArea}/${settings.glassFrost} " +
                 "fire=${settings.fireFlames}/${settings.fireColor}/${settings.fireSparks}/${settings.fireWake} " +
-                "air=${settings.airGust}/${settings.airFlow}/${settings.airColor}/${settings.airCarry}/${settings.airBlur}: " +
+                "air=${settings.airGust}/${settings.airFlow}/${settings.airColor}/${settings.airCarry}/${settings.airBlur} " +
+                "earth=${settings.earthForce}/${settings.earthForm}/${settings.earthColor}/${settings.earthDebris}: " +
                 "${if (seconds > 0f) (frames / seconds).toInt() else 0} fps, $dropped stutters, worst ${worst / 1_000_000} ms"
         }
     }

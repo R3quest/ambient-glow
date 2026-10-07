@@ -107,9 +107,9 @@ enum class EdgeColor(
 
 /**
  * The element the spawn wave takes after; the wave always has one. Water is the glass wave, Fire
- * the ring of fire, Air a gust of wind; the others have no look of their own yet ([ready] is
- * false) and play the bare wave until they do. [premium] ones are marked as such but free to try
- * for now: nothing checks a purchase yet.
+ * the ring of fire, Air a gust of wind, Earth a quake breaking the ground open; one with no look
+ * of its own yet ([ready] is false) plays the bare wave until it has one. [premium] ones are
+ * marked as such but free to try for now: nothing checks a purchase yet.
  */
 enum class SpawnElement(
     @param:StringRes override val label: Int,
@@ -120,7 +120,7 @@ enum class SpawnElement(
     FIRE(R.string.element_fire, R.string.element_fire_body, ready = true, premium = true),
     WATER(R.string.element_water, R.string.element_water_body, ready = true, premium = false),
     AIR(R.string.element_air, R.string.element_air_body, ready = true, premium = true),
-    EARTH(R.string.element_earth, R.string.element_earth_body, ready = false, premium = true),
+    EARTH(R.string.element_earth, R.string.element_earth_body, ready = true, premium = true),
 }
 
 /**
@@ -302,6 +302,68 @@ enum class AirCarry(
 }
 
 /**
+ * Earth: how hard the ground is struck. It breaks into stones about [cell] across at full screen,
+ * its cracks about [crack] wide, and the earth jolts up to [shake] as it is struck.
+ */
+enum class EarthForce(
+    val cell: Dp,
+    val crack: Dp,
+    val shake: Dp,
+    @param:StringRes override val label: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    TREMOR(26.dp, 1.3.dp, 1.5.dp, R.string.earth_force_tremor, R.string.earth_force_tremor_phrase),
+    QUAKE(36.dp, 1.8.dp, 3.dp, R.string.earth_force_quake, R.string.earth_force_quake_phrase),
+    UPHEAVAL(48.dp, 2.4.dp, 5.dp, R.string.earth_force_upheaval, R.string.earth_force_upheaval_phrase),
+}
+
+/**
+ * Earth: what the ground breaks into behind the front.
+ * - FAULTS: only cracks, light pouring out of them; nothing covers the screen.
+ * - SLABS: plates of stone heave up between glowing cracks, then crumble.
+ * - SPIRES: shards of rock burst up and out, as earth is bent in anime, then sink back.
+ */
+enum class EarthForm(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    FAULTS(R.string.earth_form_faults, R.string.earth_form_faults_body, R.string.earth_form_faults_phrase),
+    SLABS(R.string.earth_form_slabs, R.string.earth_form_slabs_body, R.string.earth_form_slabs_phrase),
+    SPIRES(R.string.earth_form_spires, R.string.earth_form_spires_body, R.string.earth_form_spires_phrase),
+}
+
+/**
+ * Earth: its colours ([earthPalette]).
+ * - STONE: grey stone with golden light in its cracks, like pottery mended with gold. The same for every app.
+ * - APP: the same stone, its cracks glowing in the message's brand colour.
+ * - CRYSTAL: the ground breaks open into crystal in the brand colour, as a geode does.
+ */
+enum class EarthColor(
+    @param:StringRes override val label: Int,
+    @param:StringRes val body: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    STONE(R.string.earth_color_stone, R.string.earth_color_stone_body, R.string.earth_color_stone_phrase),
+    APP(R.string.earth_color_app, R.string.earth_color_app_body, R.string.earth_color_app_phrase),
+    CRYSTAL(R.string.earth_color_crystal, R.string.earth_color_crystal_body, R.string.earth_color_crystal_phrase),
+}
+
+/**
+ * Earth: what the quake throws up. DUST is smoke: a billowing wall of it kicked up behind the
+ * front, thinning into wisps as it settles. RUBBLE is chunks of stone thrown up, tumbling and
+ * falling back.
+ */
+enum class EarthDebris(
+    @param:StringRes override val label: Int,
+    @param:StringRes val phrase: Int,
+) : Labeled {
+    NONE(R.string.earth_debris_none, R.string.earth_debris_none_phrase),
+    DUST(R.string.earth_debris_dust, R.string.earth_debris_dust_phrase),
+    RUBBLE(R.string.earth_debris_rubble, R.string.earth_debris_rubble_phrase),
+}
+
+/**
  * What a new message looks like on a locked phone.
  * - LOCK_SCREEN: the lock screen lights up with all its notifications and the effect plays over
  *   it (needs [GlowShield]), then the LED dot covers it.
@@ -363,6 +425,10 @@ data class GlowSettings(
     val airCarry: AirCarry = AirCarry.PETALS,
     /** How much the gust blurs the screen it passes over, in a band behind its front. */
     val airBlur: GlassBlur = GlassBlur.LIGHT,
+    val earthForce: EarthForce = EarthForce.QUAKE,
+    val earthForm: EarthForm = EarthForm.SPIRES,
+    val earthColor: EarthColor = EarthColor.STONE,
+    val earthDebris: EarthDebris = EarthDebris.DUST,
     val edgeWidth: EdgeWidth = EdgeWidth.THIN,
     val edgeGlow: EdgeGlow = EdgeGlow.SOFT,
     val edgeMotion: EdgeMotion = EdgeMotion.COMET,
@@ -376,6 +442,9 @@ data class GlowSettings(
 
     /** The spawn wave bursts out as a gust: lines of wind sweeping out of the camera, carrying what it picks up. */
     val air: Boolean get() = element == SpawnElement.AIR
+
+    /** The spawn wave strikes the ground: a shock ring runs out of the camera and the ground behind it breaks open in light and stone. */
+    val earth: Boolean get() = element == SpawnElement.EARTH
 
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
     val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT

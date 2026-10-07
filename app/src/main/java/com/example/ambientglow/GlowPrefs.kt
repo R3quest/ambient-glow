@@ -37,6 +37,10 @@ object GlowPrefs {
     private const val KEY_AIR_COLOR = "air_color"
     private const val KEY_AIR_CARRY = "air_carry"
     private const val KEY_AIR_BLUR = "air_blur"
+    private const val KEY_EARTH_FORCE = "earth_force"
+    private const val KEY_EARTH_FORM = "earth_form"
+    private const val KEY_EARTH_COLOR = "earth_color"
+    private const val KEY_EARTH_DEBRIS = "earth_debris"
     private const val KEY_EDGE_WIDTH = "edge_width"
     private const val KEY_EDGE_GLOW = "edge_glow"
     private const val KEY_EDGE_MOTION = "edge_motion"
@@ -79,6 +83,10 @@ object GlowPrefs {
             airColor = getEnum(KEY_AIR_COLOR, defaults.airColor),
             airCarry = getEnum(KEY_AIR_CARRY, defaults.airCarry),
             airBlur = getEnum(KEY_AIR_BLUR, defaults.airBlur),
+            earthForce = getEnum(KEY_EARTH_FORCE, defaults.earthForce),
+            earthForm = getEnum(KEY_EARTH_FORM, defaults.earthForm),
+            earthColor = getEnum(KEY_EARTH_COLOR, defaults.earthColor),
+            earthDebris = getEnum(KEY_EARTH_DEBRIS, defaults.earthDebris),
             edgeWidth = getEnum(KEY_EDGE_WIDTH, defaults.edgeWidth),
             edgeGlow = getEnum(KEY_EDGE_GLOW, defaults.edgeGlow),
             edgeMotion = getEnum(KEY_EDGE_MOTION, defaults.edgeMotion),
@@ -113,6 +121,10 @@ object GlowPrefs {
             putString(KEY_AIR_COLOR, settings.airColor.name)
             putString(KEY_AIR_CARRY, settings.airCarry.name)
             putString(KEY_AIR_BLUR, settings.airBlur.name)
+            putString(KEY_EARTH_FORCE, settings.earthForce.name)
+            putString(KEY_EARTH_FORM, settings.earthForm.name)
+            putString(KEY_EARTH_COLOR, settings.earthColor.name)
+            putString(KEY_EARTH_DEBRIS, settings.earthDebris.name)
             putString(KEY_EDGE_WIDTH, settings.edgeWidth.name)
             putString(KEY_EDGE_GLOW, settings.edgeGlow.name)
             putString(KEY_EDGE_MOTION, settings.edgeMotion.name)
