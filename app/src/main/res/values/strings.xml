@@ -122,7 +122,7 @@
     <string name="earth_color_app">APP</string>
     <string name="earth_color_crystal">CRYSTAL</string>
     <string name="earth_color_stone_body">Grey stone with golden light in its cracks, like pottery mended with gold. The same for every app.</string>
-    <string name="earth_color_app_body">Grey stone whose cracks glow in the colour of the app that sent the message.</string>
+    <string name="earth_color_app_body">Stone tinged with the colour of the app that sent the message, its cracks glowing in it.</string>
     <string name="earth_color_crystal_body">The ground breaks open into crystal in the colour of the app that sent the message, the way a geode does.</string>
     <string name="earth_debris">THROWN UP</string>
     <string name="earth_debris_none">NONE</string>
@@ -347,7 +347,7 @@
     <string name="earth_form_slabs_phrase">heaving up slabs</string>
     <string name="earth_form_spires_phrase">bursting up in spires</string>
     <string name="earth_color_stone_phrase">in grey stone and golden light</string>
-    <string name="earth_color_app_phrase">in stone lit with the app\'s colour</string>
+    <string name="earth_color_app_phrase">in stone tinged with the app\'s colour</string>
     <string name="earth_color_crystal_phrase">in crystal of the app\'s colour</string>
     <string name="earth_debris_none_phrase">throwing up nothing</string>
     <string name="earth_debris_dust_phrase">raising a cloud of smoke</string>

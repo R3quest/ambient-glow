@@ -336,7 +336,7 @@ enum class EarthForm(
 /**
  * Earth: its colours ([earthPalette]).
  * - STONE: grey stone with golden light in its cracks, like pottery mended with gold. The same for every app.
- * - APP: the same stone, its cracks glowing in the message's brand colour.
+ * - APP: stone tinged with the message's brand colour, its cracks glowing in it.
  * - CRYSTAL: the ground breaks open into crystal in the brand colour, as a geode does.
  */
 enum class EarthColor(

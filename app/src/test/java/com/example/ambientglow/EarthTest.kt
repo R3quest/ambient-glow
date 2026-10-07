@@ -39,14 +39,16 @@ class EarthTest {
     }
 
     @Test
-    fun appLightsTheStonesCracksInTheBrandsHue() {
-        val stone = earthPalette(EarthColor.STONE, Color.Black)
+    fun appLightsTheCracksInTheBrandAndTintsTheStoneTowardsIt() {
         for (brand in brands.dropLast(1)) {
             val app = earthPalette(EarthColor.APP, brand)
-            // The stone stays stone; only its light changes.
-            assertEquals(stone.stone, app.stone)
-            assertEquals(stone.dustLit, app.dustLit)
-            assertTrue("$brand", hueGap(toOklch(brand)[2], toOklch(app.glow)[2]) < 6f)
+            val hue = toOklch(brand)[2]
+            assertTrue("$brand", hueGap(hue, toOklch(app.glow)[2]) < 6f)
+            // Stone and smoke lean the brand's way, so it shows where they cover the cracks...
+            assertTrue("$brand", hueGap(hue, toOklch(app.stone)[2]) < 6f)
+            assertTrue("$brand", hueGap(hue, toOklch(app.dustShade)[2]) < 6f)
+            // ...but stay stone: far less coloured than the brand itself.
+            assertTrue("$brand", toOklch(app.stone)[1] < 0.5f * toOklch(brand)[1])
         }
     }
 
@@ -91,6 +93,14 @@ class EarthTest {
         assertTrue(impactAt(0f) < 0f)
         assertEquals(0f, impactAt(SPAWN_GATHER_MS), 0f)
         assertTrue(impactAt(SPAWN_GATHER_MS + 400f) > 1f)
+    }
+
+    @Test
+    fun theSmokeBurstsFromTheCameraAsTheGroundIsStruckAndIsGoneBeforeTheTripEnds() {
+        // Outside 0..1 it isn't there: before the strike, and once it has thinned away.
+        assertTrue(smokeBurstAt(SPAWN_GATHER_MS - 1f) < 0f)
+        assertEquals(0f, smokeBurstAt(SPAWN_GATHER_MS), 0f)
+        assertTrue(smokeBurstAt(SPAWN_GATHER_MS + SPAWN_MS) > 1f)
     }
 
     @Test

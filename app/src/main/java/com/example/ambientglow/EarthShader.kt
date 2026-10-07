@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.toArgb
 import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 
 // ---------------------------------------------------------------------------------------------
 // The earth wave as breaking ground (Android 13+): a shock ring running out of the camera, the
@@ -33,10 +34,11 @@ import kotlin.math.min
  * passed, cooling behind it, catching the stones' rims as they break out.
  *
  * Layers, bottom up: the cracks and their light; the slabs or the spires; the smoke kicked up
- * behind the front, billowing and thinning into wisps; the shock ring; and the rubble thrown
+ * behind the front, billowing and thinning into wisps, over whatever stands lower than it (fresh
+ * slabs, tall ones, and spires' tips rise clear of it: `pierce`); the shock ring; and the rubble thrown
  * up, tumbling. All are premultiplied and never brighter than their cover.
  */
-private val EARTH_AGSL = """
+internal val EARTH_AGSL = """
 uniform float2 origin;
 uniform float radius;
 uniform float energy;
@@ -51,6 +53,9 @@ uniform float hold;
 uniform float sink;
 uniform float heatReach;
 uniform float dust;
+uniform float dustWall;
+uniform float burstR;
+uniform float burstA;
 uniform float puff;
 uniform float rubble;
 uniform float rubbleSize;
@@ -80,6 +85,15 @@ const float FAULT_SCALE = 2.6;
 // A spire's shadow falls this share of its length away from the light, this dark at most.
 const float SPIRE_SHADOW = 0.22;
 const float SHADOW_ALPHA = 0.42;
+// How much of the cracks' light the edges in shade catch.
+const float RIM = 0.55;
+// The share of stones and spires that stand tall, clear of the smoke; a tall slab's shadow reaches
+// this share of a stone over the low one beside it, and shadows darken the smoke this much at most.
+const float TALL_SHARE = 0.4;
+const float SLAB_SHADOW = 0.32;
+const float SMOKE_SHADOW = 0.45;
+// How much of the cracks' light the smoke over them takes on.
+const float SMOKE_GLOW = 0.75;
 // How dark the lip along a crack is, how bright the shock ring is and how thick the smoke at most.
 const float LIP = 0.6;
 const float SHOCK = 0.85;
@@ -142,13 +156,19 @@ float fbm(float2 p) {
 // that lingers and thins into wisps further back. Its billows sit on the screen, as smoke stays
 // where it was raised, churning (warped by slower noise) and drifting up; the longer they have
 // been up, the higher they have risen.
+// The burst: as the ground is struck a puff erupts round the camera (`burstR` across, `burstA`
+// thick), swelling and thinning as it spreads.
 float smokeAt(float2 xy) {
-    float h = radius - length(xy - origin);
-    float wall = smoothstep(-0.5 * puff, 0.6 * puff, h) * exp(-max(h - 0.6 * puff, 0.0) / (SMOKE_REACH * puff));
-    if (wall < 0.08) return 0.0;
-    float2 q = (xy + float2(0.0, SMOKE_RISE * max(h, 0.0))) / (1.25 * puff);
+    float r = length(xy - origin);
+    float h = radius - r;
+    float wall = dustWall * smoothstep(-0.5 * puff, 0.6 * puff, h) * exp(-max(h - 0.6 * puff, 0.0) / (SMOKE_REACH * puff));
+    float burst = burstA * (1.0 - smoothstep(0.35 * burstR, burstR, r));
+    float body = max(wall, burst);
+    if (body < 0.08) return 0.0;
+    // Risen with how long it has been up; past the wall's reach, still, so the burst doesn't race.
+    float2 q = (xy + float2(0.0, SMOKE_RISE * clamp(h, 0.0, 5.5 * puff))) / (1.25 * puff);
     float2 w = float2(noise(q * 0.55 + float2(0.0, time * 0.6)), noise(q * 0.55 + float2(5.2, 1.3 - time * 0.5)));
-    return wall * 1.6 * fbm(q + 1.8 * w + float2(0.0, time * 1.1));
+    return body * 1.6 * fbm(q + 1.8 * w + float2(0.0, time * 1.1));
 }
 
 // The rubble at xy: one chunk in a cell at most, kept clear of the cell's edges so no neighbour
@@ -199,12 +219,13 @@ float4 rubbleAt(float2 xy) {
 
 // The stone round xy, of stones `size` px across: how far the nearest border is (px), a hash for
 // the two stones either side of it (the same from both, so the crack between them agrees), which
-// stone it is, and the way out of it across that border.
+// stone it is, the way out of it across that border, and the stone across it.
 struct Stone {
     float edge;
     float pair;
     float2 id;
     float2 norm;
+    float2 next;
 };
 
 Stone stoneAt(float2 xy, float size) {
@@ -252,7 +273,7 @@ Stone stoneAt(float2 xy, float size) {
     }
     float2 id = ip + mg;
     float2 nid = ip + ng;
-    return Stone(edge * size, hash(id + nid + 0.37 * abs(id - nid)), id, en);
+    return Stone(edge * size, hash(id + nid + 0.37 * abs(id - nid)), id, en, nid);
 }
 
 // A crack `ep` px off the pixel, `w` px either side of its line, at strength `a`: a dark lip
@@ -283,10 +304,18 @@ half4 main(float2 xy) {
     // How hot the light in the cracks still is: white at the front, cooling behind it.
     float heat = exp(-max(back, 0.0) / heatReach);
     float4 col = float4(0.0);
+    // How far what is drawn here stands up through the smoke, 0..1: the smoke is drawn over all
+    // of it, but thins away over the parts standing above it.
+    float pierce = 0.0;
+    // How deep in the shadow of a tall stone or spire this is, 0..1: it darkens the smoke here.
+    float shadowed = 0.0;
+    // How much of the cracks' light is right under this point: the smoke over it glows with it.
+    float glowUnder = 0.0;
 
     if (energy > 0.0 && back > -2.0 * dp) {
         Stone st = stoneAt(xy, cell);
         float open = energy * smoothstep(-2.0 * dp, 1.0 * dp, back);
+        glowUnder = open * heat * exp(-st.edge / (4.0 * dp + crack));
         if (heat > 0.02) {
             // Each crack its own width, splitting open as the front runs on from it.
             float split = 0.35 + 0.65 * smoothstep(0.0, 0.5 * cell, back);
@@ -298,6 +327,7 @@ half4 main(float2 xy) {
                 Stone big = stoneAt(xy + 31.7 * cell, FAULT_SCALE * cell);
                 float wb = crack * (1.0 + 0.7 * hash(float2(big.pair, 3.1))) * split;
                 col = crackAt(col, big.edge, wb, 1.0, open, back, heat);
+                glowUnder = max(glowUnder, open * heat * exp(-big.edge / (6.0 * dp + wb)));
             } else if (form < 1.5) {
                 // Under slabs the cracks are the gaps between them: no lip, their light fills them.
                 col = crackAt(col, st.edge, 1.7 * w, 0.0, open, back, heat);
@@ -317,22 +347,32 @@ half4 main(float2 xy) {
                 float ins = max(0.5 * base, base + 0.45 * cell * (1.0 - up)) + 0.3 * cell * (1.0 - down);
                 float pd = st.edge - ins;
                 float cov = clamp(pd + 0.5, 0.0, 1.0);
+                // Some stand taller than the rest: they rise clear of the smoke, catching more
+                // light, and a tall one shades the low stone beside it on its side away from the light.
+                float tall = step(1.0 - TALL_SHARE, hash(st.id + 51.0));
+                float nextTall = step(1.0 - TALL_SHARE, hash(st.next + 51.0));
+                shadowed = nextTall * (1.0 - tall) * smoothstep(0.0, 0.3, dot(st.norm, SUN))
+                        * (1.0 - smoothstep(0.0, SLAB_SHADOW * cell, st.edge)) * energy * min(1.0, 2.5 * down);
                 if (cov > 0.0) {
                     // Each tilted its own way, so the faces catch the light unevenly.
                     float face = clamp(0.5 + 1.1 * dot(hash2(st.id + 11.0) - 0.5, SUN), 0.0, 1.0);
-                    float grain = 0.92 + 0.16 * noise(xy / (2.4 * dp));
+                    float grain = (0.92 + 0.16 * noise(xy / (2.4 * dp))) * (1.0 + 0.08 * tall);
                     float3 top = mix(float3(stone.rgb), float3(light.rgb), 0.55 * face) * mix(0.85, 1.0, face) * grain;
                     // Crystal: a facet line through each, one half catching the light.
                     float split = dot(xy / cell - s, float2(-SUN.y, SUN.x));
                     top *= 1.0 + crystal * (0.22 * smoothstep(-0.02, 0.02, split) - 0.08);
                     float bev = 1.0 - clamp(pd - BEVEL * cell + 0.5, 0.0, 1.0);
-                    float3 rim = mix(float3(shade.rgb), float3(light.rgb), smoothstep(-0.15, 0.15, dot(st.norm, SUN)));
+                    float sunny = smoothstep(-0.15, 0.15, dot(st.norm, SUN));
+                    float3 rim = mix(mix(float3(shade.rgb), float3(glow.rgb), RIM), float3(light.rgb), sunny);
                     float3 pc = mix(top, rim, bev);
                     // The cracks' light catching its rim from below, and the whole of it as it breaks out.
                     float flare = heat * exp(-age / (0.8 * cell));
                     pc = mix(pc, float3(glow.rgb), min(1.0, bev * (0.2 + 0.6 * smoothstep(0.05, 0.6, heat)) + 0.3 * flare));
+                    pc *= 1.0 - 0.3 * shadowed;
                     float pa = cov * energy * min(1.0, 2.5 * down) * (1.0 - 0.15 * crystal);
                     col = over(float4(pc * pa, pa), col);
+                    // Fresh slabs heave up through the smoke; settling, the low ones sink under it.
+                    pierce = pa * max(1.0 - smoothstep(0.3 * cell, hold, age), tall);
                 }
             }
         }
@@ -352,6 +392,8 @@ half4 main(float2 xy) {
         float bage = 0.0;
         float bsd = 100000.0;
         float bsdown = 0.0;
+        float btall = 0.0;
+        float bstall = 0.0;
         for (int j = -1; j <= 1; j++) {
             for (int i = -1; i <= 1; i++) {
                 float2 id = iq + float2(float(i), float(j));
@@ -389,6 +431,7 @@ half4 main(float2 xy) {
                         if (ssd < bsd) {
                             bsd = ssd;
                             bsdown = down;
+                            bstall = step(1.0 - TALL_SHARE, hash(id + 61.0));
                         }
                         if (sd < bd) {
                             bd = sd;
@@ -398,6 +441,7 @@ half4 main(float2 xy) {
                             bdown = down;
                             bface = dot(perp, SUN);
                             bage = age;
+                            btall = step(1.0 - TALL_SHARE, hash(id + 61.0));
                         }
                     }
                 }
@@ -407,6 +451,8 @@ half4 main(float2 xy) {
         if (shadow > 0.0) {
             float ha = SHADOW_ALPHA * shadow * energy * min(1.0, 2.5 * bsdown);
             col = over(float4(float3(shade.rgb) * 0.15 * ha, ha), col);
+            // A tall spire stands above the smoke, so its shadow falls on the smoke too.
+            shadowed = shadow * bstall * energy * min(1.0, 2.5 * bsdown);
         }
         float cov = clamp(0.5 - bd, 0.0, 1.0);
         if (cov > 0.0) {
@@ -421,25 +467,36 @@ half4 main(float2 xy) {
             float flare = heat * exp(-bage / (0.8 * cell));
             float root = 1.0 - smoothstep(-0.2 * bl, 0.45 * bl, ba);
             fc = mix(fc, float3(glow.rgb), min(1.0, 0.6 * root * (0.3 + flare)));
+            // Rim light: the edge in shade catches the cracks' light behind it.
+            float rimLit = smoothstep(-3.5 * dp, -0.8 * dp, bd) * (1.0 - lit);
+            fc = mix(fc, float3(glow.rgb), RIM * rimLit * (0.4 + 0.6 * energy));
             // An inked outline.
             fc *= 1.0 - 0.4 * smoothstep(-1.6 * dp, -0.5 * dp, bd);
             float sa = cov * energy * min(1.0, 2.5 * bdown) * (1.0 - 0.12 * crystal);
             col = over(float4(fc * sa, sa), col);
+            // Its root stays buried in the smoke and its tip pierces it; a tall one stands clear of
+            // it almost from the ground.
+            pierce = max(pierce, sa * smoothstep(0.25 - 0.3 * btall, 0.65 - 0.45 * btall, ba / max(bl, 1.0)));
         }
     }
 
     // The smoke: soft billows with no outline, lit on the side towards the light (it is thinner
     // there than a step towards it), their undersides catching the cracks' light near the front.
     // As it settles it thins from its edges in, rather than fading as a whole.
-    if (dust > 0.0 && puff > 0.0 && x0 > -5.2 * puff && x0 < 0.6 * puff) {
+    float settle = max(dust, burstA);
+    if (settle > 0.0 && puff > 0.0 && ((x0 > -5.2 * puff && x0 < 0.6 * puff) || r < burstR)) {
         float den = smokeAt(xy);
-        float lo = 0.24 + 0.36 * (1.0 - dust);
+        float lo = 0.24 + 0.36 * (1.0 - settle);
         if (den > lo) {
             float lit = clamp(0.55 + 2.4 * (den - smokeAt(xy + SUN * 0.4 * puff)), 0.0, 1.0);
             float3 sc = mix(float3(dustShade.rgb), float3(dustLit.rgb), lit) * (0.88 + 0.12 * smoothstep(lo, lo + 0.5, den));
             float under = energy * exp(-max(-x0, 0.0) / (0.9 * puff)) * (1.0 - lit);
-            sc = mix(sc, float3(glow.rgb), 0.5 * under);
-            float sa = SMOKE_ALPHA * smoothstep(lo, lo + 0.4, den) * min(1.0, 2.0 * dust);
+            sc = mix(sc, float3(glow.rgb), 0.7 * under);
+            sc *= 1.0 - SMOKE_SHADOW * shadowed;
+            // Lit from below where it drifts over the cracks, more in its shade than in the sun.
+            sc = mix(sc, float3(glow.rgb), min(1.0, SMOKE_GLOW * glowUnder * (1.0 - 0.5 * lit)));
+            // Over faults, where the cracks are all there is, it is thinner, so they show through.
+            float sa = SMOKE_ALPHA * (form < 0.5 ? 0.72 : 1.0) * smoothstep(lo, lo + 0.4, den) * min(1.0, 2.0 * settle) * (1.0 - 0.92 * pierce);
             col = over(float4(sc * sa, sa), col);
         }
     }
@@ -484,6 +541,10 @@ private const val FAULT_WIDEN = 1.3f
 
 /** Earth: the smoke's billows are about this big, as a share of a stone. */
 private const val PUFF_SHARE = 0.9f
+
+/** Earth: the smoke burst round the camera spreads from this many puffs across to this many more. */
+private const val BURST_FROM = 0.8f
+private const val BURST_GROW = 2.7f
 
 /** Earth: a chunk of rubble's size, as a share of a stone. */
 private const val RUBBLE_SIZE_SHARE = 0.26f
@@ -536,19 +597,25 @@ private const val GREY_CHROMA = 0.04f
 private const val EARTH_CHROMA = 0.12f
 
 /**
- * The earth for [mode] in a message from [brand]. App keeps the natural stone and lights its
- * cracks in the brand; Crystal turns the stone itself into the brand, a geode broken open. Both
- * pick their colours in OKLCh, so every app's steps down in lightness the same way.
+ * The earth for [mode] in a message from [brand]. App lights the cracks in the brand and tints
+ * the stone and smoke towards it; Crystal turns the stone itself into the brand, a geode broken
+ * open. Both pick their colours in OKLCh, so every app's steps down in lightness the same way.
  */
 internal fun earthPalette(mode: EarthColor, brand: Color): EarthPalette {
     val (_, c, h) = toOklch(brand)
     val chroma = if (c < GREY_CHROMA) c else max(c, EARTH_CHROMA)
     return when (mode) {
         EarthColor.STONE -> NaturalEarth
-        EarthColor.APP -> NaturalEarth.copy(
+        // Stone and smoke take a little of the brand, so it shows even where they cover the cracks.
+        EarthColor.APP -> EarthPalette(
+            light = oklch(0.84f, 0.3f * chroma, h),
+            stone = oklch(0.62f, 0.35f * chroma, h),
+            shade = oklch(0.38f, 0.3f * chroma, h),
             core = oklch(0.98f, 0.03f, h),
             glow = oklch(0.82f, chroma, h),
             deep = oklch(0.62f, chroma, h),
+            dustLit = oklch(0.88f, 0.18f * chroma, h),
+            dustShade = oklch(0.6f, 0.3f * chroma, h),
         )
         EarthColor.CRYSTAL -> EarthPalette(
             light = oklch(0.9f, 0.45f * chroma, h),
@@ -590,6 +657,9 @@ internal abstract class EarthShader {
     /** How big the rubble is now, in px, and how far it has been thrown up (below 0) or fallen. */
     abstract val rubbleSizePx: Float
     abstract val liftPx: Float
+
+    /** How far the smoke burst round the camera reaches now, in px; 0 once it has gone. */
+    abstract val burstPx: Float
 
     /**
      * [radius] the front's in px, [energy] the light and the stone, [debris] the share of what is
@@ -655,13 +725,25 @@ private class EarthRuntime(
         private set
     override var liftPx = 0f
         private set
+    override var burstPx = 0f
+        private set
 
     override fun update(radius: Float, energy: Float, debris: Float, ms: Float) {
         runtime.setFloatUniform("radius", radius)
         runtime.setFloatUniform("energy", energy)
         runtime.setFloatUniform("time", ms / 1000f)
         // The smoke rises once the front is out of the flash, which would hide it anyway.
-        if (puff > 0f) runtime.setFloatUniform("dust", debris * smoothstep(30f * dp, 110f * dp, radius))
+        if (puff > 0f) {
+            runtime.setFloatUniform("dust", debris)
+            // The wall of smoke rises once the front is out of the flash, which would hide it anyway.
+            runtime.setFloatUniform("dustWall", smoothstep(30f * dp, 110f * dp, radius))
+            // The burst round the camera: thick at once, swelling out fast and slowing, thinning away.
+            val t = smokeBurstAt(ms)
+            val thick = if (t > 0f && t < 1f) (1f - t).pow(1.5f) * min(1f, 10f * t) else 0f
+            burstPx = if (thick > 0f) puff * (BURST_FROM + BURST_GROW * (1f - (1f - t).pow(3))) else 0f
+            runtime.setFloatUniform("burstR", burstPx)
+            runtime.setFloatUniform("burstA", thick)
+        }
         if (chunk > 0f) {
             // Chunks show once the ring is wide enough to hold them, growing in out of the camera.
             rubbleSizePx = min(chunk, RUBBLE_CELL_SHARE * rubbleCell * radius)

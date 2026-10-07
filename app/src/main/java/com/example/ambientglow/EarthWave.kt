@@ -42,6 +42,9 @@ private const val QUAKE_OUT_TO = 0.9f
 internal const val DEBRIS_OUT_FROM_MS = 900f
 internal const val DEBRIS_OUT_TO_MS = 1_450f
 
+/** The smoke burst round the camera as the ground is struck plays out over this long. */
+private const val SMOKE_BURST_MS = 650f
+
 /** Rubble is thrown up at this many dp a second as the ground is struck, and falls back at this many dp/s². */
 private const val THROW_DP_PER_S = 220f
 private const val GRAVITY_DP_PER_S2 = 640f
@@ -92,6 +95,9 @@ internal fun rubbleLiftAt(ms: Float): Float {
     val t = max(0f, ms - SPAWN_GATHER_MS) / 1000f
     return -THROW_DP_PER_S * t + 0.5f * GRAVITY_DP_PER_S2 * t * t
 }
+
+/** How far through the smoke burst round the camera the effect is at [ms]: 0..1 while it plays. */
+internal fun smokeBurstAt(ms: Float): Float = (ms - SPAWN_GATHER_MS) / SMOKE_BURST_MS
 
 /** How far through the impact the effect is at [ms]: below 0 while it charges, past 1 once it has gone. */
 internal fun impactAt(ms: Float): Float = (ms - SPAWN_GATHER_MS) / IMPACT_MS
@@ -173,6 +179,11 @@ internal fun EarthWave(
                                 // and the rubble as far as it has been thrown.
                                 var from = radius - shader.behindPx
                                 var to = radius + shader.aheadPx
+                                // The smoke burst round the camera, while it lasts: the whole disc.
+                                if (shader.burstPx > 0f) {
+                                    from = 0f
+                                    to = max(to, shader.burstPx)
+                                }
                                 if (shader.rubbleSizePx > 0f && debris > 0f) {
                                     val spread = abs(shader.liftPx) + 2f * shader.rubbleSizePx
                                     from = min(from, EARTH_DEBRIS_FROM * radius - spread)
