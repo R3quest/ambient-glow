@@ -52,7 +52,9 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import com.example.ambientglow.DOT_HALO_FACTOR
@@ -109,7 +111,8 @@ internal fun snapDot(x: Float, y: Float, spots: List<DotSpot>): Snapped {
 
 /**
  * A one-tap LED position; [onCameraLine] spots sit at the exact height of the lens centre.
- * The [camera] spot is the lens itself: the LED there lights as a ring around it.
+ * The [camera] spot is the lens itself: the LED there lights as a ring around it. [atLens] marks
+ * the lens centre: the ring, or on a screen without a camera the dot that stands in for it.
  */
 @Immutable
 internal data class DotSpot(
@@ -118,6 +121,7 @@ internal data class DotSpot(
     val y: Float,
     val onCameraLine: Boolean,
     val camera: Boolean = false,
+    val atLens: Boolean = false,
 ) {
     fun matches(x: Float, y: Float) = abs(this.x - x) < 0.001f && abs(this.y - y) < 0.001f
 }
@@ -126,45 +130,48 @@ private val SPOT_EDGE = 18.dp
 private val SPOT_CAMERA_GAP = 10.dp
 
 /**
- * LED spots built from this phone's real camera: the lens itself (the ring), four on the
- * camera's horizontal line (screen edges and either side of the lens), one straight below it,
- * plus the classic corners and bottom. Positions are converted with the same margin the full-screen LED uses, so a spot
- * picked here lands exactly there.
+ * LED spots built from this phone's real camera, where a notification LED sat in the bezel: the
+ * lens itself (the ring) and four on the camera's horizontal line (screen edges and either side
+ * of the lens). Without a punch-hole the line is the status bar's, between clock and battery:
+ * the edges and the centre. Positions are converted with the same margin the full-screen LED
+ * uses, so a spot picked here lands exactly there.
  */
+internal fun dotSpots(camera: ScreenCamera, window: IntSize, dotSize: DotSize, density: Density): List<DotSpot> = with(density) {
+    val w = window.width.toFloat().coerceAtLeast(1f)
+    val h = window.height.toFloat().coerceAtLeast(1f)
+    val dot = dotSize.radius.toPx()
+    val margin = dot * DOT_HALO_FACTOR
+    // Screen px to the 0..1 fractions the LED is stored in, as a drag on the mock-up converts them.
+    val screen = Size(w, h)
+    fun fx(px: Float) = dotFraction(Offset(px, 0f), screen, margin).x
+    fun fy(py: Float) = dotFraction(Offset(0f, py), screen, margin).y
+
+    val camX = camera.x * w
+    val camY = camera.y * h
+    val clear = camera.radius * w + SPOT_CAMERA_GAP.toPx() + dot
+    val edge = SPOT_EDGE.toPx()
+    val line = fy(camY)
+    val edgeLeft = DotSpot(R.string.dot_spot_edge_left, fx(edge), line, onCameraLine = true)
+    val edgeRight = DotSpot(R.string.dot_spot_edge_right, fx(w - edge), line, onCameraLine = true)
+    if (!camera.present) {
+        val centre = DotSpot(R.string.dot_spot_centre, fx(camX), line, onCameraLine = true, atLens = true)
+        return listOf(edgeLeft, centre, edgeRight)
+    }
+    listOf(
+        DotSpot(R.string.dot_spot_ring, fx(camX), line, onCameraLine = false, camera = true, atLens = true),
+        edgeLeft,
+        DotSpot(R.string.dot_spot_cam_left, fx(camX - clear), line, onCameraLine = true),
+        DotSpot(R.string.dot_spot_cam_right, fx(camX + clear), line, onCameraLine = true),
+        edgeRight,
+    )
+}
+
 @Composable
 private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
     val camera = LocalCamera.current
     val window = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
-    return remember(camera, window, dotSize, density) {
-        with(density) {
-            val w = window.width.toFloat().coerceAtLeast(1f)
-            val h = window.height.toFloat().coerceAtLeast(1f)
-            val dot = dotSize.radius.toPx()
-            val margin = dot * DOT_HALO_FACTOR
-            // Screen px to the 0..1 fractions the LED is stored in, as a drag on the mock-up converts them.
-            val screen = Size(w, h)
-            fun fx(px: Float) = dotFraction(Offset(px, 0f), screen, margin).x
-            fun fy(py: Float) = dotFraction(Offset(0f, py), screen, margin).y
-
-            val camX = camera.x * w
-            val camY = camera.y * h
-            val clear = camera.radius * w + SPOT_CAMERA_GAP.toPx() + dot
-            val edge = SPOT_EDGE.toPx()
-            val line = fy(camY)
-            listOf(
-                DotSpot(R.string.dot_spot_ring, fx(camX), line, onCameraLine = false, camera = true),
-                DotSpot(R.string.dot_spot_edge_left, fx(edge), line, onCameraLine = true),
-                DotSpot(R.string.dot_spot_cam_left, fx(camX - clear), line, onCameraLine = true),
-                DotSpot(R.string.dot_spot_cam_right, fx(camX + clear), line, onCameraLine = true),
-                DotSpot(R.string.dot_spot_edge_right, fx(w - edge), line, onCameraLine = true),
-                DotSpot(R.string.dot_spot_below_cam, fx(camX), fy(camY + clear), onCameraLine = false),
-                DotSpot(R.string.dot_spot_corner_left, 0.06f, 0.008f, onCameraLine = false),
-                DotSpot(R.string.dot_spot_corner_right, 0.94f, 0.008f, onCameraLine = false),
-                DotSpot(R.string.dot_spot_bottom, 0.5f, 0.992f, onCameraLine = false),
-            )
-        }
-    }
+    return remember(camera, window, dotSize, density) { dotSpots(camera, window, dotSize, density) }
 }
 
 @Composable
@@ -314,11 +321,8 @@ internal fun LedCard(
                 }
             }
         }
-        OptionGroup(stringResource(R.string.dot_spots_camera_line)) {
+        OptionGroup(stringResource(if (LocalCamera.current.present) R.string.dot_spots_camera_line else R.string.dot_spots_top_line)) {
             SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
-        }
-        OptionGroup(stringResource(R.string.dot_spots_other)) {
-            SpotRow(spots.filterNot { it.onCameraLine || it.camera }, dotX, dotY, pick)
         }
 
         CardDivider()

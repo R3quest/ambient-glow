@@ -1,7 +1,5 @@
 package com.example.ambientglow.dashboard
 
-import android.view.Window
-import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -56,14 +54,12 @@ private fun riseMsAt(level: Float): Float = solveRising(level, 0f, LED_RISE_MS, 
 
 /**
  * The real LED over the darkened dashboard: its own drawing ([LedDot]) at its real size and
- * position, with the window at the chosen LED brightness, since on an AMOLED panel that is what
- * sets how bright the dot is. While [holding] (the dot is being moved) it stays lit and follows;
- * otherwise it breathes once with the LED's curve and fades away. A new [run] breathes again;
- * [leaving] hands the screen to a real-size effect.
+ * position and chosen brightness. The window keeps the system brightness: raised under the scrim,
+ * the darkened dashboard would visibly grey, and only the dot should change. While [holding] (the
+ * dot is being moved) it stays lit and follows; otherwise it breathes once with the LED's curve
+ * and fades away. A new [run] breathes again; [leaving] hands the screen to a real-size effect.
  *
- * The dashboard darkens first, then the window takes the LED brightness under the scrim, so the
- * jump is hidden; it is released only once the dot is dark, and the bars return as the scrim
- * starts to lift. Only draws, so the controls underneath keep working.
+ * The bars return as the scrim starts to lift. Only draws, so the controls underneath keep working.
  */
 @Composable
 internal fun LedShowcase(
@@ -80,8 +76,7 @@ internal fun LedShowcase(
     val glow = remember { Animatable(0f) }
     val clock = remember { Animatable(0f) }
     val done by rememberUpdatedState(onDone)
-    // Window brightness and hidden bars follow these: two changes per run, not per frame.
-    var lit by remember { mutableStateOf(false) }
+    // Hidden bars follow this: two changes per run, not per frame.
     var dark by remember { mutableStateOf(true) }
     // Real time, as the LED screen keeps it: a breath shortened by the animator scale is not the LED's.
     LaunchedEffect(run, holding, leaving) {
@@ -99,7 +94,6 @@ internal fun LedShowcase(
                 coroutineScope {
                     launch { scrim.animateTo(0f, tween(LED_LEAVE_SCRIM_MS, easing = LinearOutSlowInEasing)) }
                     glow.animateTo(0f, tween(LED_LEAVE_GLOW_MS, easing = FastOutLinearInEasing))
-                    lit = false // only once the dot is dark, so it never steps to dashboard brightness
                 }
                 done()
                 return@withContext
@@ -108,30 +102,22 @@ internal fun LedShowcase(
             if (holding) {
                 glow.snapTo(shown)
                 clock.snapTo(0f)
-                // Lights up only under the LED brightness; at once when re-grabbed over the dark scrim.
+                // Lights up only over the dark scrim; at once when re-grabbed there.
                 darken()
-                lit = true
                 glow.animateTo(1f, tween(LED_FOLLOW_IN_MS))
                 return@withContext
             }
             darken()
-            lit = true
             // From the crest when it was held lit; part-way up the rise if it was still breathing.
             clock.snapTo(riseMsAt(shown))
             glow.snapTo(0f)
             clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
-            lit = false
             dark = false
             scrim.animateTo(0f, tween(LED_SCRIM_OUT_MS, easing = LinearOutSlowInEasing))
             done()
         }
     }
     val window = LocalActivity.current?.window
-    val level = settings.ledBrightness.level
-    DisposableEffect(window, level, lit) {
-        if (lit) window?.setBrightness(level)
-        onDispose { window?.setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) }
-    }
     // The clock, battery and gesture handle draw above the app, so hide them as the LED screen
     // does; dark while they slide out, so they vanish into the black at once.
     DisposableEffect(window, dark) {
@@ -142,7 +128,7 @@ internal fun LedShowcase(
     Spacer(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = scrim.value) })
     LedDot(
         color = color,
-        alpha = { maxOf(glow.value, ledBreathAt(clock.value)) },
+        alpha = { maxOf(glow.value, ledBreathAt(clock.value)) * settings.ledBrightness.level },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
@@ -150,8 +136,4 @@ internal fun LedShowcase(
         geometry = geometry,
         modifier = Modifier.fillMaxSize(),
     )
-}
-
-private fun Window.setBrightness(level: Float) {
-    attributes = attributes.apply { screenBrightness = level }
 }

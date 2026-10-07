@@ -73,9 +73,15 @@ data class CutoutSpot(val centerX: Float, val centerY: Float, val radius: Float)
     val center: Offset get() = Offset(centerX, centerY)
 }
 
-/** Real display geometry, known only inside the wake window; previews use [Unknown]. */
+/**
+ * Real display geometry, known only inside the wake window; previews use [Unknown]. [measured]
+ * tells a screen that reported no cutout apart from one whose insets have not arrived yet.
+ */
 @Immutable
-data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
+data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?, val measured: Boolean = true) {
+    /** The display was measured and has no punch-hole: nothing for the LED to ring. */
+    val noCamera: Boolean get() = measured && cutout == null
+
     /** The camera hole moved and resized by the user's fit ([GlowSettings.lensOffsetDp]). */
     fun fitted(settings: GlowSettings, density: Float): ScreenGeometry {
         val spot = cutout ?: return this
@@ -105,7 +111,7 @@ data class ScreenGeometry(val cutout: CutoutSpot?, val cornerRadiusPx: Float?) {
         cutout?.radius ?: (metrics.fallbackCameraRadius.value * density * scale)
 
     companion object {
-        val Unknown = ScreenGeometry(cutout = null, cornerRadiusPx = null)
+        val Unknown = ScreenGeometry(cutout = null, cornerRadiusPx = null, measured = false)
 
         fun from(insets: WindowInsetsCompat): ScreenGeometry {
             val topRect = insets.displayCutout

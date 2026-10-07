@@ -215,8 +215,8 @@
     <string name="dot_size_m">M</string>
     <string name="dot_size_l">L</string>
     <string name="dot_spots_camera_line">CAMERA LINE</string>
-    <string name="dot_spots_other">OTHER SPOTS</string>
     <string name="dot_spots_lens">ON THE CAMERA</string>
+    <string name="dot_spots_top_line">TOP OF THE SCREEN</string>
     <string name="dot_spot_ring">RING AROUND THE CAMERA</string>
     <string name="dot_ring_thickness">RING THICKNESS</string>
     <string name="dot_step_left">Move left</string>
@@ -239,10 +239,7 @@
     <string name="dot_spot_cam_left">CAM L</string>
     <string name="dot_spot_cam_right">CAM R</string>
     <string name="dot_spot_edge_right">EDGE R</string>
-    <string name="dot_spot_below_cam">BELOW</string>
-    <string name="dot_spot_corner_left">TOP L</string>
-    <string name="dot_spot_corner_right">TOP R</string>
-    <string name="dot_spot_bottom">BOTTOM</string>
+    <string name="dot_spot_centre">CENTRE</string>
     <string name="dot_preview_label">Dot position preview. Drag to move.</string>
     <string name="dot_horizontal">HORIZONTAL</string>
     <string name="dot_vertical">VERTICAL</string>

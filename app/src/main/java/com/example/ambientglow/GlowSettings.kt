@@ -37,7 +37,11 @@ enum class DotSize(val radius: Dp, @param:StringRes override val label: Int) : L
     LARGE(9.dp, R.string.dot_size_l),
 }
 
-/** Window brightness while only the LED dot is lit. On AMOLED only the dot's pixels draw power. */
+/**
+ * How bright the LED dot's own light is, as its alpha over the black panel. Window brightness is
+ * left alone ([LED_WINDOW_BRIGHTNESS] on the LED screen, the system's in the dashboard preview),
+ * so this dims the dot and nothing else.
+ */
 enum class LedBrightness(val level: Float, @param:StringRes override val label: Int) : Labeled {
     SOFT(0.35f, R.string.led_brightness_soft),
     BRIGHT(0.7f, R.string.led_brightness_bright),
@@ -411,7 +415,7 @@ data class GlowSettings(
     val dotY: Float = DEFAULT_DOT_Y,
     val dotSize: DotSize = DotSize.LED,
     /** The LED lights as a ring around the punch-hole camera instead of a dot; [dotSize] sets its thickness. */
-    val ledOnCamera: Boolean = false,
+    val ledOnCamera: Boolean = true,
     /**
      * The user's fit of the camera hole, applied to the reported cutout ([ScreenGeometry.fitted]):
      * some OEMs (Samsung) report only a rectangle from the top edge, not where the lens is.
@@ -469,8 +473,14 @@ data class GlowSettings(
     /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
     val ledStyle: GlowStyle get() = if (ledOnCamera) GlowStyle.CAMERA_RING else GlowStyle.CUSTOM_DOT
 
+    /** On a screen with no camera (settings restored from another phone), the ring is a dot where it sat. */
+    fun forScreen(geometry: ScreenGeometry): GlowSettings =
+        if (ledOnCamera && geometry.noCamera) copy(ledOnCamera = false) else this
+
     companion object {
-        const val DEFAULT_DOT_X = 0.06f
+        // Top centre on the status bar's line: where the lens usually is, so a phone without one
+        // (the ring falls back to a dot, see forScreen) lights between the clock and the battery.
+        const val DEFAULT_DOT_X = 0.5f
         const val DEFAULT_DOT_Y = 0.008f
     }
 }

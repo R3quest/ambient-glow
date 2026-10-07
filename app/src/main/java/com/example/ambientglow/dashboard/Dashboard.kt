@@ -72,6 +72,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -248,8 +249,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
     LifecycleResumeEffect(Unit) {
         refresh()
         reduceMotion = !ValueAnimator.areAnimatorsEnabled()
-        // Leaving mid-run ends both previews: the LED's window brightness and hidden bars are
-        // released with it, and nothing is left to replay on return.
+        // Leaving mid-run ends both previews: the LED's hidden bars are released with it, and
+        // nothing is left to replay on return.
         onPauseOrDispose {
             fadeJob?.cancel()
             showcasePending = false
@@ -267,6 +268,16 @@ internal fun Dashboard(reported: ScreenGeometry) {
             if (save) GlowPrefs.save(context, settings)
         }
     }
+    // No punch-hole for the ring (the default, or restored from another phone): store the dot
+    // that stands in for it, at the centre of the status bar's line, so its chip shows picked.
+    val camera = rememberCamera(geometry)
+    val window = LocalWindowInfo.current.containerSize
+    val screenDensity = LocalDensity.current
+    LaunchedEffect(geometry.noCamera, window) {
+        if (!geometry.noCamera || !settings.ledOnCamera || window.width == 0) return@LaunchedEffect
+        val centre = dotSpots(camera, window, settings.dotSize, screenDensity).first { it.atLens }
+        edit(save = true) { it.copy(ledOnCamera = false, dotX = centre.x, dotY = centre.y) }
+    }
     val openScreenTab: () -> Unit = {
         scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.SCREEN)) }
     }
@@ -278,7 +289,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
         else -> null
     }
 
-    CompositionLocalProvider(LocalCamera provides rememberCamera(geometry)) {
+    CompositionLocalProvider(LocalCamera provides camera) {
         Box(Modifier.fillMaxSize().background(GlowPalette.Void)) {
             // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
             Column(

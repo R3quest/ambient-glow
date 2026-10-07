@@ -41,6 +41,9 @@ internal fun ledBreathAt(ms: Float): Float = when {
     else -> 0f
 }
 
+/** Window brightness while the dot is lit: fixed, so [LedBrightness] dims only the dot's pixels. */
+internal const val LED_WINDOW_BRIGHTNESS = 1f
+
 /** LED bloom radius as a multiple of its core. */
 internal const val LED_HALO_FACTOR = 3.2f
 

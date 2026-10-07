@@ -31,9 +31,12 @@ import com.example.ambientglow.ui.theme.GlowShapes
 // Phone mock-ups, with this phone's real camera drawn where it is.
 // ---------------------------------------------------------------------------------------------
 
-/** Camera position as screen fractions (radius as a fraction of screen width). */
+/**
+ * Camera position as screen fractions (radius as a fraction of screen width). Without a
+ * punch-hole ([present] false) it is where one usually is, so top spots still have a centre.
+ */
 @Immutable
-internal data class ScreenCamera(val x: Float, val y: Float, val radius: Float)
+internal data class ScreenCamera(val x: Float, val y: Float, val radius: Float, val present: Boolean = true)
 
 internal val LocalCamera = staticCompositionLocalOf { ScreenCamera(x = 0.5f, y = 0.03f, radius = 0.03f) }
 
@@ -45,7 +48,7 @@ internal fun rememberCamera(geometry: ScreenGeometry): ScreenCamera {
         val w = window.width.toFloat().coerceAtLeast(1f)
         val h = window.height.toFloat().coerceAtLeast(1f)
         val lens = geometry.lens(w, density.density)
-        ScreenCamera(x = lens.centerX / w, y = lens.centerY / h, radius = lens.radius / w)
+        ScreenCamera(x = lens.centerX / w, y = lens.centerY / h, radius = lens.radius / w, present = !geometry.noCamera)
     }
 }
 

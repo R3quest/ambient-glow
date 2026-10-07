@@ -166,7 +166,7 @@ class GlowShield : AccessibilityService() {
             ComposeView(this).apply {
                 setContent {
                     val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
-                    ArrivalEffect(settings, color, lens, onDone = { removeArrival() }, onBlurBehind = haze)
+                    ArrivalEffect(settings.forScreen(lens), color, lens, onDone = { removeArrival() }, onBlurBehind = haze)
                 }
             },
         )

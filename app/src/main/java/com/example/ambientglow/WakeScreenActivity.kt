@@ -306,7 +306,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 settling = settling.value,
                 arriving = arriving.value,
                 arrivalSeq = arrivalSeq.intValue,
-                settings = settings.value,
+                settings = settings.value.forScreen(geometry.value),
                 geometry = geometry.value.fitted(settings.value, resources.displayMetrics.density),
                 onTap = ::onUserDismiss,
                 onTouch = ::onLedTouch,
@@ -739,7 +739,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // either, the dot would stay hidden on a black panel at the lowest brightness.
         if (!focused && power.isInteractive) timers.postDelayed(settleNow, SETTLE_FALLBACK_MS)
         applyWindow(
-            brightness = if (focused) ledLevel() else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF,
+            brightness = if (focused) LED_WINDOW_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF,
             lowRefresh = true,
         )
         window.hideBarsOnBlack()
@@ -778,17 +778,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (arriving.value) GlowLauncher.dismissMessage(this)
     }
 
-    /** The effect on the black panel has handed over to the dot: drop to the user's LED brightness. */
+    /** The effect on the black panel has handed over to the dot: drop to the dot's frame rate. */
     private fun onArrivalDone() {
         if (!arriving.value) return
         GlowLog.d { "act arrival done" }
         arriving.value = false
         GlowLauncher.dismissMessage(this)
-        if (face.value == Face.LED && !settling.value) applyWindow(brightness = ledLevel(), lowRefresh = true)
+        if (face.value == Face.LED && !settling.value) applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
     }
-
-    /** Full brightness while the effect announces a message, the user's level for the dot. */
-    private fun ledLevel(): Float = if (arriving.value) 1f else settings.value.ledBrightness.level
 
     /** The phone was unlocked: get out of the way of the user's apps. */
     private fun goAway() {
@@ -817,7 +814,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         settling.value = false
         if (face.value == Face.LED) {
             GlowLog.d { "act settled: LED at full brightness" }
-            applyWindow(brightness = ledLevel(), lowRefresh = true)
+            applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
         }
     }
 
@@ -1158,7 +1155,7 @@ private fun LedLayer(
     val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
     LedDot(
         color = Color(shown),
-        alpha = { ledBreathAt(clock.value) },
+        alpha = { ledBreathAt(clock.value) * settings.ledBrightness.level },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
