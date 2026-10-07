@@ -5,8 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SnapDotTest {
-    private val corner = DotSpot(label = 0, x = 0.06f, y = 0.008f, onCameraLine = false)
-    private val lens = DotSpot(label = 0, x = 0.5f, y = 0.02f, onCameraLine = false, camera = true)
+    private val corner = DotSpot(label = 0, phrase = 0, x = 0.06f, y = 0.008f, onCameraLine = false)
+    private val lens = DotSpot(label = 0, phrase = 0, x = 0.5f, y = 0.02f, onCameraLine = false, camera = true)
 
     @Test
     fun snapsOntoANearbySpot() {

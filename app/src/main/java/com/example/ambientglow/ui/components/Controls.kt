@@ -437,6 +437,42 @@ internal fun Fold(title: String, summary: String, enabled: Boolean = true, conte
 }
 
 /**
+ * A row that leads to where something is set: [title], what it is set to there ([summary]), and
+ * a chevron pointing on. Laid out as a [Fold] is, so the two read as one family; a tap runs
+ * [onClick], announced as [action]. [leading] draws before the text, with its own gap.
+ */
+@Composable
+internal fun LinkRow(
+    title: String,
+    summary: String,
+    action: String,
+    onClick: () -> Unit,
+    leading: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .rowBleed()
+            .clip(GlowShapes.Tile)
+            .clickable(role = Role.Button, onClickLabel = action, onClick = onClick)
+            .padding(horizontal = RowBleed, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        leading()
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = GlowPalette.TextPrimary,
+            )
+            Text(text = summary, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
+        }
+        Spacer(Modifier.width(16.dp))
+        Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = -90f })
+    }
+}
+
+/**
  * What the chip picked above does: only the selected option's text, crossfaded on a new pick
  * while the space eases to the new height, so the options don't have to be read as a list.
  */

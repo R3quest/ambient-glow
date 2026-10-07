@@ -283,6 +283,9 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val openScreenTab: () -> Unit = {
         scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.SCREEN)) }
     }
+    val openLedTab: () -> Unit = {
+        scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.LED)) }
+    }
     // The step the real-size preview shows (the newer one during a hand-off), or null.
     val previewHeld = when {
         ledShowing && !ledLeaving -> PreviewPhase.LED
@@ -355,6 +358,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 },
                                 onShowcase = showcase,
                                 onChooseScreen = openScreenTab,
+                                onMoveLed = openLedTab,
                             )
                             DashboardTab.LED -> LedPage(settings, edit, onLed = showLed)
                         }
@@ -446,8 +450,8 @@ private fun ScreenPage(
 }
 
 /**
- * Main choices first, fine-tuning last: the look and its preview, the element, the wave it rides,
- * then Edge Frame's own options. Each change plays at real size ([onShowcase]). With Just the LED
+ * Main choices first, fine-tuning last: the look and its preview (with a way to the LED it ends
+ * in, [onMoveLed]), the element, the wave it rides, then Edge Frame's own options. Each change plays at real size ([onShowcase]). With Just the LED
  * nothing here would do anything, so the options give way to a card that says so and leads back
  * to the screen choice; each side carries its own gap, so the swap is one movement.
  */
@@ -461,6 +465,7 @@ private fun EffectPage(
     onSample: (Int) -> Unit,
     onShowcase: () -> Unit,
     onChooseScreen: () -> Unit,
+    onMoveLed: () -> Unit,
 ) {
     val onEffect = { next: GlowSettings ->
         edit(save = true) { next }
@@ -479,6 +484,7 @@ private fun EffectPage(
                         loop = loop,
                         onStyle = { style -> onEffect(settings.copy(style = style)) },
                         onSample = onSample,
+                        onMoveLed = onMoveLed,
                     )
                     // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
                     Column {

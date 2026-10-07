@@ -75,6 +75,7 @@ import com.example.ambientglow.ui.components.ChipRow
 import com.example.ambientglow.ui.components.Disclosure
 import com.example.ambientglow.ui.components.Fold
 import com.example.ambientglow.ui.components.GhostButton
+import com.example.ambientglow.ui.components.LinkRow
 import com.example.ambientglow.ui.components.OptionBody
 import com.example.ambientglow.ui.components.OptionGroup
 import com.example.ambientglow.ui.components.SectionLabel
@@ -93,6 +94,9 @@ import kotlin.math.ceil
 private val PickerPhoneHeight: Dp = 46.dp
 private val PickerPhoneCorner: Dp = 6.dp
 
+/** Clear of the top for the ring: the lens, the gap and the line ([GlowMetrics.Tile]), and a little air. */
+private val PickerCameraDrop: Dp = 7.dp
+
 /** A colour to try the effect in. Real messages use the colour of the app that sent them. */
 @Immutable
 internal data class SampleColor(@param:StringRes val name: Int, val color: Color)
@@ -108,8 +112,9 @@ internal val SAMPLE_COLORS = listOf(
 )
 
 /**
- * The look: the live preview beside the style list, and the colour to try it in.
- * [previewHeld]: the step a real-size preview is playing (or about to), so the inline one waits.
+ * The look: the live preview beside the style list, where the LED it ends in waits, and the
+ * colour to try it in. [previewHeld]: the step a real-size preview is playing (or about to), so
+ * the inline one waits. [onMoveLed] opens the LED tab.
  * [loop] is off with Remove animations: the inline preview then plays each change once, and the
  * hint says that changes no longer play at full size.
  */
@@ -121,8 +126,10 @@ internal fun EffectCard(
     loop: Boolean,
     onStyle: (GlowStyle) -> Unit,
     onSample: (Int) -> Unit,
+    onMoveLed: () -> Unit,
 ) {
     val color = SAMPLE_COLORS[sample].color
+    val spots = rememberDotSpots(settings.dotSize)
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
         // Preview beside the style list: what you pick is what plays, without scrolling.
@@ -137,6 +144,17 @@ internal fun EffectCard(
                 StylePicker(settings, color, onStyle)
                 OptionBody(settings.style) { stringResource(it.body) }
             }
+        }
+        // Both styles end in the LED, and the beacon plays where it is: say where, in words, and
+        // lead to where it moves, so the effect's place is never a setting hidden in another tab.
+        LinkRow(
+            title = stringResource(R.string.effect_led_title),
+            summary = stringResource(ledPlace(settings.dotX, settings.dotY, settings.ledOnCamera, spots)),
+            action = stringResource(R.string.effect_led_action),
+            onClick = onMoveLed,
+        ) {
+            LedGlyph(onCamera = settings.ledOnCamera)
+            Spacer(Modifier.width(12.dp))
         }
         OptionGroup(stringResource(R.string.effect_sample_color)) {
             SampleColorRow(selected = sample, onSelect = onSample)
@@ -385,9 +403,11 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // With the ring, every tile's camera sits low enough for it, so the phones match.
                 PhoneMock(
                     modifier = Modifier.height(PickerPhoneHeight).aspectRatio(0.55f),
                     shape = RoundedCornerShape(PickerPhoneCorner),
+                    cameraDrop = if (settings.ledOnCamera) PickerCameraDrop else 0.dp,
                 ) { mockGeometry ->
                     GlowGraphic(
                         form = if (style == GlowStyle.EDGE_FRAME) GlowForm.EDGE else settings.ledForm,

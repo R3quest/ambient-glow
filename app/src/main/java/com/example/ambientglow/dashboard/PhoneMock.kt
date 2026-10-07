@@ -55,16 +55,19 @@ internal fun rememberCamera(geometry: ScreenGeometry): ScreenCamera {
 /**
  * A minimal handset silhouette: black panel, hairline bezel and this phone's punch-hole
  * camera drawn where it really is. [content] receives that camera scaled into the mock-up,
- * so Camera Ring previews circle the drawn lens.
+ * so ring previews circle the drawn lens. [cameraDrop]: the camera sits at least this far down,
+ * for a mock-up too small for a ring round it to fit above it.
  */
 @Composable
 internal fun PhoneMock(
     modifier: Modifier = Modifier,
     shape: Shape = GlowShapes.Phone,
+    cameraDrop: Dp = 0.dp,
     content: @Composable BoxScope.(ScreenGeometry) -> Unit,
 ) {
     val camera = LocalCamera.current
     val minRadius = with(LocalDensity.current) { 1.5.dp.toPx() }
+    val minY = with(LocalDensity.current) { cameraDrop.toPx() }
     BoxWithConstraints(
         modifier = modifier
             .clip(shape)
@@ -73,8 +76,12 @@ internal fun PhoneMock(
     ) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        val lens = remember(camera, w, h) {
-            CutoutSpot(centerX = camera.x * w, centerY = camera.y * h, radius = (camera.radius * w).coerceAtLeast(minRadius))
+        val lens = remember(camera, w, h, minY) {
+            CutoutSpot(
+                centerX = camera.x * w,
+                centerY = (camera.y * h).coerceAtLeast(minY),
+                radius = (camera.radius * w).coerceAtLeast(minRadius),
+            )
         }
         Canvas(Modifier.fillMaxSize()) {
             drawCircle(GlowPalette.SurfaceHighest, radius = lens.radius, center = Offset(lens.centerX, lens.centerY))

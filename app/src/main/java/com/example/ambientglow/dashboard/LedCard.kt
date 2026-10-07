@@ -62,6 +62,7 @@ import com.example.ambientglow.DotSize
 import com.example.ambientglow.GlowGraphic
 import com.example.ambientglow.GlowMetrics
 import com.example.ambientglow.GlowSettings
+import com.example.ambientglow.GlowStyle
 import com.example.ambientglow.LedBrightness
 import com.example.ambientglow.R
 import com.example.ambientglow.dotCenter
@@ -113,10 +114,12 @@ internal fun snapDot(x: Float, y: Float, spots: List<DotSpot>): Snapped {
  * A one-tap LED position; [onCameraLine] spots sit at the exact height of the lens centre.
  * The [camera] spot is the lens itself: the LED there lights as a ring around it. [atLens] marks
  * the lens centre: the ring, or on a screen without a camera the dot that stands in for it.
+ * [label] names it on its chip, [phrase] in a sentence ("Just left of the camera").
  */
 @Immutable
 internal data class DotSpot(
     @param:StringRes val label: Int,
+    @param:StringRes val phrase: Int,
     val x: Float,
     val y: Float,
     val onCameraLine: Boolean,
@@ -151,23 +154,59 @@ internal fun dotSpots(camera: ScreenCamera, window: IntSize, dotSize: DotSize, d
     val clear = camera.radius * w + SPOT_CAMERA_GAP.toPx() + dot
     val edge = SPOT_EDGE.toPx()
     val line = fy(camY)
-    val edgeLeft = DotSpot(R.string.dot_spot_edge_left, fx(edge), line, onCameraLine = true)
-    val edgeRight = DotSpot(R.string.dot_spot_edge_right, fx(w - edge), line, onCameraLine = true)
+    val edgeLeft = DotSpot(R.string.dot_spot_edge_left, R.string.led_place_top_left, fx(edge), line, onCameraLine = true)
+    val edgeRight = DotSpot(R.string.dot_spot_edge_right, R.string.led_place_top_right, fx(w - edge), line, onCameraLine = true)
     if (!camera.present) {
-        val centre = DotSpot(R.string.dot_spot_centre, fx(camX), line, onCameraLine = true, atLens = true)
+        val centre = DotSpot(R.string.dot_spot_centre, R.string.led_place_top_centre, fx(camX), line, onCameraLine = true, atLens = true)
         return listOf(edgeLeft, centre, edgeRight)
     }
     listOf(
-        DotSpot(R.string.dot_spot_ring, fx(camX), line, onCameraLine = false, camera = true, atLens = true),
+        DotSpot(R.string.dot_spot_ring, R.string.led_place_ring, fx(camX), line, onCameraLine = false, camera = true, atLens = true),
         edgeLeft,
-        DotSpot(R.string.dot_spot_cam_left, fx(camX - clear), line, onCameraLine = true),
-        DotSpot(R.string.dot_spot_cam_right, fx(camX + clear), line, onCameraLine = true),
+        DotSpot(R.string.dot_spot_cam_left, R.string.led_place_cam_left, fx(camX - clear), line, onCameraLine = true),
+        DotSpot(R.string.dot_spot_cam_right, R.string.led_place_cam_right, fx(camX + clear), line, onCameraLine = true),
         edgeRight,
     )
 }
 
+/** The screen in thirds, top row first, for an LED that sits on no spot. */
+private val PLACE_GRID = arrayOf(
+    intArrayOf(R.string.led_place_top_left, R.string.led_place_top_centre, R.string.led_place_top_right),
+    intArrayOf(R.string.led_place_middle_left, R.string.led_place_middle, R.string.led_place_middle_right),
+    intArrayOf(R.string.led_place_bottom_left, R.string.led_place_bottom_centre, R.string.led_place_bottom_right),
+)
+
+/**
+ * Where the LED waits, in words: its spot's phrase, or else the third of the screen it is in
+ * ("Bottom right"), so other tabs can say where it is without a picture.
+ */
+@StringRes
+internal fun ledPlace(dotX: Float, dotY: Float, onCamera: Boolean, spots: List<DotSpot>): Int {
+    val spot = if (onCamera) spots.firstOrNull { it.camera } else spots.firstOrNull { !it.camera && it.matches(dotX, dotY) }
+    if (spot != null) return spot.phrase
+    if (onCamera) return R.string.led_place_ring
+    fun third(f: Float) = (f * 3f).toInt().coerceIn(0, 2)
+    return PLACE_GRID[third(dotY)][third(dotX)]
+}
+
+/** The LED as a 14 dp glyph: a ring round a lens, or a dot in its glow. */
 @Composable
-private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
+internal fun LedGlyph(onCamera: Boolean, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(14.dp)) {
+        val r = size.minDimension / 2f
+        if (onCamera) {
+            val line = 2.dp.toPx()
+            drawCircle(GlowPalette.SurfaceHighest, radius = r - line * 1.5f)
+            drawCircle(GlowPalette.Cyan, radius = r - line / 2f, style = Stroke(line))
+        } else {
+            drawCircle(GlowPalette.Cyan, radius = r, alpha = 0.18f)
+            drawCircle(GlowPalette.Cyan, radius = r * 0.4f)
+        }
+    }
+}
+
+@Composable
+internal fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
     val camera = LocalCamera.current
     val window = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
@@ -281,6 +320,14 @@ internal fun LedCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = GlowPalette.TextMuted,
                 )
+                // With the beacon, moving the LED moves how a message arrives too: say so here.
+                if (settings.style == GlowStyle.BEACON && settings.arrival.playsEffect) {
+                    Text(
+                        text = stringResource(R.string.dot_beacon_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GlowPalette.Cyan,
+                    )
+                }
             }
         }
 
@@ -300,11 +347,7 @@ internal fun LedCard(
                         onClick = { pick(ring) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Canvas(Modifier.size(14.dp)) {
-                            val line = 2.dp.toPx()
-                            drawCircle(GlowPalette.SurfaceHighest, radius = size.minDimension / 2f - line * 1.5f)
-                            drawCircle(GlowPalette.Cyan, radius = size.minDimension / 2f - line / 2f, style = Stroke(line))
-                        }
+                        LedGlyph(onCamera = true)
                         Spacer(Modifier.width(10.dp))
                     }
                 }
