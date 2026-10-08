@@ -5,6 +5,7 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -64,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -111,12 +114,13 @@ import kotlinx.coroutines.launch
 // ---------------------------------------------------------------------------------------------
 // Dashboard shell: setup until everything is granted; then header, tab bar, swipeable pages (the
 // three steps of a message: screen, effect, LED), pinned test dock, and the real-size previews
-// every change starts.
+// every change starts. The header's apps button opens the Apps screen over the tabs.
 // ---------------------------------------------------------------------------------------------
 
 /**
  * The style tabs follow a message: what the screen shows, the effect, then the LED that waits.
  * The screen comes first because it decides whether there is an effect at all (Just the LED).
+ * Which apps light up is set once and rarely changed, so it is a screen of its own, not a tab.
  */
 internal enum class DashboardTab(val label: Int) {
     SCREEN(R.string.tab_screen),
@@ -125,7 +129,7 @@ internal enum class DashboardTab(val label: Int) {
 }
 
 /** Outer margins and the gap between sections: generous, so each block reads on its own. */
-private val PageGutter = 24.dp
+internal val PageGutter = 24.dp
 private val SectionGap = 28.dp
 
 /** Settings.Secure's key for the enabled notification listeners; hidden from the SDK, stable since Android 4.3. */
@@ -171,6 +175,11 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
+    // The Apps screen, over the tabs; it keeps its own state (AppsModel).
+    val appsModel = rememberAppsModel()
+    var appsOpen by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = appsOpen && !inSetup) { appsOpen = false }
+
     // The preview colour, and the real-size previews every change starts: the effect, or the
     // LED on a darkened screen. One at a time.
     var sample by rememberSaveable { mutableIntStateOf(0) }
@@ -182,6 +191,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
     var ledHolding by remember { mutableStateOf(false) }
     var ledShowing by remember { mutableStateOf(false) }
     var ledLeaving by remember { mutableStateOf(false) }
+    // The LED preview's colour: the try-out colour, or an app's as it is picked on the Apps screen.
+    var ledColor by remember { mutableStateOf<Color?>(null) }
     // The run that is playing, as it was started: while it fades out for the next one it must
     // not pick up the change that replaced it.
     var shownSettings by remember { mutableStateOf(settings) }
@@ -320,56 +331,80 @@ internal fun Dashboard(reported: ScreenGeometry) {
                     return@AnimatedContent
                 }
                 // Padded for the bars even while hidden, so the LED preview hiding them moves nothing.
-                Column(
+                Box(
                     Modifier
                         .fillMaxSize()
                         .glassHaze(haze, shownSettings, geometry)
                         .windowInsetsPadding(DashboardInsets),
                 ) {
-                    BrandHeader(Modifier.padding(start = PageGutter, end = PageGutter, top = 14.dp, bottom = 18.dp))
-                    Box(Modifier.padding(horizontal = PageGutter)) {
-                        GlowTabBar(
-                            pager = pager,
-                            tabs = tabs,
-                            onSelect = { index -> scope.launch { pager.animateScrollToPage(index) } },
-                        )
-                    }
-                    HorizontalPager(
-                        state = pager,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        beyondViewportPageCount = 1,
-                    ) { page ->
-                        PageColumn(Modifier.fillMaxSize()) {
-                            when (tabs[page]) {
-                                DashboardTab.SCREEN -> ScreenPage(
-                                    settings = settings,
-                                    sample = sample,
-                                    previewHeld = previewHeld,
-                                    loop = !reduceMotion,
-                                    shieldOn = access.shield,
-                                    onShield = actions.shield,
-                                    edit = edit,
-                                )
-                                DashboardTab.EFFECT -> EffectPage(
-                                    settings = settings,
-                                    sample = sample,
-                                    previewHeld = previewHeld,
-                                    loop = !reduceMotion,
-                                    edit = edit,
-                                    onSample = { index ->
-                                        sample = index
-                                        showcase()
-                                    },
-                                    onShowcase = showcase,
-                                    onChooseScreen = openScreenTab,
-                                    onMoveLed = openLedTab,
-                                )
-                                DashboardTab.LED -> LedPage(settings, edit, onLed = showLed)
+                    AnimatedContent(
+                        targetState = appsOpen,
+                        transitionSpec = { GlowMotion.page(forward = targetState) },
+                        label = "apps-screen",
+                    ) { open ->
+                        if (open) {
+                            AppsScreen(
+                                model = appsModel,
+                                onBack = { appsOpen = false },
+                                onTryColor = { glow ->
+                                    ledColor = Color(glow)
+                                    showLed(false)
+                                },
+                            )
+                            return@AnimatedContent
+                        }
+                        Column(Modifier.fillMaxSize()) {
+                            BrandHeader(Modifier.padding(start = PageGutter, end = PageGutter, top = 14.dp, bottom = 18.dp)) {
+                                AppsButton(marked = appsModel.hasNew, onClick = { appsOpen = true })
                             }
+                            Box(Modifier.padding(horizontal = PageGutter)) {
+                                GlowTabBar(
+                                    pager = pager,
+                                    tabs = tabs,
+                                    onSelect = { index -> scope.launch { pager.animateScrollToPage(index) } },
+                                )
+                            }
+                            HorizontalPager(
+                                state = pager,
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                beyondViewportPageCount = 1,
+                            ) { page ->
+                                PageColumn(Modifier.fillMaxSize()) {
+                                    when (tabs[page]) {
+                                        DashboardTab.SCREEN -> ScreenPage(
+                                            settings = settings,
+                                            sample = sample,
+                                            previewHeld = previewHeld,
+                                            loop = !reduceMotion,
+                                            shieldOn = access.shield,
+                                            onShield = actions.shield,
+                                            edit = edit,
+                                        )
+                                        DashboardTab.EFFECT -> EffectPage(
+                                            settings = settings,
+                                            sample = sample,
+                                            previewHeld = previewHeld,
+                                            loop = !reduceMotion,
+                                            edit = edit,
+                                            onSample = { index ->
+                                                sample = index
+                                                showcase()
+                                            },
+                                            onShowcase = showcase,
+                                            onChooseScreen = openScreenTab,
+                                            onMoveLed = openLedTab,
+                                        )
+                                        DashboardTab.LED -> LedPage(settings, edit) { holding ->
+                                            ledColor = null
+                                            showLed(holding)
+                                        }
+                                    }
+                                }
+                            }
+
+                            TestDock()
                         }
                     }
-
-                    TestDock()
                 }
             }
 
@@ -377,7 +412,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
             if (ledShowing) {
                 LedShowcase(
                     settings = settings,
-                    color = SAMPLE_COLORS[sample].color,
+                    color = ledColor ?: SAMPLE_COLORS[sample].color,
                     geometry = geometry,
                     run = ledRun,
                     holding = ledHolding,
@@ -546,17 +581,21 @@ private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding:
 /**
  * Mark and name, the one header of setup and the dashboard alike. No status beside it: the
  * dashboard only shows once everything is granted, and setup takes over again if it is not.
+ * [action] sits at the far end, centred on the name without making the header taller, so the
+ * mark is where it is in setup, which has none.
  */
 @Composable
-internal fun BrandHeader(modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+internal fun BrandHeader(modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         GlowEmblem(Modifier.size(26.dp))
         Spacer(Modifier.width(12.dp))
         Text(
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
+            modifier = Modifier.weight(1f),
         )
+        if (action != null) Box(Modifier.height(0.dp).wrapContentHeight(unbounded = true)) { action() }
     }
 }
 

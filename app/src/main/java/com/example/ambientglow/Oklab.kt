@@ -11,7 +11,7 @@ import kotlin.math.sin
 
 // ---------------------------------------------------------------------------------------------
 // OKLab / OKLCh, for colours picked and blended at an even lightness (the Edge Frame's Duo and
-// Spectrum). Built once per effect, never per frame.
+// Spectrum), and told apart (the Apps screen's look-alikes). Built once per effect, never per frame.
 // ---------------------------------------------------------------------------------------------
 
 /** sRGB [color] as OKLCh: lightness, chroma, hue in degrees. */
@@ -22,7 +22,8 @@ internal fun toOklch(color: Color): FloatArray {
     return floatArrayOf(lab[0], c, h)
 }
 
-private fun toOklab(color: Color): FloatArray {
+/** sRGB [color] as OKLab: lightness, a, b. */
+internal fun toOklab(color: Color): FloatArray {
     fun linear(v: Float) = if (v <= 0.04045f) v / 12.92f else ((v + 0.055f) / 1.055f).pow(2.4f)
     val r = linear(color.red)
     val g = linear(color.green)
@@ -48,6 +49,12 @@ internal fun oklch(l: Float, c: Float, hDegrees: Float): Color {
     }
     return linearToColor(oklabToLinear(l, 0f, 0f))
 }
+
+/** How different [a] and [b] look: their distance in OKLab (about 0.02 is just noticeable). */
+internal fun oklabDistance(a: Color, b: Color): Float = oklabDistance(toOklab(a), toOklab(b))
+
+/** [oklabDistance] between colours already in OKLab ([toOklab]), for measuring many pairs. */
+internal fun oklabDistance(a: FloatArray, b: FloatArray): Float = hypot(hypot(a[0] - b[0], a[1] - b[1]), a[2] - b[2])
 
 /** The colour halfway between [a] and [b] in OKLab. */
 internal fun oklabMix(a: Color, b: Color): Color {

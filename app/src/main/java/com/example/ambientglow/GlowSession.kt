@@ -8,11 +8,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * One unread message the LED is waiting on, and the brand colour it blinks in. [newestAt] is the
- * timestamp of the newest message it carried, so an update can be told apart from a new message.
+ * One unread message the LED is waiting on, the app it came from, and the colour it blinks in.
+ * [newestAt] is the timestamp of the newest message it carried, so an update can be told apart
+ * from a new message.
  */
 @Immutable
-data class PendingGlow(val key: String, val color: Int, val newestAt: Long = 0L)
+data class PendingGlow(val key: String, val pkg: String, val color: Int, val newestAt: Long = 0L)
 
 /**
  * The newest message for [ArrivalMode.MESSAGE]. [systemPopsUp]: the system shows it as a heads-up
@@ -46,6 +47,19 @@ object GlowPending {
     fun remove(key: String): Boolean {
         if (message?.sbn?.key == key) message = null
         return entries.removeAll { it.key == key }
+    }
+
+    /** [pkg] was muted: its waiting messages leave the LED at once. True if any did. */
+    fun removeApp(pkg: String): Boolean {
+        if (message?.sbn?.packageName == pkg) message = null
+        return entries.removeAll { it.pkg == pkg }
+    }
+
+    /** [pkg] was given a new colour: its waiting messages blink in it from the next breath. */
+    fun recolor(pkg: String, color: Int) {
+        for (i in entries.indices) {
+            if (entries[i].pkg == pkg && entries[i].color != color) entries[i] = entries[i].copy(color = color)
+        }
     }
 
     /** Distinct colours in arrival order (newest first): one breath each in the LED's round. */

@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SliderColors
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -55,9 +56,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -131,15 +136,45 @@ internal fun Modifier.glowCard(vertical: Dp = 20.dp): Modifier = this
     .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Card)
     .padding(horizontal = 20.dp, vertical = vertical)
 
+/** Further than any of the card's corners reach, so a slice cut this far from one shows straight sides. */
+private val SliceReach = 64.dp
+
+/**
+ * One horizontal slice of a [glowCard], for a card whose rows are lazy list items: the [top] slice
+ * has the card's top corners, the [bottom] slice its bottom ones, and one in between only its
+ * sides, so the slices stacked read as one card. Padded at the sides as the card is.
+ */
+internal fun Modifier.glowCardSlice(top: Boolean, bottom: Boolean): Modifier = this
+    .fillMaxWidth()
+    .drawWithCache {
+        // The whole card, taller by the reach on each open side, drawn shifted up and clipped to the slice.
+        val reach = SliceReach.toPx()
+        val line = 1.dp.toPx()
+        val tall = Size(size.width, size.height + (if (top) 0f else reach) + (if (bottom) 0f else reach))
+        val fill = GlowShapes.Card.createOutline(tall, layoutDirection, this)
+        val edge = GlowShapes.Card.createOutline(Size(tall.width - line, tall.height - line), layoutDirection, this)
+        val stroke = Stroke(line)
+        val shift = if (top) 0f else -reach
+        onDrawBehind {
+            clipRect {
+                translate(top = shift) {
+                    drawOutline(fill, GlowPalette.Surface)
+                    translate(line / 2f, line / 2f) { drawOutline(edge, GlowPalette.OutlineSoft, style = stroke) }
+                }
+            }
+        }
+    }
+    .padding(horizontal = 20.dp)
+
 /** How far a tappable row's highlight reaches past its text, into the card's padding. */
-private val RowBleed = 12.dp
+internal val RowBleed = 12.dp
 
 /**
  * Widens a full-width row by [RowBleed] each side while its content stays in line with the
  * card's: the tile's rounded corners, and the press highlight, then sit clear of the text.
  * Applied before the row's clip; the row pads its content back in by [RowBleed].
  */
-private fun Modifier.rowBleed(): Modifier = layout { measurable, constraints ->
+internal fun Modifier.rowBleed(): Modifier = layout { measurable, constraints ->
     val bleed = RowBleed.roundToPx()
     val wide = constraints.copy(
         minWidth = constraints.minWidth + bleed * 2,
@@ -205,20 +240,19 @@ internal fun ToggleRow(title: String, body: String, checked: Boolean, onChange: 
             Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
         }
         Spacer(Modifier.width(16.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = GlowPalette.Void,
-                checkedTrackColor = GlowPalette.Cyan,
-                checkedBorderColor = GlowPalette.Cyan,
-                uncheckedThumbColor = GlowPalette.TextMuted,
-                uncheckedTrackColor = GlowPalette.SurfaceHigh,
-                uncheckedBorderColor = GlowPalette.Outline,
-            ),
-        )
+        Switch(checked = checked, onCheckedChange = null, colors = glowSwitchColors())
     }
 }
+
+@Composable
+internal fun glowSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedThumbColor = GlowPalette.Void,
+    checkedTrackColor = GlowPalette.Cyan,
+    checkedBorderColor = GlowPalette.Cyan,
+    uncheckedThumbColor = GlowPalette.TextMuted,
+    uncheckedTrackColor = GlowPalette.SurfaceHigh,
+    uncheckedBorderColor = GlowPalette.Outline,
+)
 
 /** Half the height of a capital in the app's sans-serif (Roboto's is 0.71 em). */
 private const val CAP_MIDDLE_EM = 0.355f
@@ -379,40 +413,46 @@ internal fun Disclosure(visible: Boolean, content: @Composable AnimatedVisibilit
 @Composable
 internal fun Fold(title: String, summary: String, enabled: Boolean = true, content: @Composable () -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
-    val turn by animateFloatAsState(if (open) 180f else 0f, GlowMotion.chevronTurn(open), label = "fold")
-    val state = stringResource(if (open) R.string.fold_open else R.string.fold_closed)
     Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .rowBleed()
-                .clip(GlowShapes.Tile)
-                .clickable(enabled = enabled, role = Role.Button) { open = !open }
-                .semantics { stateDescription = state }
-                .padding(horizontal = RowBleed, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    color = GlowPalette.TextPrimary,
-                )
-                AnimatedContent(
-                    targetState = summary,
-                    transitionSpec = { GlowMotion.swap() },
-                    contentAlignment = Alignment.TopStart,
-                    label = "fold-summary",
-                ) { shown ->
-                    Text(text = shown, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
-                }
-            }
-            Spacer(Modifier.width(16.dp))
-            Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = turn })
-        }
+        FoldHeader(title, summary, open = open, enabled = enabled) { open = !open }
         Disclosure(visible = open && enabled) {
             Box(Modifier.padding(top = 14.dp)) { content() }
         }
+    }
+}
+
+/** A [Fold]'s titled row alone, for content that unfolds as list items instead of in place. */
+@Composable
+internal fun FoldHeader(title: String, summary: String, open: Boolean, enabled: Boolean = true, onToggle: () -> Unit) {
+    val turn by animateFloatAsState(if (open) 180f else 0f, GlowMotion.chevronTurn(open), label = "fold")
+    val state = stringResource(if (open) R.string.fold_open else R.string.fold_closed)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .rowBleed()
+            .clip(GlowShapes.Tile)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onToggle)
+            .semantics { stateDescription = state }
+            .padding(horizontal = RowBleed, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = GlowPalette.TextPrimary,
+            )
+            AnimatedContent(
+                targetState = summary,
+                transitionSpec = { GlowMotion.swap() },
+                contentAlignment = Alignment.TopStart,
+                label = "fold-summary",
+            ) { shown ->
+                Text(text = shown, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        Chevron(tint = GlowPalette.TextMuted, modifier = Modifier.size(10.dp).graphicsLayer { rotationZ = turn })
     }
 }
 

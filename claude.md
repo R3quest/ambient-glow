@@ -10,7 +10,7 @@ This file serves as the permanent system configuration and architectural authori
 
 ## 🛡️ 2. Privacy & Permission Boundary
 - **Minimal Surface Area:** Request the absolute fewest permissions required by the OS. No internet, no telemetry.
-- **Forbidden Permissions:** Do NOT introduce `SYSTEM_ALERT_WINDOW` (Draw over other apps). This avoids heavy window manager overhead and prevents the app from being killed by aggressive OEM battery managers (like Samsung's App Power Management). No `QUERY_ALL_PACKAGES` either: the manifest's `<queries>` covers launcher apps.
+- **Forbidden Permissions:** Do NOT introduce `SYSTEM_ALERT_WINDOW` (Draw over other apps). This avoids heavy window manager overhead and prevents the app from being killed by aggressive OEM battery managers (like Samsung's App Power Management). No `QUERY_ALL_PACKAGES` either: the manifest's `<queries>` covers launcher apps (app icons, and the Apps screen's list of other apps).
 - **Approved Permissions:**
   - `android.permission.WAKE_LOCK` (To cleanly illuminate the physical panel).
   - `android.permission.POST_NOTIFICATIONS` (The bridge notification that carries the full-screen intent; Android 13+ runtime grant).
@@ -33,11 +33,12 @@ This file serves as the permanent system configuration and architectural authori
 ## 🗺️ 5. Code Map
 - **Settings:** `GlowSettings.kt` (every option, as `Labeled` enums, and the `GlowSettings` defaults), `GlowPrefs.kt` (storage).
 - **Runtime state:** `GlowSession.kt` — `GlowPending` (unread messages), `GlowSession` (listener ↔ glow screen link), `WakeMode`.
-- **Wake path:** `NotificationWakerService` (filters messages, `BrandColors`) → `GlowLauncher` (bridge notification + full-screen intent) → `WakeScreenActivity` (the lock flow state machine). `Power.kt`: `PanelWaker`, `DarkHold`, `inCall`.
+- **Apps:** `GlowApps.kt` (its own prefs file, which the listener learns apps into: muted/colour choices, look-alikes, launcher-list search). Kept apart from `GlowPrefs`, because the dashboard saves settings whole.
+- **Wake path:** `NotificationWakerService` (filters messages, skips muted apps, `GlowApps` colour or `BrandColors`) → `GlowLauncher` (bridge notification + full-screen intent) → `WakeScreenActivity` (the lock flow state machine). `Power.kt`: `PanelWaker`, `DarkHold`, `inCall`.
 - **Glow screen helpers:** `Led.kt` (breath curve, `LedDot`), `LedWindow.kt` (bars, display modes), `RelightLimiter.kt`.
 - **Effect:** `ArrivalEffect.kt` (timeline + drawing), `CrestShader.kt`, `FrostShader.kt` (Water), `FireWave.kt` + `FireShader.kt` (Fire: timeline, palette, shader), `AirWave.kt` + `AirShader.kt` (Air: timeline, whirl, palette, shader), `EarthWave.kt` + `EarthShader.kt` (Earth: timeline, impact, shake, palette, shader), `EdgeLight.kt` + `ElementFrame.kt` + `HandOff.kt` (Edge Frame: comet heads, the frame made of the element, its last light flying to the LED), `GlassHaze.kt`, with `ShaderBrushes.kt`, `Oklab.kt`, `GlowMath.kt`, `GlowRenderer.kt` (geometry, `GlowGraphic`).
 - **Overlay:** `GlowShield` (accessibility overlay: effect over the lock screen, wake cover, blur).
-- **Dashboard:** `MainActivity` → `dashboard/` (`Dashboard`, `Access`, `EffectCard`, `ElementCard` + `WaterOptions`, `FireOptions`, `AirOptions`, `EarthOptions` (built from `GlyphTiles`), `LedCard`, `LedShowcase`, `PhoneMock`), built from `ui/components/` (`Controls`, `Chips`) and `ui/theme/`.
+- **Dashboard:** `MainActivity` → `dashboard/` (`Dashboard`, `AppsModel` + `AppsScreen` + `AppRow` (the Apps screen from the header), `Access`, `EffectCard`, `ElementCard` + `WaterOptions`, `FireOptions`, `AirOptions`, `EarthOptions` (built from `GlyphTiles`), `LedCard`, `LedShowcase`, `PhoneMock`), built from `ui/components/` (`Controls`, `Chips`) and `ui/theme/`.
 
 ## 🧩 6. Conventions
 - **Adding a setting:** a field with its default in `GlowSettings`, and one line each in `GlowPrefs.load` and `GlowPrefs.save`. Options are enums implementing `Labeled`, so `ChipRow` lists them as they are. If the arrival effect reads it, check `forPreview()`.

@@ -5,6 +5,7 @@ Ambient Glow is an ultra-lightweight, high-performance, and privacy-first Androi
 ## 🌟 Key Architectural Achievements
 - **Zero Background Idle Drain:** Operates entirely headlessly. It uses zero background CPU cycles while waiting for messages.
 - **No Intrusive Overlays:** Does not require the heavy `SYSTEM_ALERT_WINDOW` ("Draw over other apps") permission. Instead, it utilizes native window-manager flags (`setShowWhenLocked`, `setTurnScreenOn`) to illuminate the physical panel safely.
+- **Per-App Control:** Every app that notifies you is listed automatically: switch off the ones you don't care about, or give any app its own color (look-alike colors are flagged, since the LED would blink once for both). Any other app on the phone can be set up before it ever sends a message.
 - **Smart Brand Color Matching:** Automatically intercepts incoming alerts, extracts the dominant brand color from the originating application's icon via the **AndroidX Palette API**, and flashes a color-matched border ring.
 - **Completely Offline:** Zero tracking, telemetry, internet permissions, or external data dependencies.
 

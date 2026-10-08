@@ -138,6 +138,8 @@
     <string name="sample_pink">Pink</string>
     <string name="sample_red">Red</string>
     <string name="sample_yellow">Yellow</string>
+    <string name="sample_orange">Orange</string>
+    <string name="sample_white">White</string>
     <string name="effect_showcase_hint">Every change plays once at full size on this screen. Messages glow in the colour of the app that sent them.</string>
     <string name="effect_showcase_hint_reduced">Animations are off on this phone, so changes play only in the preview, once. Tap it to replay. Messages glow in the colour of the app that sent them.</string>
     <string name="edge_width">WIDTH</string>
@@ -265,6 +267,43 @@
     <string name="tab_effect">EFFECT</string>
     <string name="tab_screen">SCREEN</string>
     <string name="tab_led">LED</string>
+
+    <string name="group_apps_title">Which apps light up</string>
+    <string name="group_apps_body">Every app that sends you a message shows up here, in the colour it glows in. Switch off the ones you don\'t need to see.</string>
+    <plurals name="apps_count_all">
+        <item quantity="one">%1$d APP · IT LIGHTS UP</item>
+        <item quantity="other">ALL %1$d LIGHT UP</item>
+    </plurals>
+    <string name="apps_count">%1$d LIGHT UP · %2$d OFF</string>
+    <string name="apps_hint">Tap an app to change its colour; the LED shows each pick on this screen. New apps light up until you switch them off.</string>
+    <string name="apps_empty_title">No messages yet</string>
+    <string name="apps_empty_body">Apps show up here the first time they send you a message, and light up until you switch them off. To switch one off before it does, find it under Other apps.</string>
+    <string name="apps_others">Other apps</string>
+    <plurals name="apps_others_summary">
+        <item quantity="one">%1$d app that hasn\'t sent you a message yet. Switch it off or give it a colour before it does.</item>
+        <item quantity="other">%1$d apps that haven\'t sent you a message yet. Switch any off or give them a colour before they do.</item>
+    </plurals>
+    <plurals name="apps_others_off">
+        <item quantity="one">%1$d is off.</item>
+        <item quantity="other">%1$d are off.</item>
+    </plurals>
+    <string name="apps_search">Search apps</string>
+    <string name="apps_search_clear">Clear search</string>
+    <string name="apps_search_none">No app called \"%1$s\".</string>
+    <string name="apps_new">NEW</string>
+    <string name="apps_open">Apps</string>
+    <string name="apps_open_new">Apps, new apps listed</string>
+    <string name="apps_back">Back</string>
+    <string name="apps_switch">Light up for %1$s</string>
+    <string name="apps_color_action">Change colour</string>
+    <string name="apps_muted">Off: its messages don\'t light up</string>
+    <string name="apps_alike">Glows like %1$s</string>
+    <string name="apps_color_auto">Its icon\'s colour</string>
+    <string name="apps_color_own">Your colour</string>
+    <string name="apps_color">COLOUR</string>
+    <string name="apps_color_auto_body">Glows in the colour of its icon.</string>
+    <string name="apps_color_own_body">Glows in the colour you picked. The first swatch goes back to its icon\'s.</string>
+    <string name="apps_alike_body">%1$s glows almost the same, and the LED would blink once for both. Give one of them its own colour.</string>
 
     <string name="group_screen_title">When a message arrives</string>
     <string name="group_screen_body">What the screen shows before the LED takes over.</string>

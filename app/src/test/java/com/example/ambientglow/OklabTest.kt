@@ -27,6 +27,13 @@ class OklabTest {
     }
 
     @Test
+    fun distanceIsZeroToItselfAndOneFromBlackToWhite() {
+        val brand = Color(DEFAULT_GLOW_COLOR)
+        assertEquals(0f, oklabDistance(brand, brand), 1e-6f)
+        assertEquals(1f, oklabDistance(Color.Black, Color.White), 1e-3f)
+    }
+
+    @Test
     fun mixingAColourWithItselfKeepsIt() {
         val brand = Color(DEFAULT_GLOW_COLOR)
         assertClose(brand, oklabMix(brand, brand))

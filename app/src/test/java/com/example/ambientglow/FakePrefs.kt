@@ -2,9 +2,13 @@ package com.example.ambientglow
 
 import android.content.SharedPreferences
 
-/** In-memory [SharedPreferences] for JVM tests: edits land on apply or commit, as on a device. */
+/**
+ * In-memory [SharedPreferences] for JVM tests: edits land on apply or commit, as on a device, and
+ * registered listeners hear of each changed key.
+ */
 class FakePrefs(initial: Map<String, Any> = emptyMap()) : SharedPreferences {
     val values = initial.toMutableMap()
+    private val listeners = mutableListOf<SharedPreferences.OnSharedPreferenceChangeListener>()
 
     override fun getAll(): Map<String, *> = values.toMap()
     override fun getString(key: String, defValue: String?) = values[key] as? String ?: defValue
@@ -17,8 +21,13 @@ class FakePrefs(initial: Map<String, Any> = emptyMap()) : SharedPreferences {
     override fun getBoolean(key: String, defValue: Boolean) = values[key] as? Boolean ?: defValue
     override fun contains(key: String) = key in values
     override fun edit(): SharedPreferences.Editor = Editor()
-    override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) = Unit
-    override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) = Unit
+    override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        listeners += listener
+    }
+
+    override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        listeners -= listener
+    }
 
     private inner class Editor : SharedPreferences.Editor {
         private val puts = mutableMapOf<String, Any>()
@@ -38,6 +47,7 @@ class FakePrefs(initial: Map<String, Any> = emptyMap()) : SharedPreferences {
             if (clear) values.clear()
             removes.forEach(values::remove)
             values.putAll(puts)
+            for (key in removes + puts.keys) listeners.toList().forEach { it.onSharedPreferenceChanged(this@FakePrefs, key) }
             return true
         }
 

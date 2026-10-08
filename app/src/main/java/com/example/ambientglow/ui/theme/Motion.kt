@@ -16,6 +16,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.IntSize
 
@@ -48,6 +50,23 @@ object GlowMotion {
 
     /** [SwapIn] / [SwapOut] for AnimatedContent, the space easing to the new content's size. */
     fun swap(): ContentTransform = ContentTransform(SwapIn, SwapOut, sizeTransform = SizeTransform(clip = false) { _, _ -> SizeIn })
+
+    /**
+     * Into a screen of its own and back: the new one drifts in a little from the side it lies on
+     * as the old one drifts out the other way, both fading. A short way, so it reads as one step.
+     */
+    fun page(forward: Boolean): ContentTransform {
+        val sign = if (forward) 1 else -1
+        return ContentTransform(
+            targetContentEnter = fadeIn(tween(ENTER_MS, ENTER_DELAY_MS, LinearOutSlowInEasing)) +
+                slideInHorizontally(tween(ENTER_MS + ENTER_DELAY_MS, easing = FastOutSlowInEasing)) { sign * it / PAGE_DRIFT },
+            initialContentExit = fadeOut(tween(EXIT_MS, easing = FastOutLinearInEasing)) +
+                slideOutHorizontally(tween(ENTER_MS, easing = FastOutSlowInEasing)) { -sign * it / PAGE_DRIFT },
+        )
+    }
+
+    /** How far a screen drifts on [page]: 1/PAGE_DRIFT of its width. */
+    private const val PAGE_DRIFT = 10
 
     /** A state turning (selection, tint, dim): eased both ways, read in draw where it can be. */
     fun <T> stateChange(): TweenSpec<T> = tween(STATE_MS, easing = FastOutSlowInEasing)

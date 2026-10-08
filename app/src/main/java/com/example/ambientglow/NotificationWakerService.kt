@@ -41,6 +41,7 @@ class NotificationWakerService : NotificationListenerService() {
 
     // Its icon bitmap is allocated per listener connection and reused for every message.
     private val brandColors by lazy(LazyThreadSafetyMode.NONE) { BrandColors(this) }
+    private val apps by lazy(LazyThreadSafetyMode.NONE) { GlowApps.prefs(this) }
     private val ranking = Ranking()
 
     private var lastWakeAt = 0L
@@ -73,6 +74,7 @@ class NotificationWakerService : NotificationListenerService() {
         GlowLauncher.ensureChannel(this)
         GlowPrefs.warm(this)
         brandColors.prepare()
+        learnApps()
         pruneStalePending()
         if (!screenReceiverRegistered) {
             registerScreenEvents(screenEvents)
@@ -95,6 +97,13 @@ class NotificationWakerService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification, rankingMap: RankingMap?) {
         val ranked = rankingMap?.getRanking(sbn.key, ranking) == true
         if (!isRealMessage(sbn, if (ranked) ranking else null)) return
+        // Every message keeps its app on the Apps screen, muted or not; a muted one stops here.
+        val auto = brandColors.of(sbn)
+        val pkg = sbn.packageName
+        if (pkg != packageName) {
+            GlowApps.noticed(apps, pkg, sbn.postTime, auto) { brandColors.labelOf(sbn) }
+            if (GlowApps.isMuted(apps, pkg)) return
+        }
 
         // A silent update to a message we are already waiting on: refresh it, don't re-wake.
         // WhatsApp (and others) set ONLY_ALERT_ONCE on every chat notification and re-post the
@@ -104,8 +113,8 @@ class NotificationWakerService : NotificationListenerService() {
         val quietUpdate = sbn.notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 &&
             previous != null && newestAt <= previous.newestAt
 
-        val color = brandColors.of(sbn)
-        GlowPending.put(PendingGlow(key = sbn.key, color = color, newestAt = newestAt))
+        val color = GlowApps.colorOf(apps, pkg) ?: auto
+        GlowPending.put(PendingGlow(key = sbn.key, pkg = pkg, color = color, newestAt = newestAt))
         val host = GlowSession.host
         GlowLog.d {
             "svc posted quiet=$quietUpdate interactive=${power.isInteractive} " +
@@ -155,6 +164,26 @@ class NotificationWakerService : NotificationListenerService() {
         // Android shows the lock screen for a moment before the LED covers it.
         GlowLog.d { "svc relight LED via full-screen intent" }
         launch(WakeMode.LED, newest.color)
+    }
+
+    /**
+     * Lists the apps whose messages are in the shade now, so the Apps screen isn't empty before the
+     * next message (on a fresh install, or the first run after an update). Once per connection:
+     * the full list parcels every notification in the shade.
+     */
+    private fun learnApps() {
+        val active = try {
+            activeNotifications ?: return
+        } catch (_: SecurityException) {
+            return // not connected yet
+        }
+        val rankingMap = currentRanking
+        for (sbn in active) {
+            if (sbn.packageName == packageName) continue
+            val ranked = rankingMap?.getRanking(sbn.key, ranking) == true
+            if (!isRealMessage(sbn, if (ranked) ranking else null)) continue
+            GlowApps.noticed(apps, sbn.packageName, sbn.postTime, brandColors.of(sbn)) { brandColors.labelOf(sbn) }
+        }
     }
 
     /**
