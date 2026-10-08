@@ -237,6 +237,8 @@ object GlowLauncher {
      * can lock the phone and watch the full listener → colour → privacy → full-screen-intent
      * path and then the LED colour loop. They stay until dismissed, like real messages.
      * One main-thread callback; the process stays alive because the system binds our listener.
+     * Handler time stops while the CPU sleeps, and the phone suspends moments after it is locked,
+     * so [DarkHold] keeps it up until the messages are out; without it they waited for the next wake.
      * Returns false if notifications are blocked.
      */
     fun scheduleTestNotification(context: Context): Boolean {
@@ -246,12 +248,15 @@ object GlowLauncher {
         pendingTest?.let(mainHandler::removeCallbacks)
         val task = Runnable {
             pendingTest = null
+            GlowLog.d { "test post" }
             if (canPost(app)) {
                 post(app, TEST_NOTIFICATION_ID, buildTestNotification(app, 0))
                 post(app, TEST_NOTIFICATION_ID + 1, buildTestNotification(app, 1))
             }
         }
         pendingTest = task
+        DarkHold.acquire(app, TEST_DELAY_MS + 1_000L)
+        GlowLog.d { "test scheduled in $TEST_DELAY_MS ms" }
         mainHandler.postDelayed(task, TEST_DELAY_MS)
         return true
     }
