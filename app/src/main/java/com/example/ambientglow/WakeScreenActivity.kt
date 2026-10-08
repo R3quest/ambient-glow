@@ -233,6 +233,21 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (covered.value && face.value == Face.LED && !stowed) timers.postDelayed(stowCovered, COVERED_MS)
     }
 
+    /**
+     * The LED is lit: watch for it being put away, face down ([stowWatch]) or covered
+     * ([armStowCovered]; lit while already covered, no display change will say so). Asked again,
+     * as when a stow had to wait for an arrival, it looks again.
+     */
+    private fun watchPutAway() {
+        stowWatch.watchLit()
+        armStowCovered()
+    }
+
+    private fun stopWatchingPutAway() {
+        stowWatch.stopLit()
+        timers.removeCallbacks(stowCovered)
+    }
+
     /** No LED for now: Do Not Disturb ([GlowSession.resting]) or [stowed]. */
     private val ledResting: Boolean get() = GlowSession.resting || stowed
 
@@ -1001,7 +1016,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         stowed = false
         stowWatch.stop()
         // Woken by hand while put away: the LED, if in front, watches again.
-        if (keepPanelOn.isHeld) stowWatch.watchLit()
+        if (keepPanelOn.isHeld) watchPutAway()
     }
 
     /** The effect on the black panel has handed over to the dot: drop to the dot's frame rate. */
@@ -1014,10 +1029,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // Do Not Disturb came on while it played: no LED after it.
         if (GlowSession.resting && face.value == Face.LED && power.isInteractive && !ending.value) sleepUnderCover()
         // Laid face down or covered while it played (a stow waits for it): look again.
-        if (face.value == Face.LED && !stowed) {
-            stowWatch.look()
-            armStowCovered()
-        }
+        if (face.value == Face.LED && !stowed && keepPanelOn.isHeld) watchPutAway()
     }
 
     /** The phone was unlocked: get out of the way of the user's apps. */
@@ -1146,10 +1158,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun acquireKeepOn() {
         if (!keepPanelOn.isHeld) keepPanelOn.acquire()
         pocketDark?.let { if (!it.isHeld) it.acquire() }
-        if (!stowed) {
-            stowWatch.watchLit()
-            armStowCovered() // lit while already covered: no display change will say so
-        }
+        if (!stowed) watchPutAway()
     }
 
     private fun releaseKeepOn() {
@@ -1157,7 +1166,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // Still covered (read elsewhere while in a pocket): the panel stays off until it isn't,
         // rather than lighting up in the pocket.
         pocketDark?.let { if (it.isHeld) it.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY) }
-        stowWatch.stopLit()
+        stopWatchingPutAway()
     }
 
     /**

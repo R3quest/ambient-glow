@@ -68,6 +68,64 @@ class StowTest {
         assertTrue(tilted.at(200L + FACE_DOWN_MS, -7f))
     }
 
+    /** Samples every 100 ms from [from] to [to] at gravity [z]: true once it lies face down. */
+    private fun FaceDownLook.lying(from: Long, to: Long, z: Float = faceDown): Boolean {
+        var down = false
+        for (t in from..to step 100L) down = sample(t, 0f, 0f, z) || down
+        return down
+    }
+
+    /** Held in a hand: never still, face up. */
+    private fun FaceDownLook.held(from: Long, to: Long) {
+        for (t in from..to step 100L) sample(t, if ((t / 100L) % 2L == 0L) 0.4f else -0.4f, 0f, faceUp)
+    }
+
+    @Test
+    fun aLookSeesAPhoneLaidFaceDownAndCloses() {
+        val look = FaceDownLook()
+        assertTrue("the first turn opens it", look.turned(0L))
+        look.held(0L, 1_000L)
+        assertFalse(look.lying(1_100L, 1_100L + FACE_DOWN_MS - 100L))
+        assertTrue(look.lying(1_100L + FACE_DOWN_MS, 1_100L + FACE_DOWN_MS))
+        assertFalse("done: no more samples wanted", look.open)
+    }
+
+    @Test
+    fun aLookInAHandClosesAfterItsTime() {
+        val look = FaceDownLook()
+        look.turned(0L)
+        look.held(0L, LOOK_MS - 100L)
+        assertTrue(look.open)
+        look.held(LOOK_MS, LOOK_MS)
+        assertFalse(look.open)
+    }
+
+    @Test
+    fun aTurnDuringALookHoldsItOpen() {
+        // The LED lights in a hand (a look opens), and late in it the phone is laid face down.
+        val look = FaceDownLook()
+        look.turned(0L)
+        look.held(0L, 4_000L)
+        assertFalse("already open: no second sampler", look.turned(4_000L))
+        look.held(4_100L, 4_900L)
+        // Still from 5 s: face down for FACE_DOWN_MS only past the first window's end.
+        assertTrue(look.lying(5_000L, 5_000L + FACE_DOWN_MS))
+        assertTrue(5_000L + FACE_DOWN_MS > LOOK_MS)
+    }
+
+    @Test
+    fun aNewLookStartsAfresh() {
+        val look = FaceDownLook()
+        look.turned(0L)
+        look.lying(0L, 700L) // face down, but turned back up before it counted
+        look.held(800L, LOOK_MS)
+        assertFalse(look.open)
+        assertFalse("closed: samples are ignored", look.sample(LOOK_MS + 100L, 0f, 0f, faceDown))
+        assertTrue(look.turned(10_000L))
+        assertFalse("the old still time is gone", look.lying(10_000L, 10_000L + FACE_DOWN_MS - 100L))
+        assertTrue(look.lying(10_000L + FACE_DOWN_MS, 10_000L + FACE_DOWN_MS))
+    }
+
     @Test
     fun takenOutMeansUncoveredAndNoLongerFaceDown() {
         assertTrue(takenOut(faceUp, near = false))

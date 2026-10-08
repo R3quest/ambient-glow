@@ -117,8 +117,9 @@ internal fun relightPlan(screenOn: Boolean, waiting: Boolean, resting: Boolean, 
 }
 
 /**
- * When to look whether a phone that went dark unlocked has locked, in ms after the screen went off;
- * each look is one wake of the CPU, nothing runs in between. With the lock delay known ([delayMs],
+ * When to look whether a phone that went dark unlocked has locked, in ms after the screen went off.
+ * Nothing runs between looks, but the CPU is held up to each one (Handler time stops while it
+ * sleeps), so the last look is how long the wait costs. With the lock delay known ([delayMs],
  * from its setting), just after it, and once more in case it ran late. Unknown (a phone may hide or
  * not have the setting), a few looks backing off to [MAX_LOCK_WAIT_MS]. Past that, none: a delay
  * that long isn't waited out, and the next wake brings the LED back.
