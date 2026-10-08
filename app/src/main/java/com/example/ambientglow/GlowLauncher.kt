@@ -75,36 +75,28 @@ object GlowLauncher {
     fun ensureChannel(context: Context) {
         if (channelsReady) return
         channelsReady = true
-        val manager = NotificationManagerCompat.from(context)
-        manager.createNotificationChannel(
-            NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
-                .setName(context.getString(R.string.channel_name))
-                .setDescription(context.getString(R.string.channel_description))
+        // All silent: the bridge only carries the full-screen intent, the message copy only brings
+        // back a pop-up whose original already rang, and the test needs no sound to be seen.
+        fun silent(id: String, importance: Int, name: Int, description: Int) =
+            NotificationChannelCompat.Builder(id, importance)
+                .setName(context.getString(name))
+                .setDescription(context.getString(description))
                 .setSound(null, null)
                 .setVibrationEnabled(false)
                 .setLightsEnabled(false)
                 .setShowBadge(false)
-                .build(),
-        )
-        // Silent: the original message already rang; this one only brings back its pop-up.
-        manager.createNotificationChannel(
-            NotificationChannelCompat.Builder(MESSAGE_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
-                .setName(context.getString(R.string.message_channel_name))
-                .setDescription(context.getString(R.string.message_channel_description))
-                .setSound(null, null)
-                .setVibrationEnabled(false)
-                .setLightsEnabled(false)
-                .setShowBadge(false)
-                .build(),
-        )
-        manager.createNotificationChannel(
-            NotificationChannelCompat.Builder(TEST_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
-                .setName(context.getString(R.string.test_channel_name))
-                .setDescription(context.getString(R.string.test_channel_description))
-                .setSound(null, null)
-                .setVibrationEnabled(false)
-                .setShowBadge(false)
-                .build(),
+                .build()
+        NotificationManagerCompat.from(context).createNotificationChannelsCompat(
+            listOf(
+                silent(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH, R.string.channel_name, R.string.channel_description),
+                silent(
+                    MESSAGE_CHANNEL_ID,
+                    NotificationManagerCompat.IMPORTANCE_HIGH,
+                    R.string.message_channel_name,
+                    R.string.message_channel_description,
+                ),
+                silent(TEST_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT, R.string.test_channel_name, R.string.test_channel_description),
+            ),
         )
     }
 

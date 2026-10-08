@@ -15,7 +15,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import androidx.core.app.NotificationCompat
 import androidx.core.os.BundleCompat
 import com.example.ambientglow.dashboard.GrantReturn
 
@@ -105,13 +104,9 @@ class NotificationWakerService : NotificationListenerService() {
             if (GlowApps.isMuted(apps, pkg)) return
         }
 
-        // A silent update to a message we are already waiting on: refresh it, don't re-wake.
-        // WhatsApp (and others) set ONLY_ALERT_ONCE on every chat notification and re-post the
-        // same key for each new message in that chat, so a newer message still counts as new.
         val newestAt = newestMessageAt(sbn.notification)
         val previous = GlowPending.entries.firstOrNull { it.key == sbn.key }
-        val quietUpdate = sbn.notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 &&
-            previous != null && newestAt <= previous.newestAt
+        val quietUpdate = isQuietUpdate(sbn.notification.flags, newestAt, previous?.newestAt)
 
         val color = GlowApps.colorOf(apps, pkg) ?: auto
         GlowPending.put(PendingGlow(key = sbn.key, pkg = pkg, color = color, newestAt = newestAt))
@@ -217,22 +212,17 @@ class NotificationWakerService : NotificationListenerService() {
         }
     }
 
-    /** Lets through only new, user-facing alerts; skips media, progress, services and silent posts. */
+    /** Lets through only new, user-facing alerts ([isAlert]); of our own, only the test messages. */
     private fun isRealMessage(sbn: StatusBarNotification, ranking: Ranking?): Boolean {
         val notification = sbn.notification
         if (sbn.packageName == packageName && notification.channelId != GlowLauncher.TEST_CHANNEL_ID) return false
-        if (sbn.isOngoing) return false
-
-        val flags = notification.flags
-        if (flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return false
-        if (flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
-        if (notification.category in IGNORED_CATEGORIES) return false
-
-        if (ranking != null) {
-            if (ranking.importance < NotificationManager.IMPORTANCE_DEFAULT) return false
-            if (!ranking.matchesInterruptionFilter()) return false // respects Do Not Disturb
-        }
-        return true
+        return isAlert(
+            ongoing = sbn.isOngoing,
+            flags = notification.flags,
+            category = notification.category,
+            importance = ranking?.importance,
+            allowedNow = ranking?.matchesInterruptionFilter() ?: true,
+        )
     }
 
     /**
@@ -260,16 +250,5 @@ class NotificationWakerService : NotificationListenerService() {
 
         /** Notification.MessagingStyle.Message's timestamp key inside each EXTRA_MESSAGES bundle. */
         const val KEY_MESSAGE_TIME = "time"
-
-        val IGNORED_CATEGORIES = setOf(
-            NotificationCompat.CATEGORY_TRANSPORT,
-            NotificationCompat.CATEGORY_PROGRESS,
-            NotificationCompat.CATEGORY_SERVICE,
-            NotificationCompat.CATEGORY_SYSTEM,
-            NotificationCompat.CATEGORY_NAVIGATION,
-            NotificationCompat.CATEGORY_STOPWATCH,
-            NotificationCompat.CATEGORY_WORKOUT,
-            NotificationCompat.CATEGORY_LOCATION_SHARING,
-        )
     }
 }

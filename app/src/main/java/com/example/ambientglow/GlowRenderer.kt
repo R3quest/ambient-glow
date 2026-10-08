@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
 import kotlin.math.min
 
-/** Physical sizes of every glow element. Full-screen values follow TODO.md (4dp frame). */
+/** Physical sizes of every glow element: full screen, and the dashboard mock-ups. */
 @Immutable
 data class GlowMetrics(
     val stroke: Dp,
