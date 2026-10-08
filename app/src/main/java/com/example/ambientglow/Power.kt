@@ -18,8 +18,9 @@ import androidx.core.content.ContextCompat
 /**
  * Lights the panel without launching anything: the screen comes on showing whatever is on top,
  * the system lock screen or the LED, exactly as it was arranged while the screen was dark.
- * A screen wake lock with ACQUIRE_CAUSES_WAKEUP is still honoured for apps targeting SDK 35
- * (the TURN_SCREEN_ON requirement is not enabled for any released target SDK). It auto-releases,
+ * A screen wake lock with ACQUIRE_CAUSES_WAKEUP is still honoured for apps targeting SDK 36: the
+ * TURN_SCREEN_ON requirement (REQUIRE_TURN_SCREEN_ON_PERMISSION) is enabled for no released target
+ * SDK (10000 in `dumpsys platform_compat` on Android 16 QPR2). It auto-releases,
  * and ON_AFTER_RELEASE leaves the normal lock-screen timeout in charge afterwards.
  */
 object PanelWaker {

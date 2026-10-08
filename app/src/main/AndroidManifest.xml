@@ -27,7 +27,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AmbientGlow"
-        tools:targetApi="35">
+        tools:targetApi="36">
 
         <!-- Portrait: LED positions, spots and the camera fit are saved as fractions of the
              portrait screen; worked out in landscape they would land elsewhere on the panel.

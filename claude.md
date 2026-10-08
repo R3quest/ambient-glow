@@ -25,7 +25,7 @@ This file serves as the permanent system configuration and architectural authori
 - **Timing Is a Signal:** The live effect and the LED keep real time (`RealTimeMotion`) whatever the animator duration scale. Dashboard chrome follows the system scale (`GlowMotion`).
 
 ## 📁 4. Architecture Requirements
-- **Build System:** compileSdk 37, targetSdk 35, minSdk 26, Kotlin DSL (`.gradle.kts`) with a version catalog.
+- **Build System:** compileSdk 37, targetSdk 36, minSdk 26, Kotlin DSL (`.gradle.kts`) with a version catalog.
 - **UI Framework:** Jetpack Compose using the modern Bill of Materials (BOM) management.
 - **Color Extraction:** `androidx.palette:palette-ktx` for ultra-fast, high-precision extraction.
 - **R8 Optimization:** ProGuard rules must enforce aggressive shrinking and obfuscation to keep the runtime DEX footprint as tiny as possible. Log through `GlowLog.d { "..." }`: the lambda sits behind `BuildConfig.DEBUG`, so release builds never build the message or run the reads (binder calls) inside it.

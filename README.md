@@ -13,7 +13,7 @@ Ambient Glow is an ultra-lightweight, high-performance, and privacy-first Androi
 - **Language:** Kotlin
 - **UI:** Jetpack Compose (Material 3)
 - **Min SDK:** 26 (Android 8.0)
-- **Target SDK:** 35 (Android 15)
+- **Target SDK:** 36 (Android 16)
 - **Key Libraries:** `androidx.palette:palette-ktx`; AGSL runtime shaders on Android 13+, with gradient fallbacks below
 
 ## 🛠️ Installation & Setup for Developers
