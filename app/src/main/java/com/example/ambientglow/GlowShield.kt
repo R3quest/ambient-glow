@@ -424,6 +424,9 @@ class GlowShield : AccessibilityService() {
         fun stopArrival() {
             instance?.removeArrival()
         }
+
+        /** Enabled and bound: also what lets the app start the glow screen from the background. */
+        val isOn: Boolean get() = instance != null
     }
 }
 

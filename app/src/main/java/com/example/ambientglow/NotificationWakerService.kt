@@ -45,6 +45,23 @@ class NotificationWakerService : NotificationListenerService() {
 
     private var lastWakeAt = 0L
 
+    // The watchdog: a few seconds after the screen went off with messages waiting, the LED is up
+    // or rightly dark. Whatever slipped through, it is lit then.
+    private val checkLed = Runnable {
+        val host = GlowSession.host
+        if (host != null && !host.isAway) host.ensureLed() else relightIfWaiting()
+    }
+
+    // Unlocked when the screen went off (a lock delay): relight once it has locked, waiting once.
+    private var lockWait = LockWait.NONE
+    private val relightOnceLocked = Runnable {
+        lockWait = LockWait.DONE
+        relightIfWaiting()
+    }
+
+    // A relight that bailed out for a call, tried again once it is over.
+    private val afterCall by lazy(LazyThreadSafetyMode.NONE) { AfterCall(this, ::relightIfWaiting) }
+
     // Screen-off → relight the LED while messages are still unread. The short delay lets the
     // keyguard settle first.
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -54,13 +71,17 @@ class NotificationWakerService : NotificationListenerService() {
         override fun onReceive(context: Context, intent: Intent) {
             GlowLog.d { "svc ${intent.action?.substringAfterLast('.')} pending=${GlowPending.entries.size}" }
             mainHandler.removeCallbacks(relightLed)
+            mainHandler.removeCallbacks(checkLed)
+            mainHandler.removeCallbacks(relightOnceLocked)
+            lockWait = LockWait.NONE
             when (intent.action) {
-                // A glow screen on top of the lock screen handles its own screen-off. With nothing
-                // waiting there is no LED to relight: let the CPU sleep at once.
+                // A glow screen on top of the lock screen handles its own screen-off; with none, the
+                // listener relights. With nothing waiting there is no LED: let the CPU sleep at once.
                 // Nor while Do Not Disturb rests it.
-                Intent.ACTION_SCREEN_OFF -> if (!GlowPending.isEmpty && !GlowSession.resting && GlowSession.host?.isAway != false) {
-                    DarkHold.acquire(context) // keep the CPU up until the relight runs
-                    mainHandler.postDelayed(relightLed, RELIGHT_DELAY_MS)
+                Intent.ACTION_SCREEN_OFF -> if (!GlowPending.isEmpty && !GlowSession.resting) {
+                    DarkHold.acquire(context, LED_CHECK_MS + 1_000L) // up until the relight and the check have run
+                    if (GlowSession.host?.isAway != false) mainHandler.postDelayed(relightLed, RELIGHT_DELAY_MS)
+                    mainHandler.postDelayed(checkLed, LED_CHECK_MS)
                 }
                 // Don't cancel the wake bridge here: another app (or the bridge itself) may have
                 // lit the panel a moment after it was posted, before the system launched it. The
@@ -163,18 +184,63 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     private fun relightIfWaiting() {
-        if (power.isInteractive || audio.inCall || GlowPending.isEmpty || GlowSession.resting) return
-        if (GlowSession.host?.isAway == false) return // it came back on top in the meantime
-        // With a delayed auto-lock the phone is still unlocked here; the glow screen would only
-        // step aside again. The next wake or message (on the lock screen) brings it back.
-        if (!keyguard.isKeyguardLocked) return
+        val plan = relightPlan(
+            screenOn = power.isInteractive,
+            waiting = !GlowPending.isEmpty,
+            resting = GlowSession.resting,
+            hostOnTop = GlowSession.host?.isAway == false,
+            inCall = audio.inCall,
+            locked = keyguard.isKeyguardLocked,
+        )
+        when (plan) {
+            Relight.NONE -> return
+            Relight.AFTER_CALL -> {
+                afterCall.arm()
+                return
+            }
+            // The glow screen over an unlocked phone would only step aside again: wait for the lock.
+            Relight.AFTER_LOCK -> {
+                awaitLock()
+                return
+            }
+            Relight.NOW -> Unit
+        }
         pruneStalePending()
         val newest = GlowPending.entries.firstOrNull() ?: return
-        // Only reached when the glow screen was not on top (the phone had been unlocked), so
-        // Android shows the lock screen for a moment before the LED covers it.
-        GlowLog.d { "svc relight LED via full-screen intent" }
+        // Only reached when the glow screen was not on top (the phone had been unlocked). Through
+        // the full-screen intent Android shows the lock screen for a moment before the LED covers
+        // it; started in the dark ([GlowLauncher.startInTheDark]) it doesn't.
+        GlowLog.d { "svc relight LED" }
         launch(WakeMode.LED, newest.color)
     }
+
+    /**
+     * The screen went off unlocked: with a lock delay (One UI: 5 s after the screen times out) it
+     * locks a little later, with nothing to tell us. Wait that long, then relight. Once per screen-off:
+     * a phone that stays unlocked (Smart Lock) isn't waited on again. A delay past
+     * [MAX_LOCK_WAIT_MS] isn't held out for; the next wake brings the LED back.
+     */
+    private fun awaitLock() {
+        if (lockWait != LockWait.NONE) return
+        val delay = lockDelayMs()
+        if (delay > MAX_LOCK_WAIT_MS) {
+            lockWait = LockWait.DONE
+            return
+        }
+        lockWait = LockWait.WAITING
+        GlowLog.d { "svc unlocked: relight once it locks, in ${delay + LOCK_MARGIN_MS} ms" }
+        DarkHold.acquire(this, delay + LOCK_MARGIN_MS + 1_000L) // Handler time stops while the CPU sleeps
+        mainHandler.postDelayed(relightOnceLocked, delay + LOCK_MARGIN_MS)
+    }
+
+    /** How long after the screen goes off the phone locks; a hidden but readable setting. */
+    private fun lockDelayMs(): Long = try {
+        android.provider.Settings.Secure.getLong(contentResolver, LOCK_AFTER_TIMEOUT)
+    } catch (_: Exception) {
+        DEFAULT_LOCK_DELAY_MS
+    }
+
+    private enum class LockWait { NONE, WAITING, DONE }
 
     /**
      * Lists the apps whose messages are in the shade now, so the Apps screen isn't empty before the
@@ -214,6 +280,18 @@ class NotificationWakerService : NotificationListenerService() {
 
     private fun launch(mode: WakeMode, color: Int): Boolean {
         wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
+        // Into the black LED face from a dark screen: straight in, while still dark, so the lock
+        // screen never shows first. If it didn't arrive, the full-screen intent as ever.
+        if (mode != WakeMode.WAKE && !power.isInteractive && GlowLauncher.startInTheDark(this, mode)) {
+            mainHandler.postDelayed({
+                val host = GlowSession.host
+                if (host == null || host.isAway) {
+                    GlowLog.d { "svc dark start didn't arrive: full-screen intent" }
+                    if (!GlowLauncher.launchFromBackground(this, mode, color)) wakeLock.release()
+                }
+            }, DARK_START_CHECK_MS)
+            return true
+        }
         val launched = GlowLauncher.launchFromBackground(this, mode, color)
         if (!launched) wakeLock.release()
         return launched
@@ -221,6 +299,9 @@ class NotificationWakerService : NotificationListenerService() {
 
     private fun releaseScreenReceiver() {
         mainHandler.removeCallbacks(relightLed)
+        mainHandler.removeCallbacks(checkLed)
+        mainHandler.removeCallbacks(relightOnceLocked)
+        afterCall.cancel()
         if (screenReceiverRegistered) {
             unregisterReceiver(screenEvents)
             screenReceiverRegistered = false
@@ -260,6 +341,18 @@ class NotificationWakerService : NotificationListenerService() {
     private companion object {
         const val WAKE_LOCK_TAG = "AmbientGlow:wake"
         const val WAKE_LOCK_TIMEOUT_MS = 4_000L
+
+        /** The watchdog looks this long after the screen went off: past every relight's own delay. */
+        const val LED_CHECK_MS = 4_000L
+
+        /** Settings.Secure.LOCK_SCREEN_LOCK_AFTER_TIMEOUT (hidden), in ms; One UI's default is 5 s. */
+        const val LOCK_AFTER_TIMEOUT = "lock_screen_lock_after_timeout"
+        const val DEFAULT_LOCK_DELAY_MS = 5_000L
+        const val LOCK_MARGIN_MS = 600L
+        const val MAX_LOCK_WAIT_MS = 30_000L
+
+        /** A dark start that hasn't brought the glow screen on top by now isn't coming. */
+        const val DARK_START_CHECK_MS = 800L
         /** Lets the sleep transition (and keyguard lock) finish before waking the panel again. */
         const val RELIGHT_DELAY_MS = 400L
 

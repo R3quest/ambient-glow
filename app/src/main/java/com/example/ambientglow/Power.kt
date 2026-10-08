@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
+import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
@@ -55,6 +56,36 @@ object DarkHold {
 
 /** Proximity blanks the screen during calls; never light up over a call. */
 internal val AudioManager.inCall: Boolean get() = mode != AudioManager.MODE_NORMAL
+
+/**
+ * Runs [then] once, when the call in progress is over (audio back to normal). Every relight bails
+ * out during a call; without this, a screen turned off before the call had quite ended (the power
+ * key hanging up) would stay dark, LED and all, until something else woke it. Android 12+, where
+ * the audio mode can be followed without a permission; below it, the next wake brings the LED back.
+ */
+internal class AfterCall(private val context: Context, private val then: () -> Unit) {
+    private val audio = context.getSystemService(AudioManager::class.java)
+    private var listener: Any? = null
+
+    fun arm() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || listener != null) return
+        val onMode = AudioManager.OnModeChangedListener { mode ->
+            if (mode != AudioManager.MODE_NORMAL) return@OnModeChangedListener
+            cancel()
+            GlowLog.d { "call over" }
+            DarkHold.acquire(context) // woken by the hang-up: keep the CPU up for the relight
+            then()
+        }
+        listener = onMode
+        audio.addOnModeChangedListener(context.mainExecutor, onMode)
+    }
+
+    fun cancel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        (listener as? AudioManager.OnModeChangedListener)?.let(audio::removeOnModeChangedListener)
+        listener = null
+    }
+}
 
 /** Registers [receiver] for the panel turning off and on (system broadcasts, not exported). */
 internal fun Context.registerScreenEvents(receiver: BroadcastReceiver) {

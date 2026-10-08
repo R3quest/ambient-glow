@@ -39,6 +39,9 @@ object GlowLauncher {
 
     const val EXTRA_MODE = "com.example.ambientglow.extra.MODE"
 
+    /** Started straight into a dark screen ([startInTheDark]): the glow screen lights the panel itself. */
+    const val EXTRA_DARK = "com.example.ambientglow.extra.DARK"
+
     private const val BRIDGE_NOTIFICATION_ID = 0xA61
     private const val TEST_NOTIFICATION_ID = 0xA62
     private const val MESSAGE_NOTIFICATION_ID = 0xA64
@@ -115,6 +118,25 @@ object GlowLauncher {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Starts the glow screen directly while the screen is dark, so it is in front before the panel
+     * lights and the lock screen never shows first (the full-screen intent wakes the panel onto the
+     * lock screen, then the glow screen covers it). Android lets an app start activities from the
+     * background while the system holds its accessibility service bound, so only with [GlowShield]
+     * on. False if it can't try; whether it arrived, the caller checks.
+     */
+    fun startInTheDark(context: Context, mode: WakeMode): Boolean {
+        if (!GlowShield.isOn) return false
+        return try {
+            context.startActivity(wakeIntent(context, mode).putExtra(EXTRA_DARK, true))
+            GlowLog.d { "dark start mode=$mode" }
+            true
+        } catch (e: RuntimeException) {
+            GlowLog.d { "dark start refused: $e" }
+            false
+        }
     }
 
     /** Background path, used by [NotificationWakerService]. Returns false if the bridge is blocked. */

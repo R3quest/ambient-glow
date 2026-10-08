@@ -208,6 +208,23 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         StowWatch(this, covered = { covered.value }, onStow = ::stow, onTakenOut = ::takenOut)
     }
 
+    /** The screen went off during a call: once it is over, the LED as the screen-off would have had it. */
+    private val afterCall by lazy(LazyThreadSafetyMode.NONE) {
+        AfterCall(this) {
+            if (!power.isInteractive && face.value != Face.AWAY) {
+                GlowLog.d { "act relight after the call face=${face.value}" }
+                when (face.value) {
+                    Face.LOCK_SCREEN -> relightLed(RELIGHT_DELAY_MS)
+                    // The LED was in front when the call came: straight back into it.
+                    else -> if (!ledResting && !GlowPending.isEmpty && takeRelightToken()) {
+                        showLed()
+                        wakeAfter(RELIGHT_DELAY_MS)
+                    }
+                }
+            }
+        }
+    }
+
     /** No LED for now: Do Not Disturb ([GlowSession.resting]) or [stowed]. */
     private val ledResting: Boolean get() = GlowSession.resting || stowed
 
@@ -305,7 +322,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             window.isNavigationBarContrastEnforced = false
         }
         super.onCreate(savedInstanceState)
-        GlowLog.d { "act onCreate mode=${intent?.getStringExtra(GlowLauncher.EXTRA_MODE)}" }
+        GlowLog.d { "act onCreate mode=${intent?.getStringExtra(GlowLauncher.EXTRA_MODE)} dark=${intent?.getBooleanExtra(GlowLauncher.EXTRA_DARK, false)} interactive=${power.isInteractive}" }
         // Never cover the lock screen by accident before start() decides.
         setLockScreenCover(cover = false)
         // Never let a relaunch show a stale snapshot as its starting window.
@@ -346,7 +363,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        GlowLog.d { "act onNewIntent mode=${intent.getStringExtra(GlowLauncher.EXTRA_MODE)} face=${face.value}" }
+        GlowLog.d {
+            "act onNewIntent mode=${intent.getStringExtra(GlowLauncher.EXTRA_MODE)} face=${face.value} " +
+                "dark=${intent.getBooleanExtra(GlowLauncher.EXTRA_DARK, false)} interactive=${power.isInteractive}"
+        }
         setIntent(intent)
         start(intent)
     }
@@ -394,6 +414,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     override fun onDestroy() {
         GlowLog.d { "act onDestroy" }
+        afterCall.cancel()
         unstow()
         timers.removeCallbacksAndMessages(null)
         GlowSession.detach(this)
@@ -459,11 +480,46 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             ending.value = true
             onArrivalDone()
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            releaseKeepOn()
             timers.removeCallbacks(sleepAfterBreath)
-            timers.postDelayed(sleepAfterBreath, LED_BREATH_MS.toLong())
+            if (stowed) {
+                // Put away: nobody sees the last breath. Sleep now, and let go of the proximity lock
+                // without waiting for the sensor to clear: a covered sensor keeps the phone awake
+                // (as in a call), so it would stay up until taken out and light its lock screen then.
+                // The CPU may be let sleep mid-way while put away; hold it for the hand-over.
+                DarkHold.acquire(this, DRAIN_HOLD_MS)
+                pocketDark?.let { if (it.isHeld) it.release() }
+                releaseKeepOn()
+                sleepUnderCover()
+            } else {
+                releaseKeepOn()
+                timers.postDelayed(sleepAfterBreath, LED_BREATH_MS.toLong())
+            }
         } else {
             finishAndRemoveTask()
+        }
+    }
+
+    override fun ensureLed() {
+        val missing = face.value != Face.AWAY && ledMissing(
+            screenOn = power.isInteractive,
+            waiting = !GlowPending.isEmpty,
+            resting = GlowSession.resting,
+            inCall = audio.inCall,
+            putAway = stowed,
+            ending = ending.value,
+        )
+        if (!missing) {
+            if (audio.inCall && !power.isInteractive) afterCall.arm()
+            return
+        }
+        GlowLog.d { "act LED missing face=${face.value}: relighting" }
+        DarkHold.acquire(this)
+        when (face.value) {
+            Face.LOCK_SCREEN -> relightLed(RELIGHT_DELAY_MS)
+            else -> if (takeRelightToken()) {
+                showLed()
+                wakeAfter(RELIGHT_DELAY_MS)
+            }
         }
     }
 
@@ -522,7 +578,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             WakeMode.ARRIVAL -> showLed(arrival = true)
         }
         // The full-screen intent normally lights the panel; make sure, without relaunching.
-        if (!power.isInteractive) wakeAfter(LAUNCH_WAKE_CHECK_MS)
+        // Started in the dark, it lights the panel itself once its cover is committed. Created
+        // while asleep, it is resumed and paused at once: that pause is ours, not a power press.
+        val dark = intent?.getBooleanExtra(GlowLauncher.EXTRA_DARK, false) == true
+        if (dark && !power.isInteractive && face.value == Face.LED) ledArmedForSleep = true
+        if (!power.isInteractive) wakeAfter(if (dark) RELIGHT_DELAY_MS else LAUNCH_WAKE_CHECK_MS)
     }
 
     private fun onScreenOff() {
@@ -554,7 +614,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             }
             return
         }
-        if (audio.inCall) return // proximity during a call: stay dark
+        if (audio.inCall) {
+            afterCall.arm() // proximity during a call: stay dark, and light the LED once it is over
+            return
+        }
         if (revealingAfterPower) return // onPause already switched to the lock screen and woke it
         if (ledArmedForSleep) {
             // Already the LED, and One UI knows it is covered: just light the panel.
@@ -1142,6 +1205,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
         /** Lock screen dark → LED: the switch is committed ~10 ms after screen-off; small margin. */
         const val RELIGHT_DELAY_MS = 150L
+
+        /** The CPU held while a drain, put away, hands over to the lock screen's timeout and sleeps. */
+        const val DRAIN_HOLD_MS = 8_000L
 
         /** After a full-screen launch, light the panel ourselves if the system didn't. */
         const val LAUNCH_WAKE_CHECK_MS = 600L

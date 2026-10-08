@@ -89,6 +89,41 @@ internal fun wakeModeFor(arrival: ArrivalMode, screenOn: Boolean): WakeMode = wh
     else -> WakeMode.LED
 }
 
+/** What the listener does about the LED once the screen is off ([relightPlan]). */
+internal enum class Relight {
+    /** Light it now. */
+    NOW,
+
+    /** Nothing waiting, the screen on, Do Not Disturb, or a glow screen on top that sees to it. */
+    NONE,
+
+    /** In a call: once it is over. */
+    AFTER_CALL,
+
+    /** Not locked yet (a lock delay after the screen times out): once it locks. */
+    AFTER_LOCK,
+}
+
+/**
+ * With no glow screen on top, the LED is the listener's to light when the screen goes off. A call
+ * or a lock delay only puts it off: each has a way back ([AfterCall], the wait for the lock), so a
+ * message never waits unseen behind either.
+ */
+internal fun relightPlan(screenOn: Boolean, waiting: Boolean, resting: Boolean, hostOnTop: Boolean, inCall: Boolean, locked: Boolean): Relight = when {
+    screenOn || !waiting || resting || hostOnTop -> Relight.NONE
+    inCall -> Relight.AFTER_CALL
+    !locked -> Relight.AFTER_LOCK
+    else -> Relight.NOW
+}
+
+/**
+ * The watchdog's question, a few seconds after the screen went off with a glow screen on top:
+ * messages are waiting, nothing that rightly keeps the LED dark holds (Do Not Disturb, a call, the
+ * phone put away, the last message just read), and yet the panel is still off.
+ */
+internal fun ledMissing(screenOn: Boolean, waiting: Boolean, resting: Boolean, inCall: Boolean, putAway: Boolean, ending: Boolean): Boolean =
+    !screenOn && waiting && !resting && !inCall && !putAway && !ending
+
 /**
  * Do Not Disturb, in any of its modes, rests the LED ([GlowSession.resting]); all alerts allowed,
  * or a filter not known yet, doesn't.
@@ -125,6 +160,9 @@ object GlowSession {
 
         /** Do Not Disturb came on or went off: [resting] changed. */
         fun onRestChanged()
+
+        /** The screen has been off a while with messages waiting: if the LED isn't up, and should be, light it. */
+        fun ensureLed()
     }
 
     var host: Host? = null
