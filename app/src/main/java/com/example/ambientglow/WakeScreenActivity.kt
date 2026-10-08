@@ -225,37 +225,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
-    /** When [stowCovered] is due (uptime ms), or 0: covered since, flickers of the sensor counted in. */
-    private var stowCoveredDue = 0L
-    private val stowCovered = Runnable { if (covered.value) stow() } // else at the next covering
-    private val coverLost = Runnable { dropStowCovered() }
+    private val stowCovered = Runnable { if (covered.value) stow() }
 
-    /**
-     * Covered with the LED up and not put away yet: put away [COVERED_MS] after it was covered.
-     * Uncovered for less than [UNCOVER_GRACE_MS] (fabric flickering the sensor), the time runs on;
-     * come due in such a flicker, it is put away when covered again. Uncovered for longer, no timer.
-     */
+    /** Covered with the LED up and not put away yet: put away in [COVERED_MS]; else no timer. */
     private fun armStowCovered() {
-        timers.removeCallbacks(coverLost)
-        if (face.value != Face.LED || stowed) {
-            dropStowCovered()
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        when {
-            !covered.value -> if (stowCoveredDue != 0L) timers.postDelayed(coverLost, UNCOVER_GRACE_MS)
-            stowCoveredDue == 0L -> {
-                stowCoveredDue = now + COVERED_MS
-                timers.postAtTime(stowCovered, stowCoveredDue)
-            }
-            stowCoveredDue <= now -> stow()
-        }
-    }
-
-    private fun dropStowCovered() {
         timers.removeCallbacks(stowCovered)
-        timers.removeCallbacks(coverLost)
-        stowCoveredDue = 0L
+        if (covered.value && face.value == Face.LED && !stowed) timers.postDelayed(stowCovered, COVERED_MS)
     }
 
     /**
@@ -270,7 +245,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun stopWatchingPutAway() {
         stowWatch.stopLit()
-        dropStowCovered()
+        timers.removeCallbacks(stowCovered)
     }
 
     /** No LED for now: Do Not Disturb ([GlowSession.resting]) or [stowed]. */
@@ -326,9 +301,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (dark != covered.value) {
                 GlowLog.d { "act panel ${if (dark) "covered" else "uncovered"} face=${face.value}" }
                 covered.value = dark
-                // Covered with the LED up: a look at how it lies (still under cover, put away at
-                // once), and a timer for a pocket on the move.
-                if (dark && face.value == Face.LED && !stowed && keepPanelOn.isHeld) watchPutAway() else armStowCovered()
+                // Covered for a while with the LED up: put away. One timer from this event, no sampling.
+                armStowCovered()
                 // Put away covered, the LED still in front: the system has lit the panel because the
                 // sensor cleared. That is the phone taken out, whether or not our own proximity
                 // listener heard it (a phone may only have one that can't wake the CPU). Still face
@@ -612,7 +586,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun start(intent: Intent?) {
         GlowLauncher.dismissBridge(this)
         timers.removeCallbacksAndMessages(null)
-        stowCoveredDue = 0L
         settings.value = GlowPrefs.load(this)
         if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
@@ -999,7 +972,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (stowed || face.value != Face.LED || arriving.value || ending.value || !power.isInteractive) return
         GlowLog.d { "act put away covered=${covered.value}" }
         stowed = true
-        dropStowCovered()
         stowWatch.watchStowed()
         if (covered.value) {
             // Covered (pocket, sofa, most desks): the proximity lock keeps the panel off. Let go of
@@ -1064,7 +1036,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun goAway() {
         GlowLog.d { "act goAway face=${face.value}" }
         timers.removeCallbacksAndMessages(null)
-        stowCoveredDue = 0L
         if (ending.value || GlowPending.isEmpty) {
             finishAndRemoveTask()
             return
