@@ -85,6 +85,24 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "AmbientGlow:led").apply { setReferenceCounted(false) }
     }
 
+    // In a pocket or face down, the LED has no one to show to: while the proximity sensor is
+    // covered the panel goes off, as in a call, and the LED is back the moment it is uncovered.
+    // The phone stays awake (no SCREEN_OFF, no pause), so the lock flow sees nothing. Held with
+    // [keepPanelOn]; null on a phone without the sensor.
+    private val pocketDark by lazy(LazyThreadSafetyMode.NONE) {
+        if (power.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+            power.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "AmbientGlow:pocket").apply { setReferenceCounted(false) }
+        } else {
+            null
+        }
+    }
+
+    /**
+     * The panel is off while the phone is awake: [pocketDark] has turned it off. Android keeps
+     * sending frames to a dark panel, so the LED round pauses rather than drawing them.
+     */
+    private val covered = mutableStateOf(false)
+
     private val timers = Handler(Looper.getMainLooper())
     private val wakeNow = Runnable {
         PanelWaker.wake(this)
@@ -215,6 +233,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (displayId != Display.DEFAULT_DISPLAY) return
             val wasInteractive = interactiveSeen
             interactiveSeen = power.isInteractive
+            // Also true for a moment while a wake turns the panel on; it turns on with an event too.
+            val dark = interactiveSeen && currentDisplay()?.state == Display.STATE_OFF
+            if (dark != covered.value) {
+                GlowLog.d { "act panel ${if (dark) "covered" else "uncovered"} face=${face.value}" }
+                covered.value = dark
+            }
             if (interactiveSeen) {
                 // Awake again: the sleep we were handling was cancelled; the next one is the user's.
                 ledArmedForSleep = false
@@ -280,6 +304,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 face = face.value,
                 ending = ending.value,
                 settling = settling.value,
+                covered = covered.value,
                 arriving = arriving.value,
                 arrivalSeq = arrivalSeq.intValue,
                 settings = settings.value.forScreen(geometry.value),
@@ -504,6 +529,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         listeningForSleep = listen
         if (!listen) {
             displays.unregisterDisplayListener(sleepSignal)
+            covered.value = false // nothing would clear it until the listener is back
             return
         }
         interactiveSeen = power.isInteractive
@@ -885,10 +911,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     @SuppressLint("WakelockTimeout") // released in onPause / when the LED leaves the front
     private fun acquireKeepOn() {
         if (!keepPanelOn.isHeld) keepPanelOn.acquire()
+        pocketDark?.let { if (!it.isHeld) it.acquire() }
     }
 
     private fun releaseKeepOn() {
         if (keepPanelOn.isHeld) keepPanelOn.release()
+        // Still covered (read elsewhere while in a pocket): the panel stays off until it isn't,
+        // rather than lighting up in the pocket.
+        pocketDark?.let { if (it.isHeld) it.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY) }
     }
 
     /**

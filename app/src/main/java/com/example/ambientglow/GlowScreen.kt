@@ -55,6 +55,7 @@ internal fun GlowScreen(
     face: Face,
     ending: Boolean,
     settling: Boolean,
+    covered: Boolean,
     arriving: Boolean,
     arrivalSeq: Int,
     settings: GlowSettings,
@@ -97,6 +98,8 @@ internal fun GlowScreen(
         // Keyed per announced message, so a new one restarts the effect. Newest colour first.
         // Settling: nothing until the bars are ours. Ending (read elsewhere): an arrival vanishes
         // (the activity ends it too), the dot finishes the breath it is in and lights no more.
+        // Covered (pocket, face down): the round pauses with the panel off and starts over, newest
+        // colour first, when it is uncovered; an arrival still runs out, so it hands over as ever.
         if (!settling) {
             key(arrivalSeq) {
                 if (arriving && !ending) {
@@ -107,7 +110,7 @@ internal fun GlowScreen(
                     } else {
                         ArrivalEffect(settings, colors.first(), geometry, onDone = onArrivalDone, overBlack = true)
                     }
-                } else if (!arriving) {
+                } else if (!arriving && !covered) {
                     LedLayer(settings, colors, geometry, onBlink, onFade = onLedFade, stopping = ending)
                 }
             }
