@@ -301,8 +301,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (dark != covered.value) {
                 GlowLog.d { "act panel ${if (dark) "covered" else "uncovered"} face=${face.value}" }
                 covered.value = dark
-                // Covered for a while with the LED up: put away. One timer from this event, no sampling.
-                armStowCovered()
+                // Covered with the LED up: a look at how it lies (still under cover, put away at
+                // once), and a timer for a pocket on the move.
+                if (dark && face.value == Face.LED && !stowed && keepPanelOn.isHeld) watchPutAway() else armStowCovered()
                 // Put away covered, the LED still in front: the system has lit the panel because the
                 // sensor cleared. That is the phone taken out, whether or not our own proximity
                 // listener heard it (a phone may only have one that can't wake the CPU). Still face
