@@ -57,7 +57,8 @@ class NotificationWakerService : NotificationListenerService() {
             when (intent.action) {
                 // A glow screen on top of the lock screen handles its own screen-off. With nothing
                 // waiting there is no LED to relight: let the CPU sleep at once.
-                Intent.ACTION_SCREEN_OFF -> if (!GlowPending.isEmpty && GlowSession.host?.isAway != false) {
+                // Nor while Do Not Disturb rests it.
+                Intent.ACTION_SCREEN_OFF -> if (!GlowPending.isEmpty && !GlowSession.resting && GlowSession.host?.isAway != false) {
                     DarkHold.acquire(context) // keep the CPU up until the relight runs
                     mainHandler.postDelayed(relightLed, RELIGHT_DELAY_MS)
                 }
@@ -72,6 +73,7 @@ class NotificationWakerService : NotificationListenerService() {
     override fun onListenerConnected() {
         GlowLauncher.ensureChannel(this)
         GlowPrefs.warm(this)
+        GlowSession.resting = restsUnder(currentInterruptionFilter)
         brandColors.prepare()
         learnApps()
         pruneStalePending()
@@ -117,7 +119,7 @@ class NotificationWakerService : NotificationListenerService() {
         }
         if (quietUpdate) return
 
-        val arrival = GlowPrefs.load(this).arrival
+        val arrival = arrivalFor(GlowPrefs.load(this).arrival, GlowSession.resting)
         if (arrival == ArrivalMode.MESSAGE) {
             // The system pops a message up by itself for a channel that peeks; only otherwise does
             // the glow screen re-post it. One UI shows that heads-up even when the screen was off
@@ -140,6 +142,19 @@ class NotificationWakerService : NotificationListenerService() {
         if (launch(wakeModeFor(arrival, power.isInteractive), color)) lastWakeAt = SystemClock.elapsedRealtime()
     }
 
+    override fun onInterruptionFilterChanged(interruptionFilter: Int) {
+        val resting = restsUnder(interruptionFilter)
+        if (resting == GlowSession.resting) return
+        GlowSession.resting = resting
+        GlowLog.d { "svc ${if (resting) "rest" else "rest over"} (filter $interruptionFilter) pending=${GlowPending.entries.size}" }
+        val host = GlowSession.host
+        if (host != null && !host.isAway) {
+            host.onRestChanged()
+        } else if (!resting) {
+            relightIfWaiting() // no glow screen on top: back through the full-screen intent
+        }
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap?, reason: Int) {
         // Dismissed, or cleared by its app after being read: the only way an LED entry ends.
         GlowLauncher.dismissMessage(this, sbn.key)
@@ -148,7 +163,7 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     private fun relightIfWaiting() {
-        if (power.isInteractive || audio.inCall || GlowPending.isEmpty) return
+        if (power.isInteractive || audio.inCall || GlowPending.isEmpty || GlowSession.resting) return
         if (GlowSession.host?.isAway == false) return // it came back on top in the meantime
         // With a delayed auto-lock the phone is still unlocked here; the glow screen would only
         // step aside again. The next wake or message (on the lock screen) brings it back.

@@ -1,5 +1,6 @@
 package com.example.ambientglow
 
+import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -89,6 +90,24 @@ internal fun wakeModeFor(arrival: ArrivalMode, screenOn: Boolean): WakeMode = wh
 }
 
 /**
+ * Do Not Disturb, in any of its modes, rests the LED ([GlowSession.resting]); all alerts allowed,
+ * or a filter not known yet, doesn't.
+ */
+internal fun restsUnder(interruptionFilter: Int): Boolean = when (interruptionFilter) {
+    NotificationListenerService.INTERRUPTION_FILTER_PRIORITY,
+    NotificationListenerService.INTERRUPTION_FILTER_NONE,
+    NotificationListenerService.INTERRUPTION_FILTER_ALARMS,
+    -> true
+    else -> false
+}
+
+/**
+ * How a message arrives: as the user chose, but while the LED rests one that breaks through Do Not
+ * Disturb lights the lock screen, the way the system shows it, and no LED follows it.
+ */
+internal fun arrivalFor(chosen: ArrivalMode, resting: Boolean): ArrivalMode = if (resting) ArrivalMode.LOCK_SCREEN else chosen
+
+/**
  * In-process link between the listener and a live glow screen (both on the main thread of
  * one process). While the glow screen is on top of the lock screen it handles every lock-flow
  * change itself; the listener only takes over when there is no glow screen on top.
@@ -103,10 +122,20 @@ object GlowSession {
 
         /** A waiting message was read or dismissed. */
         fun onPendingChanged()
+
+        /** Do Not Disturb came on or went off: [resting] changed. */
+        fun onRestChanged()
     }
 
     var host: Host? = null
         private set
+
+    /**
+     * Do Not Disturb is on, so the LED rests: it neither holds the panel on nor relights it, and a
+     * message that breaks through lights the lock screen only ([arrivalFor]). When it goes off, the
+     * LED lights again for whatever is still unread. Set by the listener, main thread only.
+     */
+    var resting = false
 
     fun attach(host: Host) {
         this.host = host

@@ -32,7 +32,7 @@ This file serves as the permanent system configuration and architectural authori
 
 ## 🗺️ 5. Code Map
 - **Settings:** `GlowSettings.kt` (every option, as `Labeled` enums, and the `GlowSettings` defaults), `GlowPrefs.kt` (storage).
-- **Runtime state:** `GlowSession.kt` — `GlowPending` (unread messages), `GlowSession` (listener ↔ glow screen link), `WakeMode`.
+- **Runtime state:** `GlowSession.kt` — `GlowPending` (unread messages), `GlowSession` (listener ↔ glow screen link; `resting` while Do Not Disturb is on), `WakeMode`.
 - **Apps:** `GlowApps.kt` (its own prefs file, which the listener learns apps into: muted/colour choices, look-alikes, launcher-list search). Kept apart from `GlowPrefs`, because the dashboard saves settings whole.
 - **Wake path:** `NotificationWakerService` (filters messages with `MessageFilter.kt`, skips muted apps, `GlowApps` colour or `BrandColors`) → `GlowLauncher` (bridge notification + full-screen intent) → `WakeScreenActivity` (the lock flow state machine) drawing `GlowScreen.kt` (the LED round, the arrival on black). `Power.kt`: `PanelWaker`, `DarkHold`, `inCall`.
 - **Glow screen helpers:** `Led.kt` (breath curve, `LedDot`), `LedWindow.kt` (bars, display modes), `RelightLimiter.kt`.

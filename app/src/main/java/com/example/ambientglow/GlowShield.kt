@@ -56,6 +56,7 @@ class GlowShield : AccessibilityService() {
     private val hideNow = Runnable { removeCover() }
     private val stopArrivalNow = Runnable { removeArrival() }
     private var cover: View? = null
+    private var coverParams: WindowManager.LayoutParams? = null
     private var dim: Dim? = null
     private var arrival: FrameLayout? = null
     private var arrivalOwner: OverlayOwner? = null
@@ -88,17 +89,30 @@ class GlowShield : AccessibilityService() {
         if (instance === this) instance = null
     }
 
-    private fun addCover() {
+    /**
+     * [format]: OPAQUE lets the compositor skip what is under it. A [blackout] needs TRANSLUCENT:
+     * the screen timeout comes from the top window that isn't hidden by an opaque one, so an opaque
+     * cover would hide the lock screen's short timeout and leave the screen to its long one.
+     */
+    private fun addCover(maxMs: Long, format: Int) {
         removeArrival() // the LED is taking over; the effect has done its job
         timers.removeCallbacks(hideNow)
         // Never left up by accident: a missed hide() still clears it.
-        timers.postDelayed(hideNow, MAX_COVER_MS)
-        if (cover != null) return
-        val view = View(this).apply { setBackgroundColor(Color.BLACK) }
-        if (addOverlay(view, PixelFormat.OPAQUE, "AmbientGlow:shield") != null) {
-            cover = view
-            GlowLog.d { "shield up" }
+        timers.postDelayed(hideNow, maxMs)
+        cover?.let { view ->
+            // Already up (a wake hand-over): switch its format in place, with no frame uncovered.
+            val params = coverParams
+            if (params != null && params.format != format) {
+                params.format = format
+                runCatching { windowManager.updateViewLayout(view, params) }
+            }
+            return
         }
+        val view = View(this).apply { setBackgroundColor(Color.BLACK) }
+        val params = addOverlay(view, format, "AmbientGlow:shield") ?: return
+        cover = view
+        coverParams = params
+        GlowLog.d { "shield up" }
     }
 
     /**
@@ -113,7 +127,7 @@ class GlowShield : AccessibilityService() {
             setBackgroundColor(Color.BLACK)
             alpha = 0f
         }
-        addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
+        coverParams = addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
         cover = view
         GlowLog.d { "shield dimming" }
         dim = Dim(view, durationMs).also { Choreographer.getInstance().postFrameCallback(it) }
@@ -146,6 +160,7 @@ class GlowShield : AccessibilityService() {
         timers.removeCallbacks(hideNow)
         val view = cover ?: return
         cover = null
+        coverParams = null
         // A cancelled dim never reaches its end, so it can never remove a newer arrival.
         dim?.let { Choreographer.getInstance().removeFrameCallback(it) }
         dim = null
@@ -364,6 +379,9 @@ class GlowShield : AccessibilityService() {
         /** Upper bound for one cover; a wake hand-over takes well under a second. */
         private const val MAX_COVER_MS = 2_000L
 
+        /** Upper bound for a [blackout]: the lock screen's own timeout and dim run out well within it. */
+        private const val MAX_BLACKOUT_MS = 20_000L
+
         /** Upper bound for the arrival overlay, in case the effect never reports done. */
         private const val MAX_ARRIVAL_MS = 4_000L
 
@@ -378,7 +396,15 @@ class GlowShield : AccessibilityService() {
 
         /** Covers the whole display, bars included. No-op when the service is off. */
         fun show() {
-            instance?.addCover()
+            instance?.addCover(MAX_COVER_MS, PixelFormat.OPAQUE)
+        }
+
+        /**
+         * Holds the display black while the lock screen, handed back so the panel can sleep, runs
+         * out its own timeout; ends with [hide]. No-op when the service is off.
+         */
+        fun blackout() {
+            instance?.addCover(MAX_BLACKOUT_MS, PixelFormat.TRANSLUCENT)
         }
 
         /** Fades the cover in over the lit lock screen, ending as the LED takes over. No-op when the service is off. */

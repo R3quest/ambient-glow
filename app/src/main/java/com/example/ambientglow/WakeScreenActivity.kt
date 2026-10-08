@@ -175,7 +175,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val takeOver = Runnable {
         GlowLog.d { "act takeover interactive=${power.isInteractive} locked=${keyguard.isKeyguardLocked}" }
         if (leaveIfUnlocked()) return@Runnable
-        if (face.value == Face.LOCK_SCREEN && autoTakeover && power.isInteractive && keyguard.isKeyguardLocked) {
+        if (face.value == Face.LOCK_SCREEN && autoTakeover && !GlowSession.resting && power.isInteractive && keyguard.isKeyguardLocked) {
             autoTakeover = false
             showLed()
         } else if (power.isInteractive) {
@@ -185,13 +185,24 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /** Dims the lit lock screen to black over [TAKEOVER_DIM_MS], ending as [takeOver] covers it. */
     private val dimForTakeover = Runnable {
-        if (face.value == Face.LOCK_SCREEN && autoTakeover && power.isInteractive && keyguard.isKeyguardLocked) {
+        if (face.value == Face.LOCK_SCREEN && autoTakeover && !GlowSession.resting && power.isInteractive && keyguard.isKeyguardLocked) {
             GlowShield.dimIn(TAKEOVER_DIM_MS)
         }
     }
 
     private val relightLimit = RelightLimiter(RELIGHT_BURST, RELIGHT_REFILL_MS)
     private val relightLater = Runnable { relightLed(RELIGHT_DELAY_MS) }
+
+    /**
+     * The lock screen was handed back to run out its own short timeout under a black cover
+     * ([sleepUnderCover]): nobody is looking at it, whatever face says.
+     */
+    private var coverSleep = false
+
+    /** Read elsewhere while the LED was lit: once the dot's last breath is out, let the panel sleep. */
+    private val sleepAfterBreath = Runnable {
+        if (ending.value && face.value == Face.LED && power.isInteractive) sleepUnderCover()
+    }
     private val settings = mutableStateOf(GlowSettings())
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
 
@@ -390,12 +401,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d { "act onNewMessage face=${face.value} interactive=${power.isInteractive}" }
         if (face.value == Face.AWAY) return
         ending.value = false
+        timers.removeCallbacks(sleepAfterBreath)
         settings.value = GlowPrefs.load(this) // the arrival choice may have changed since launch
-        when (settings.value.arrival) {
+        val arrival = arrivalFor(settings.value.arrival, GlowSession.resting)
+        when (arrival) {
             ArrivalMode.LOCK_SCREEN -> {
                 // Show the system lock screen with all its notifications, lit, with the effect
                 // over it. If the user is already looking at it, leave the hand-back off.
-                val userOnLockScreen = face.value == Face.LOCK_SCREEN && power.isInteractive && !autoTakeover
+                val userOnLockScreen = face.value == Face.LOCK_SCREEN && power.isInteractive && !autoTakeover && !coverSleep
                 if (!userOnLockScreen) showLockScreen(auto = true)
                 announce()
                 if (!power.isInteractive) {
@@ -404,11 +417,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 }
             }
             ArrivalMode.BLACK, ArrivalMode.MESSAGE, ArrivalMode.LED_ONLY -> {
-                val effect = settings.value.arrival.playsEffect
+                val effect = arrival.playsEffect
                 // The lock screen is only lit and in front when the user woke it themselves: they
                 // are looking at it (maybe typing a PIN), so don't cover it; play the effect over it
                 // instead (if there is one), and the dot takes over when it sleeps.
-                if (face.value == Face.LOCK_SCREEN && power.isInteractive) {
+                if (face.value == Face.LOCK_SCREEN && power.isInteractive && !coverSleep) {
                     if (effect) announce()
                     return
                 }
@@ -425,15 +438,44 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (!GlowPending.isEmpty) return
         if (face.value == Face.LED && power.isInteractive) {
             // Read elsewhere while the LED is lit: don't pop the lock screen up. Let the dot finish
-            // its breath, stay black, let the screen time out normally, and finish when it goes off.
-            // An arrival in progress is cut short: brightness and rate drop, the dot lights no more.
+            // its breath, then sleep under cover rather than at the screen timeout (10 min on some
+            // phones), and finish when the screen goes off. An arrival in progress is cut short:
+            // brightness and rate drop, the dot lights no more.
             GlowLog.d { "act draining" }
             ending.value = true
             onArrivalDone()
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             releaseKeepOn()
+            timers.removeCallbacks(sleepAfterBreath)
+            timers.postDelayed(sleepAfterBreath, LED_BREATH_MS.toLong())
         } else {
             finishAndRemoveTask()
+        }
+    }
+
+    override fun onRestChanged() {
+        GlowLog.d { "act rest=${GlowSession.resting} face=${face.value} interactive=${power.isInteractive}" }
+        if (GlowSession.resting) {
+            timers.removeCallbacks(takeOver)
+            timers.removeCallbacks(dimForTakeover)
+            timers.removeCallbacks(relightLater)
+            when {
+                face.value != Face.LED -> Unit // the lock screen times out as it would without us
+                // A black arrival plays out first ([onArrivalDone]).
+                arriving.value -> Unit
+                power.isInteractive -> sleepUnderCover()
+                // Dark, a relight on its way: call it off and leave the lock screen for the next wake.
+                else -> {
+                    timers.removeCallbacks(wakeNow)
+                    timers.removeCallbacks(verifyWake)
+                    showLockScreen()
+                }
+            }
+        } else if (face.value == Face.LOCK_SCREEN && !power.isInteractive && !GlowPending.isEmpty) {
+            // Do Not Disturb is over and messages are still unread: the LED lights again. Looking
+            // at the lock screen, the dot takes over when it sleeps, as ever.
+            DarkHold.acquire(this)
+            relightLed(RELIGHT_DELAY_MS)
         }
     }
 
@@ -450,14 +492,17 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             finishAndRemoveTask()
             return
         }
-        val mode = runCatching { WakeMode.valueOf(intent?.getStringExtra(GlowLauncher.EXTRA_MODE).orEmpty()) }
+        val requested = runCatching { WakeMode.valueOf(intent?.getStringExtra(GlowLauncher.EXTRA_MODE).orEmpty()) }
             .getOrDefault(WakeMode.LED)
+        // Resting (Do Not Disturb): only ever the lock screen.
+        val mode = if (GlowSession.resting) WakeMode.WAKE else requested
+        val arrival = arrivalFor(settings.value.arrival, GlowSession.resting)
         when (mode) {
             // With a black arrival the user is already looking at the lock screen: the effect
             // over it, no automatic cover.
             WakeMode.WAKE -> {
-                showLockScreen(auto = settings.value.arrival == ArrivalMode.LOCK_SCREEN)
-                if (settings.value.arrival.playsEffect) announce()
+                showLockScreen(auto = arrival == ArrivalMode.LOCK_SCREEN)
+                if (arrival.playsEffect) announce()
             }
             WakeMode.LED -> showLed()
             WakeMode.ARRIVAL -> showLed(arrival = true)
@@ -479,6 +524,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowShield.stopArrival()
         if (ending.value) {
             finishAndRemoveTask()
+            return
+        }
+        coverSleep = false
+        if (GlowSession.resting) {
+            // Do Not Disturb: the panel stays dark until it is over or the user wakes it, and then
+            // it wakes to the lock screen, never the LED.
+            GlowShield.hide()
+            if (face.value == Face.LED) showLockScreen()
             return
         }
         if (audio.inCall) return // proximity during a call: stay dark
@@ -560,7 +613,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun scheduleTakeover() {
         timers.removeCallbacks(takeOver)
         timers.removeCallbacks(dimForTakeover)
-        if (autoTakeover && power.isInteractive) {
+        if (autoTakeover && power.isInteractive && !GlowSession.resting) {
             timers.postDelayed(dimForTakeover, TAKEOVER_MS - TAKEOVER_DIM_MS)
             timers.postDelayed(takeOver, TAKEOVER_MS)
         }
@@ -587,7 +640,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun onGoingToSleep() {
         GlowLog.d { "act going to sleep on the lock screen" }
-        if (audio.inCall || GlowPending.isEmpty || !takeRelightToken()) return
+        if (audio.inCall || GlowPending.isEmpty || GlowSession.resting || !takeRelightToken()) return
         DarkHold.acquire(this)
         showLed()
         ledArmedForSleep = true
@@ -602,7 +655,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      */
     private fun relightLed(delayMs: Long) {
         timers.removeCallbacks(relightLater)
-        if (power.isInteractive || face.value != Face.LOCK_SCREEN || audio.inCall || GlowPending.isEmpty) return
+        if (power.isInteractive || face.value != Face.LOCK_SCREEN || audio.inCall || GlowPending.isEmpty || GlowSession.resting) return
         if (!takeRelightToken()) return
         showLed()
         wakeAfter(delayMs)
@@ -707,6 +760,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     /** Cover the lock screen with the LED; [arrival] first plays the effect on the black panel. */
     private fun showLed(arrival: Boolean = false) {
         GlowLog.d { "act showLed arrival=$arrival pending=${GlowPending.entries.size}" }
+        coverSleep = false
         timers.removeCallbacks(sleepWatch)
         timers.removeCallbacks(takeOver)
         timers.removeCallbacks(dimForTakeover)
@@ -754,13 +808,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * Let the system lock screen show over us while we stay the top task. The LED comes back
      * when the system's lock-screen timeout turns the screen off.
      */
-    private fun showLockScreen(auto: Boolean = false) {
-        GlowLog.d { "act showLockScreen auto=$auto interactive=${power.isInteractive}" }
+    private fun showLockScreen(auto: Boolean = false, underCover: Boolean = false) {
+        GlowLog.d { "act showLockScreen auto=$auto underCover=$underCover interactive=${power.isInteractive}" }
         ledArmedForSleep = false
         autoTakeover = auto
+        coverSleep = underCover
         listenForSleep(true)
         face.value = Face.LOCK_SCREEN
-        becomeInvisible()
+        becomeInvisible(keepCover = underCover)
         watchForSleep()
         scheduleTakeover()
     }
@@ -780,6 +835,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (arriving.value) GlowLauncher.dismissMessage(this)
     }
 
+    /**
+     * Let the panel sleep soon, not at the screen timeout (10 min on some phones): hand the lock
+     * screen back, whose own short timeout then runs, and hold the display black meanwhile with
+     * [GlowShield] (without it the lock screen shows until then). [onScreenOff] takes it from there.
+     */
+    private fun sleepUnderCover() {
+        GlowShield.blackout()
+        showLockScreen(underCover = true)
+    }
+
     /** The effect on the black panel has handed over to the dot: drop to the dot's frame rate. */
     private fun onArrivalDone() {
         if (!arriving.value) return
@@ -787,6 +852,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         arriving.value = false
         GlowLauncher.dismissMessage(this)
         if (face.value == Face.LED && !settling.value) applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
+        // Do Not Disturb came on while it played: no LED after it.
+        if (GlowSession.resting && face.value == Face.LED && power.isInteractive && !ending.value) sleepUnderCover()
     }
 
     /** The phone was unlocked: get out of the way of the user's apps. */
@@ -798,6 +865,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             return
         }
         face.value = Face.AWAY
+        coverSleep = false
         listenForSleep(false)
         ledArmedForSleep = false
         // Nothing resets it while away; the next power press must start clean.
@@ -820,15 +888,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
-    // Uncover the lock screen first, then go transparent and untouchable.
-    private fun becomeInvisible() {
+    // Uncover the lock screen first, then go transparent and untouchable. [keepCover]: a black
+    // cover is holding the display while the lock screen times out ([sleepUnderCover]).
+    private fun becomeInvisible(keepCover: Boolean = false) {
         timers.removeCallbacks(settleNow)
         settling.value = false
         touching = false
         ledFast = false
         arriving.value = false // the dot comes back alone
         GlowLauncher.dismissMessage(this) // the lock screen lists the original already
-        GlowShield.hide()
+        if (!keepCover) GlowShield.hide()
         setLockScreenCover(cover = false)
         window.setBackgroundDrawable(android.graphics.Color.TRANSPARENT.toDrawable())
         holdPortrait(false)
