@@ -156,12 +156,37 @@ class StowTest {
     }
 
     @Test
-    fun uncoveringStartsTheStillTimeOver() {
+    fun aFlickerOfTheSensorKeepsTheCoveredTime() {
+        // Settling into a sofa on the S23: the fabric uncovered the sensor every 0.7-1.8 s.
+        val detector = StowDetector()
+        var t = 0L
+        var stowed = false
+        for ((covered, ms) in listOf(true to 900L, false to 700L, true to 1_000L, false to 1_000L, true to 700L)) {
+            for (i in 0 until ms / 100L) {
+                stowed = detector.sample(t, 9.66f, -1.07f, -0.68f, covered) || stowed
+                t += 100L
+            }
+        }
+        assertTrue(stowed)
+    }
+
+    @Test
+    fun itIsPutAwayOnlyWhileCovered() {
+        // Its time is up during a flicker: put away at the next covered sample, never while uncovered.
         val detector = StowDetector()
         detector.onEdge(0L, 1_000L, covered = true)
-        detector.onEdge(1_100L, 1_100L, covered = false) // the sensor saw out for a moment
-        assertFalse(detector.onEdge(1_200L, 1_100L + FACE_DOWN_MS, covered = true))
-        assertTrue(detector.onEdge(1_200L + FACE_DOWN_MS, 1_200L + FACE_DOWN_MS, covered = true))
+        assertFalse(detector.onEdge(1_100L, 1_900L, covered = false))
+        assertTrue(detector.onEdge(2_000L, 2_000L, covered = true))
+    }
+
+    @Test
+    fun uncoveredForAWhileStartsTheStillTimeOver() {
+        val detector = StowDetector()
+        detector.onEdge(0L, 1_000L, covered = true)
+        detector.onEdge(1_100L, 1_100L + UNCOVER_GRACE_MS, covered = false) // taken out, then put back
+        val back = 1_200L + UNCOVER_GRACE_MS
+        assertFalse(detector.onEdge(back, back + FACE_DOWN_MS - 100L, covered = true))
+        assertTrue(detector.onEdge(back + FACE_DOWN_MS, back + FACE_DOWN_MS, covered = true))
     }
 
     @Test

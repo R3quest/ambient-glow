@@ -44,6 +44,13 @@ internal const val STILL_DELTA = 0.2f
 internal const val COVERED_MS = 10_000L
 
 /**
+ * Uncovered for less than this isn't uncovered, only for putting it away: fabric at the edge of the
+ * proximity sensor's reach flickers it (on the S23 in a sofa, every 0.7-1.8 s while it settled),
+ * and each flicker would start the covered time over. Taken out is still told at once.
+ */
+internal const val UNCOVER_GRACE_MS = 2_000L
+
+/**
  * Tells, from accelerometer samples, when the phone has been put away and left there: face down
  * and still for [FACE_DOWN_MS], or covered and still for as long, however it lies (stood on its
  * edge in a sofa, tipped into a bag). A hand is never that still ([STILL_DELTA]). Covered on the
@@ -52,6 +59,7 @@ internal const val COVERED_MS = 10_000L
 internal class StowDetector {
     private var faceDownSince = NONE
     private var coveredSince = NONE
+    private var coveredAt = NONE
     private var lastX = Float.NaN
     private var lastY = Float.NaN
     private var lastZ = Float.NaN
@@ -72,15 +80,19 @@ internal class StowDetector {
             !still -> now.takeIf { faceDownSince != NONE } ?: NONE
             else -> faceDownSince
         }
-        // Still from the last movement, as face down is.
-        coveredSince = if (!covered) NONE else if (coveredSince == NONE || !still) now else coveredSince
+        // Still from the last movement, as face down is; through a flicker of the sensor.
+        if (covered) coveredAt = now
+        val underCover = coveredAt != NONE && now - coveredAt < UNCOVER_GRACE_MS
+        coveredSince = if (!underCover) NONE else if (coveredSince == NONE || !still) now else coveredSince
+        // Covered at that moment, so it is put away covered: the LED stays in front.
         return (faceDownSince != NONE && now - faceDownSince >= FACE_DOWN_MS) ||
-            (coveredSince != NONE && now - coveredSince >= FACE_DOWN_MS)
+            (covered && coveredSince != NONE && now - coveredSince >= FACE_DOWN_MS)
     }
 
     fun reset() {
         faceDownSince = NONE
         coveredSince = NONE
+        coveredAt = NONE
         lastX = Float.NaN
         lastY = Float.NaN
         lastZ = Float.NaN
