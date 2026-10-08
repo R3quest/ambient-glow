@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
@@ -60,30 +62,66 @@ internal val AudioManager.inCall: Boolean get() = mode != AudioManager.MODE_NORM
 /**
  * Runs [then] once, when the call in progress is over (audio back to normal). Every relight bails
  * out during a call; without this, a screen turned off before the call had quite ended (the power
- * key hanging up) would stay dark, LED and all, until something else woke it. Android 12+, where
- * the audio mode can be followed without a permission; below it, the next wake brings the LED back.
+ * key hanging up) would stay dark, LED and all, until something else woke it. Android 12+ follows
+ * the audio mode, with no permission. Below it nothing reports the mode, so it is looked at every
+ * [POLL_MS] while the call lasts (a call keeps the CPU busy anyway), for at most [MAX_POLL_MS].
  */
 internal class AfterCall(private val context: Context, private val then: () -> Unit) {
     private val audio = context.getSystemService(AudioManager::class.java)
     private var listener: Any? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var pollUntil = 0L
+    private val poll = object : Runnable {
+        override fun run() {
+            if (!audio.inCall) {
+                cancel()
+                over()
+            } else if (SystemClock.elapsedRealtime() < pollUntil) {
+                DarkHold.acquire(context, POLL_MS + 1_000L)
+                main.postDelayed(this, POLL_MS)
+            } else {
+                cancel() // a mode left behind by some app: the next wake brings the LED back
+            }
+        }
+    }
+
+    private fun over() {
+        GlowLog.d { "call over" }
+        DarkHold.acquire(context) // woken by the hang-up: keep the CPU up for the relight
+        then()
+    }
 
     fun arm() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || listener != null) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            if (pollUntil != 0L) return
+            pollUntil = SystemClock.elapsedRealtime() + MAX_POLL_MS
+            DarkHold.acquire(context, POLL_MS + 1_000L)
+            main.postDelayed(poll, POLL_MS)
+            return
+        }
+        if (listener != null) return
         val onMode = AudioManager.OnModeChangedListener { mode ->
             if (mode != AudioManager.MODE_NORMAL) return@OnModeChangedListener
             cancel()
-            GlowLog.d { "call over" }
-            DarkHold.acquire(context) // woken by the hang-up: keep the CPU up for the relight
-            then()
+            over()
         }
         listener = onMode
         audio.addOnModeChangedListener(context.mainExecutor, onMode)
     }
 
     fun cancel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            main.removeCallbacks(poll)
+            pollUntil = 0L
+            return
+        }
         (listener as? AudioManager.OnModeChangedListener)?.let(audio::removeOnModeChangedListener)
         listener = null
+    }
+
+    private companion object {
+        const val POLL_MS = 3_000L
+        const val MAX_POLL_MS = 60 * 60_000L
     }
 }
 

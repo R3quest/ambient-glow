@@ -278,6 +278,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (dark != covered.value) {
                 GlowLog.d { "act panel ${if (dark) "covered" else "uncovered"} face=${face.value}" }
                 covered.value = dark
+                // Put away covered, the LED still in front: the system has lit the panel because the
+                // sensor cleared. That is the phone taken out, whether or not our own proximity
+                // listener heard it (a phone may only have one that can't wake the CPU). Still face
+                // down, the watch puts it away again a moment later.
+                if (!dark && interactiveSeen && stowed && face.value == Face.LED) takenOut()
             }
             if (interactiveSeen) {
                 // Awake again: the sleep we were handling was cancelled; the next one is the user's.
@@ -578,11 +583,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             WakeMode.ARRIVAL -> showLed(arrival = true)
         }
         // The full-screen intent normally lights the panel; make sure, without relaunching.
-        // Started in the dark, it lights the panel itself once its cover is committed. Created
-        // while asleep, it is resumed and paused at once: that pause is ours, not a power press.
-        val dark = intent?.getBooleanExtra(GlowLauncher.EXTRA_DARK, false) == true
-        if (dark && !power.isInteractive && face.value == Face.LED) ledArmedForSleep = true
-        if (!power.isInteractive) wakeAfter(if (dark) RELIGHT_DELAY_MS else LAUNCH_WAKE_CHECK_MS)
+        // Arrived while the screen is still dark: started in the dark ([GlowLauncher.startInTheDark]),
+        // or by a full-screen intent that stock Android launches before anything wakes the panel
+        // (One UI wakes it first). Resumed and paused at once while asleep, that pause is ours,
+        // not a power press; and nobody else is lighting the panel, so it does, once its cover is
+        // committed. Through the full-screen intent the system may still light it first: then
+        // the wake finds it lit and does nothing.
+        if (!power.isInteractive) {
+            if (face.value == Face.LED) ledArmedForSleep = true
+            wakeAfter(RELIGHT_DELAY_MS)
+        }
     }
 
     private fun onScreenOff() {
@@ -1209,8 +1219,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         /** The CPU held while a drain, put away, hands over to the lock screen's timeout and sleeps. */
         const val DRAIN_HOLD_MS = 8_000L
 
-        /** After a full-screen launch, light the panel ourselves if the system didn't. */
-        const val LAUNCH_WAKE_CHECK_MS = 600L
         const val WAKE_VERIFY_MS = 1_200L
     }
 }

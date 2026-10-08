@@ -5,8 +5,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.hardware.TriggerEvent
-import android.hardware.TriggerEventListener
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -95,9 +93,15 @@ internal fun takenOut(z: Float, near: Boolean): Boolean = !near && z > -TURNED_Z
  * The sensors behind [StowDetector], in two modes. [watchLit]: while the LED is lit (the CPU is
  * awake anyway), the accelerometer at a few samples a second; [onStow] once the phone is put away.
  * [watchStowed]: once the panel sleeps, only wake-up sensors that fire on a change: proximity, and
- * the sensor hub's tilt detector (35° of turn) or, without one, significant motion. Each event
- * takes one accelerometer sample; [onTakenOut] if the phone is out again. Nothing runs between
- * events, so a phone lying face down overnight costs no wake-ups.
+ * the sensor hub's tilt detector (35° of turn). Each event takes one accelerometer sample;
+ * [onTakenOut] if the phone is out again. Nothing runs between events, so a phone lying face down
+ * overnight costs no wake-ups.
+ *
+ * Every sensor is optional. Without a wake-up tilt detector nothing would see the phone turned back
+ * up, so face down doesn't count there (significant motion is no stand-in: it is made for walking,
+ * and turning a phone over on a desk seldom trips it); covered still does, the system itself
+ * lighting the panel when it is uncovered. Without an accelerometer nothing is watched, and the LED
+ * stays lit as it always did.
  */
 internal class StowWatch(
     private val context: Context,
@@ -111,8 +115,7 @@ internal class StowWatch(
 
     // Sensor.TYPE_TILT_DETECTOR is hidden from the SDK, but the sensor is public where it exists.
     private val tilt = sensors?.getDefaultSensor(TYPE_TILT_DETECTOR, true)
-    private val motion = if (tilt == null) sensors?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) else null
-    private val detector = StowDetector(faceDownCounts = tilt != null || motion != null)
+    private val detector = StowDetector(faceDownCounts = tilt != null)
     private val main = Handler(Looper.getMainLooper())
 
     private var mode = Mode.OFF
@@ -141,14 +144,6 @@ internal class StowWatch(
     private val turned = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) = checkSoon()
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
-    }
-
-    private val moved = object : TriggerEventListener() {
-        override fun onTrigger(event: TriggerEvent) {
-            if (mode != Mode.STOWED) return
-            motion?.let { sensors?.requestTriggerSensor(this, it) } // one-shot: ask again
-            checkSoon()
-        }
     }
 
     // One sample, then let go: is it still face down?
@@ -187,10 +182,9 @@ internal class StowWatch(
         stop()
         mode = Mode.STOWED
         near = covered()
-        GlowLog.d { "stow watch tilt=${tilt != null} motion=${motion != null} proximity=${proximity != null}" }
+        GlowLog.d { "stow watch tilt=${tilt != null} proximity=${proximity != null}" }
         proximity?.let { sensors?.registerListener(nearby, it, SensorManager.SENSOR_DELAY_NORMAL) }
         tilt?.let { sensors?.registerListener(turned, it, SensorManager.SENSOR_DELAY_NORMAL) }
-        motion?.let { sensors?.requestTriggerSensor(moved, it) }
     }
 
     fun stop() {
@@ -201,7 +195,6 @@ internal class StowWatch(
         sensors?.unregisterListener(nearby)
         sensors?.unregisterListener(turned)
         sensors?.unregisterListener(probe)
-        motion?.let { sensors?.cancelTriggerSensor(moved, it) }
     }
 
     private fun checkSoon() {

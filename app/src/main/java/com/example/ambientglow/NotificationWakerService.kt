@@ -52,11 +52,23 @@ class NotificationWakerService : NotificationListenerService() {
         if (host != null && !host.isAway) host.ensureLed() else relightIfWaiting()
     }
 
-    // Unlocked when the screen went off (a lock delay): relight once it has locked, waiting once.
+    // Unlocked when the screen went off (a lock delay): relight once it has locked. Looked at from
+    // when the setting says it locks, then every LOCK_POLL_MS until LOCK_WAIT_MAX_MS: the setting
+    // is hidden, and a phone may report it wrong or not at all.
     private var lockWait = LockWait.NONE
+    private var lockWaitUntil = 0L
     private val relightOnceLocked = Runnable {
-        lockWait = LockWait.DONE
-        relightIfWaiting()
+        if (keyguard.isKeyguardLocked || SystemClock.elapsedRealtime() >= lockWaitUntil) {
+            lockWait = LockWait.DONE
+            relightIfWaiting()
+        } else {
+            DarkHold.acquire(this, LOCK_POLL_MS + 1_000L)
+            relightOnceLockedLater()
+        }
+    }
+
+    private fun relightOnceLockedLater() {
+        mainHandler.postDelayed(relightOnceLocked, LOCK_POLL_MS)
     }
 
     // A relight that bailed out for a call, tried again once it is over.
@@ -228,7 +240,8 @@ class NotificationWakerService : NotificationListenerService() {
             return
         }
         lockWait = LockWait.WAITING
-        GlowLog.d { "svc unlocked: relight once it locks, in ${delay + LOCK_MARGIN_MS} ms" }
+        lockWaitUntil = SystemClock.elapsedRealtime() + MAX_LOCK_WAIT_MS
+        GlowLog.d { "svc unlocked: relight once it locks, from ${delay + LOCK_MARGIN_MS} ms" }
         DarkHold.acquire(this, delay + LOCK_MARGIN_MS + 1_000L) // Handler time stops while the CPU sleeps
         mainHandler.postDelayed(relightOnceLocked, delay + LOCK_MARGIN_MS)
     }
@@ -350,6 +363,7 @@ class NotificationWakerService : NotificationListenerService() {
         const val DEFAULT_LOCK_DELAY_MS = 5_000L
         const val LOCK_MARGIN_MS = 600L
         const val MAX_LOCK_WAIT_MS = 30_000L
+        const val LOCK_POLL_MS = 2_000L
 
         /** A dark start that hasn't brought the glow screen on top by now isn't coming. */
         const val DARK_START_CHECK_MS = 800L
