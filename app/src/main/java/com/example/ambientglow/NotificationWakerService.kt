@@ -52,23 +52,26 @@ class NotificationWakerService : NotificationListenerService() {
         if (host != null && !host.isAway) host.ensureLed() else relightIfWaiting()
     }
 
-    // Unlocked when the screen went off (a lock delay): relight once it has locked. Looked at from
-    // when the setting says it locks, then every LOCK_POLL_MS until LOCK_WAIT_MAX_MS: the setting
-    // is hidden, and a phone may report it wrong or not at all.
+    // Unlocked when the screen went off (a lock delay): relight once it has locked, looking only at
+    // the moments [lockChecks] gives (nothing tells us when it locks).
     private var lockWait = LockWait.NONE
-    private var lockWaitUntil = 0L
+    private var lockLooks: List<Long> = emptyList()
+    private var lockLook = 0
+    private var lockWaitFrom = 0L
     private val relightOnceLocked = Runnable {
-        if (keyguard.isKeyguardLocked || SystemClock.elapsedRealtime() >= lockWaitUntil) {
+        lockLook++
+        if (keyguard.isKeyguardLocked || lockLook >= lockLooks.size) {
             lockWait = LockWait.DONE
             relightIfWaiting()
         } else {
-            DarkHold.acquire(this, LOCK_POLL_MS + 1_000L)
-            relightOnceLockedLater()
+            nextLockLook()
         }
     }
 
-    private fun relightOnceLockedLater() {
-        mainHandler.postDelayed(relightOnceLocked, LOCK_POLL_MS)
+    private fun nextLockLook() {
+        val wait = lockWaitFrom + lockLooks[lockLook] - SystemClock.elapsedRealtime()
+        DarkHold.acquire(this, wait + 1_000L) // Handler time stops while the CPU sleeps
+        mainHandler.postDelayed(relightOnceLocked, wait.coerceAtLeast(0L))
     }
 
     // A relight that bailed out for a call, tried again once it is over.
@@ -228,29 +231,25 @@ class NotificationWakerService : NotificationListenerService() {
 
     /**
      * The screen went off unlocked: with a lock delay (One UI: 5 s after the screen times out) it
-     * locks a little later, with nothing to tell us. Wait that long, then relight. Once per screen-off:
-     * a phone that stays unlocked (Smart Lock) isn't waited on again. A delay past
-     * [MAX_LOCK_WAIT_MS] isn't held out for; the next wake brings the LED back.
+     * locks a little later, with nothing to tell us. Look at the moments [lockChecks] gives, then
+     * relight. Once per screen-off: a phone that stays unlocked (Smart Lock) isn't waited on again.
      */
     private fun awaitLock() {
         if (lockWait != LockWait.NONE) return
-        val delay = lockDelayMs()
-        if (delay > MAX_LOCK_WAIT_MS) {
-            lockWait = LockWait.DONE
-            return
-        }
-        lockWait = LockWait.WAITING
-        lockWaitUntil = SystemClock.elapsedRealtime() + MAX_LOCK_WAIT_MS
-        GlowLog.d { "svc unlocked: relight once it locks, from ${delay + LOCK_MARGIN_MS} ms" }
-        DarkHold.acquire(this, delay + LOCK_MARGIN_MS + 1_000L) // Handler time stops while the CPU sleeps
-        mainHandler.postDelayed(relightOnceLocked, delay + LOCK_MARGIN_MS)
+        lockLooks = lockChecks(lockDelayMs())
+        lockWait = if (lockLooks.isEmpty()) LockWait.DONE else LockWait.WAITING
+        if (lockLooks.isEmpty()) return
+        lockLook = 0
+        lockWaitFrom = SystemClock.elapsedRealtime()
+        GlowLog.d { "svc unlocked: relight once it locks, looking at $lockLooks ms" }
+        nextLockLook()
     }
 
-    /** How long after the screen goes off the phone locks; a hidden but readable setting. */
-    private fun lockDelayMs(): Long = try {
+    /** How long after the screen goes off the phone locks (a hidden but readable setting), or null. */
+    private fun lockDelayMs(): Long? = try {
         android.provider.Settings.Secure.getLong(contentResolver, LOCK_AFTER_TIMEOUT)
     } catch (_: Exception) {
-        DEFAULT_LOCK_DELAY_MS
+        null
     }
 
     private enum class LockWait { NONE, WAITING, DONE }
@@ -358,12 +357,8 @@ class NotificationWakerService : NotificationListenerService() {
         /** The watchdog looks this long after the screen went off: past every relight's own delay. */
         const val LED_CHECK_MS = 4_000L
 
-        /** Settings.Secure.LOCK_SCREEN_LOCK_AFTER_TIMEOUT (hidden), in ms; One UI's default is 5 s. */
+        /** Settings.Secure.LOCK_SCREEN_LOCK_AFTER_TIMEOUT (hidden), in ms. */
         const val LOCK_AFTER_TIMEOUT = "lock_screen_lock_after_timeout"
-        const val DEFAULT_LOCK_DELAY_MS = 5_000L
-        const val LOCK_MARGIN_MS = 600L
-        const val MAX_LOCK_WAIT_MS = 30_000L
-        const val LOCK_POLL_MS = 2_000L
 
         /** A dark start that hasn't brought the glow screen on top by now isn't coming. */
         const val DARK_START_CHECK_MS = 800L

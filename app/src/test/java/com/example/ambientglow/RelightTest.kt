@@ -52,6 +52,27 @@ class RelightTest {
     }
 
     @Test
+    fun aKnownLockDelayIsLookedAtJustAfterItAndOnceMore() {
+        assertEquals(listOf(5_600L, 7_600L), lockChecks(5_000L))
+        assertEquals("locks at once", listOf(600L, 2_600L), lockChecks(0L))
+    }
+
+    @Test
+    fun anUnknownLockDelayIsLookedAtAFewTimesBackingOff() {
+        val looks = lockChecks(null)
+        assertEquals(3, looks.size)
+        assertEquals("first where One UI's default would lock", 5_600L, looks.first())
+        assertEquals(MAX_LOCK_WAIT_MS, looks.last())
+        assertTrue("later looks wait longer", looks.zipWithNext().all { (a, b) -> b - a >= 2 * 2_000L })
+    }
+
+    @Test
+    fun aLongLockDelayIsNotWaitedOut() {
+        assertEquals(emptyList<Long>(), lockChecks(MAX_LOCK_WAIT_MS + 1))
+        assertEquals("never a look past the cap", true, lockChecks(MAX_LOCK_WAIT_MS).isNotEmpty())
+    }
+
+    @Test
     fun theWatchdogRelightsOnlyWhatShouldBeLit() {
         assertTrue(ledMissing(screenOn = false, waiting = true, resting = false, inCall = false, putAway = false, ending = false))
         assertFalse("the LED is up", ledMissing(screenOn = true, waiting = true, resting = false, inCall = false, putAway = false, ending = false))

@@ -35,47 +35,38 @@ internal const val STILL_DELTA = 0.2f
 /**
  * Covered this long before it counts. The proximity lock already has the panel off; this only
  * lets the CPU sleep too, so a hand passing over the phone isn't worth a sleep and a relight.
+ * Timed from the display turning off ([WakeScreenActivity]), one timer, no sampling.
  */
 internal const val COVERED_MS = 10_000L
 
 /**
- * Tells, from samples while the LED is lit, when the phone has been put away: face down and still
- * for [FACE_DOWN_MS], or covered for [COVERED_MS] (a pocket moves as its owner walks, so covering
- * needn't be still). [faceDownCounts] is false where nothing could wake the phone again when it is
- * turned back over: then only covering counts.
+ * Tells, from accelerometer samples, when the phone has been laid face down: face down and still
+ * for [FACE_DOWN_MS]. Covering is told by the display instead ([COVERED_MS]).
  */
-internal class StowDetector(private val faceDownCounts: Boolean) {
+internal class StowDetector {
     private var faceDownSince = NONE
-    private var coveredSince = NONE
     private var lastX = Float.NaN
     private var lastY = Float.NaN
     private var lastZ = Float.NaN
 
-    /**
-     * Gravity [x], [y], [z] (m/s², z out of the screen) and the panel [covered], at [now] (ms):
-     * true once it is put away.
-     */
-    fun sample(now: Long, x: Float, y: Float, z: Float, covered: Boolean): Boolean {
+    /** Gravity [x], [y], [z] (m/s², z out of the screen) at [now] (ms): true once it lies face down. */
+    fun sample(now: Long, x: Float, y: Float, z: Float): Boolean {
         // NaN before the first sample: not still yet.
         val still = abs(x - lastX) + abs(y - lastY) + abs(z - lastZ) < STILL_DELTA
         lastX = x
         lastY = y
         lastZ = z
         faceDownSince = when {
-            !faceDownCounts -> NONE
             z < -FACE_DOWN_Z -> if (faceDownSince == NONE || !still) now else faceDownSince
             z > -TURNED_Z -> NONE
             !still -> now.takeIf { faceDownSince != NONE } ?: NONE
             else -> faceDownSince
         }
-        coveredSince = if (!covered) NONE else if (coveredSince == NONE) now else coveredSince
-        return (faceDownSince != NONE && now - faceDownSince >= FACE_DOWN_MS) ||
-            (coveredSince != NONE && now - coveredSince >= COVERED_MS)
+        return faceDownSince != NONE && now - faceDownSince >= FACE_DOWN_MS
     }
 
     fun reset() {
         faceDownSince = NONE
-        coveredSince = NONE
         lastX = Float.NaN
         lastY = Float.NaN
         lastZ = Float.NaN
@@ -90,18 +81,20 @@ internal class StowDetector(private val faceDownCounts: Boolean) {
 internal fun takenOut(z: Float, near: Boolean): Boolean = !near && z > -TURNED_Z
 
 /**
- * The sensors behind [StowDetector], in two modes. [watchLit]: while the LED is lit (the CPU is
- * awake anyway), the accelerometer at a few samples a second; [onStow] once the phone is put away.
- * [watchStowed]: once the panel sleeps, only wake-up sensors that fire on a change: proximity, and
- * the sensor hub's tilt detector (35° of turn). Each event takes one accelerometer sample;
- * [onTakenOut] if the phone is out again. Nothing runs between events, so a phone lying face down
- * overnight costs no wake-ups.
+ * The sensors behind [StowDetector], all event-driven: nothing samples while the phone lies still.
  *
- * Every sensor is optional. Without a wake-up tilt detector nothing would see the phone turned back
- * up, so face down doesn't count there (significant motion is no stand-in: it is made for walking,
- * and turning a phone over on a desk seldom trips it); covered still does, the system itself
- * lighting the panel when it is uncovered. Without an accelerometer nothing is watched, and the LED
- * stays lit as it always did.
+ * - [watchLit]: while the LED is lit, the sensor hub's tilt detector, which fires only when the
+ *   phone turns by 35° or more, as laying it face down always does. A turn (or the LED lighting
+ *   up, in case it already lies face down) opens a short [look]: the accelerometer for at most
+ *   [LOOK_MS], until it lies face down and still ([onStow]) or the window closes.
+ * - [watchStowed]: once the panel sleeps, wake-up sensors that fire on a change: proximity and the
+ *   tilt detector. Each event takes one accelerometer sample; [onTakenOut] if the phone is out.
+ *
+ * Every sensor is optional. Without a wake-up tilt detector nothing would see the phone laid down
+ * or turned back up, so face down isn't watched at all (significant motion is no stand-in: it is
+ * made for walking, and turning a phone over on a desk seldom trips it); covered still counts, told
+ * by the display, and the system itself lights the panel when it is uncovered. With no sensors at
+ * all, the LED stays lit as it always did.
  */
 internal class StowWatch(
     private val context: Context,
@@ -115,18 +108,29 @@ internal class StowWatch(
 
     // Sensor.TYPE_TILT_DETECTOR is hidden from the SDK, but the sensor is public where it exists.
     private val tilt = sensors?.getDefaultSensor(TYPE_TILT_DETECTOR, true)
-    private val detector = StowDetector(faceDownCounts = tilt != null)
+    private val detector = StowDetector()
     private val main = Handler(Looper.getMainLooper())
 
     private var mode = Mode.OFF
     private var near = false
+    private var looking = false
+    private var lookUntil = 0L
 
     private enum class Mode { OFF, LIT, STOWED }
 
-    private val lit = object : SensorEventListener {
+    // Samples only while a look is open.
+    private val lying = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
+            if (mode != Mode.LIT || !looking) return
+            val now = SystemClock.elapsedRealtime()
             val v = event.values
-            if (mode == Mode.LIT && detector.sample(SystemClock.elapsedRealtime(), v[0], v[1], v[2], covered())) onStow()
+            when {
+                detector.sample(now, v[0], v[1], v[2]) -> {
+                    endLook()
+                    onStow()
+                }
+                now >= lookUntil -> endLook()
+            }
         }
 
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
@@ -142,7 +146,14 @@ internal class StowWatch(
     }
 
     private val turned = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) = checkSoon()
+        override fun onSensorChanged(event: SensorEvent) {
+            when (mode) {
+                Mode.LIT -> look()
+                Mode.STOWED -> checkSoon()
+                Mode.OFF -> Unit
+            }
+        }
+
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
     }
 
@@ -163,13 +174,33 @@ internal class StowWatch(
         if (mode == Mode.STOWED && !near) accelerometer?.let { sensors?.registerListener(probe, it, SensorManager.SENSOR_DELAY_GAME) }
     }
 
-    /** The LED is lit: watch for it being put away. */
+    /** The LED is lit: watch for it being laid face down. Nothing to watch without a tilt detector. */
     fun watchLit() {
-        if (mode == Mode.LIT || accelerometer == null) return
+        if (mode == Mode.LIT) return
         stop()
         mode = Mode.LIT
+        if (tilt == null || accelerometer == null) return
+        sensors?.registerListener(turned, tilt, SensorManager.SENSOR_DELAY_NORMAL)
+        look() // it may lie face down already
+    }
+
+    /**
+     * Opens a short look at how the phone lies, if one isn't open; also asked for when a stow
+     * couldn't happen yet (an arrival was playing) and should be tried again.
+     */
+    fun look() {
+        if (mode != Mode.LIT || tilt == null || looking) return
+        val sensor = accelerometer ?: return
+        looking = true
+        lookUntil = SystemClock.elapsedRealtime() + LOOK_MS
         detector.reset()
-        sensors?.registerListener(lit, accelerometer, LIT_SAMPLE_US)
+        sensors?.registerListener(lying, sensor, LOOK_SAMPLE_US)
+    }
+
+    private fun endLook() {
+        if (!looking) return
+        looking = false
+        sensors?.unregisterListener(lying)
     }
 
     /** The LED is no longer lit (unless it was put away): stop watching for that. */
@@ -190,8 +221,8 @@ internal class StowWatch(
     fun stop() {
         if (mode == Mode.OFF) return
         mode = Mode.OFF
+        endLook()
         main.removeCallbacks(check)
-        sensors?.unregisterListener(lit)
         sensors?.unregisterListener(nearby)
         sensors?.unregisterListener(turned)
         sensors?.unregisterListener(probe)
@@ -209,8 +240,14 @@ internal class StowWatch(
         /** Sensor.TYPE_TILT_DETECTOR (hidden): a wake-up event each time the phone turns by 35° or more. */
         const val TYPE_TILT_DETECTOR = 22
 
-        /** Four samples a second while lit: [FACE_DOWN_MS] is then six of them. */
-        const val LIT_SAMPLE_US = 250_000
+        /**
+         * A look lasts at most this long: time to be set down (~1-2 s, the jolt included) and lie
+         * still for [FACE_DOWN_MS]. Still held after it, the phone is in a hand; the next turn looks again.
+         */
+        const val LOOK_MS = 6_000L
+
+        /** Ten samples a second during a look. */
+        const val LOOK_SAMPLE_US = 100_000
 
         /** How long the sensor has to stay uncovered, or the turn to settle, before it is checked. */
         const val SETTLE_MS = 400L

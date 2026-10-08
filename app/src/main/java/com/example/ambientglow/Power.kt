@@ -5,11 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 
 /**
@@ -62,66 +65,92 @@ internal val AudioManager.inCall: Boolean get() = mode != AudioManager.MODE_NORM
 /**
  * Runs [then] once, when the call in progress is over (audio back to normal). Every relight bails
  * out during a call; without this, a screen turned off before the call had quite ended (the power
- * key hanging up) would stay dark, LED and all, until something else woke it. Android 12+ follows
- * the audio mode, with no permission. Below it nothing reports the mode, so it is looked at every
- * [POLL_MS] while the call lasts (a call keeps the CPU busy anyway), for at most [MAX_POLL_MS].
+ * key hanging up) would stay dark, LED and all, until something else woke it.
+ *
+ * Event-driven on every version. Android 12+ reports the audio mode itself (no permission). Below
+ * it nothing does, so the events that come with a call ending are heard instead, neither needing a
+ * permission there: the carrier call going idle, and the audio playing changing (a VoIP call's
+ * voice stream stopping). Each looks at the mode then, and once more [SETTLE_MS] later in case
+ * the mode trails the event. Nothing runs between events.
  */
 internal class AfterCall(private val context: Context, private val then: () -> Unit) {
     private val audio = context.getSystemService(AudioManager::class.java)
-    private var listener: Any? = null
     private val main = Handler(Looper.getMainLooper())
-    private var pollUntil = 0L
-    private val poll = object : Runnable {
-        override fun run() {
-            if (!audio.inCall) {
-                cancel()
-                over()
-            } else if (SystemClock.elapsedRealtime() < pollUntil) {
-                DarkHold.acquire(context, POLL_MS + 1_000L)
-                main.postDelayed(this, POLL_MS)
-            } else {
-                cancel() // a mode left behind by some app: the next wake brings the LED back
+    private var armed = false
+
+    // Android 12+.
+    private var modeListener: Any? = null
+
+    // Below Android 12, where PhoneStateListener (deprecated since) is the call-state event.
+    @Suppress("DEPRECATION")
+    private var callListener: PhoneStateListener? = null
+    private var playbackListener: AudioManager.AudioPlaybackCallback? = null
+    private val lookAgain = Runnable { look() }
+
+    fun arm() {
+        if (armed) return
+        armed = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val onMode = AudioManager.OnModeChangedListener { mode -> if (mode == AudioManager.MODE_NORMAL) look() }
+            modeListener = onMode
+            audio.addOnModeChangedListener(context.mainExecutor, onMode)
+            return
+        }
+        @Suppress("DEPRECATION")
+        val onCall = object : PhoneStateListener() {
+            @Deprecated("Deprecated in Java")
+            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                if (state == TelephonyManager.CALL_STATE_IDLE) heard()
             }
         }
+        callListener = onCall
+        @Suppress("DEPRECATION")
+        context.getSystemService(TelephonyManager::class.java)?.listen(onCall, PhoneStateListener.LISTEN_CALL_STATE)
+        val onPlayback = object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) = heard()
+        }
+        playbackListener = onPlayback
+        audio.registerAudioPlaybackCallback(onPlayback, main)
     }
 
-    private fun over() {
+    /** Something that comes with a call ending happened: look now, and once more a moment later. */
+    private fun heard() {
+        look()
+        if (!armed) return
+        DarkHold.acquire(context, SETTLE_MS + 1_000L)
+        main.removeCallbacks(lookAgain)
+        main.postDelayed(lookAgain, SETTLE_MS)
+    }
+
+    private fun look() {
+        if (!armed || audio.inCall) return
+        cancel()
         GlowLog.d { "call over" }
         DarkHold.acquire(context) // woken by the hang-up: keep the CPU up for the relight
         then()
     }
 
-    fun arm() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            if (pollUntil != 0L) return
-            pollUntil = SystemClock.elapsedRealtime() + MAX_POLL_MS
-            DarkHold.acquire(context, POLL_MS + 1_000L)
-            main.postDelayed(poll, POLL_MS)
-            return
-        }
-        if (listener != null) return
-        val onMode = AudioManager.OnModeChangedListener { mode ->
-            if (mode != AudioManager.MODE_NORMAL) return@OnModeChangedListener
-            cancel()
-            over()
-        }
-        listener = onMode
-        audio.addOnModeChangedListener(context.mainExecutor, onMode)
-    }
-
     fun cancel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            main.removeCallbacks(poll)
-            pollUntil = 0L
+        if (!armed) return
+        armed = false
+        main.removeCallbacks(lookAgain)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (modeListener as? AudioManager.OnModeChangedListener)?.let(audio::removeOnModeChangedListener)
+            modeListener = null
             return
         }
-        (listener as? AudioManager.OnModeChangedListener)?.let(audio::removeOnModeChangedListener)
-        listener = null
+        callListener?.let {
+            @Suppress("DEPRECATION")
+            context.getSystemService(TelephonyManager::class.java)?.listen(it, PhoneStateListener.LISTEN_NONE)
+        }
+        callListener = null
+        playbackListener?.let(audio::unregisterAudioPlaybackCallback)
+        playbackListener = null
     }
 
     private companion object {
-        const val POLL_MS = 3_000L
-        const val MAX_POLL_MS = 60 * 60_000L
+        /** How long the audio mode may trail the event that ends a call. */
+        const val SETTLE_MS = 1_500L
     }
 }
 

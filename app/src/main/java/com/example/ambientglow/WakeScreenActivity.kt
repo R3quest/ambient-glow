@@ -225,6 +225,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
+    private val stowCovered = Runnable { if (covered.value) stow() }
+
+    /** Covered with the LED up and not put away yet: put away in [COVERED_MS]; else no timer. */
+    private fun armStowCovered() {
+        timers.removeCallbacks(stowCovered)
+        if (covered.value && face.value == Face.LED && !stowed) timers.postDelayed(stowCovered, COVERED_MS)
+    }
+
     /** No LED for now: Do Not Disturb ([GlowSession.resting]) or [stowed]. */
     private val ledResting: Boolean get() = GlowSession.resting || stowed
 
@@ -278,6 +286,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (dark != covered.value) {
                 GlowLog.d { "act panel ${if (dark) "covered" else "uncovered"} face=${face.value}" }
                 covered.value = dark
+                // Covered for a while with the LED up: put away. One timer from this event, no sampling.
+                armStowCovered()
                 // Put away covered, the LED still in front: the system has lit the panel because the
                 // sensor cleared. That is the phone taken out, whether or not our own proximity
                 // listener heard it (a phone may only have one that can't wake the CPU). Still face
@@ -943,7 +953,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /** Put away while the LED is lit: let the panel and the CPU sleep until it is taken out. */
     private fun stow() {
-        // An arrival plays out first; the watch asks again with its next sample.
+        // An arrival plays out first; [onArrivalDone] asks again.
         if (stowed || face.value != Face.LED || arriving.value || ending.value || !power.isInteractive) return
         GlowLog.d { "act put away covered=${covered.value}" }
         stowed = true
@@ -1003,6 +1013,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (face.value == Face.LED && !settling.value) applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
         // Do Not Disturb came on while it played: no LED after it.
         if (GlowSession.resting && face.value == Face.LED && power.isInteractive && !ending.value) sleepUnderCover()
+        // Laid face down or covered while it played (a stow waits for it): look again.
+        if (face.value == Face.LED && !stowed) {
+            stowWatch.look()
+            armStowCovered()
+        }
     }
 
     /** The phone was unlocked: get out of the way of the user's apps. */
@@ -1131,7 +1146,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun acquireKeepOn() {
         if (!keepPanelOn.isHeld) keepPanelOn.acquire()
         pocketDark?.let { if (!it.isHeld) it.acquire() }
-        if (!stowed) stowWatch.watchLit()
+        if (!stowed) {
+            stowWatch.watchLit()
+            armStowCovered() // lit while already covered: no display change will say so
+        }
     }
 
     private fun releaseKeepOn() {

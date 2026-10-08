@@ -117,6 +117,25 @@ internal fun relightPlan(screenOn: Boolean, waiting: Boolean, resting: Boolean, 
 }
 
 /**
+ * When to look whether a phone that went dark unlocked has locked, in ms after the screen went off;
+ * each look is one wake of the CPU, nothing runs in between. With the lock delay known ([delayMs],
+ * from its setting), just after it, and once more in case it ran late. Unknown (a phone may hide or
+ * not have the setting), a few looks backing off to [MAX_LOCK_WAIT_MS]. Past that, none: a delay
+ * that long isn't waited out, and the next wake brings the LED back.
+ */
+internal fun lockChecks(delayMs: Long?): List<Long> = when {
+    delayMs == null -> listOf(DEFAULT_LOCK_DELAY_MS + LOCK_MARGIN_MS, MAX_LOCK_WAIT_MS / 2, MAX_LOCK_WAIT_MS)
+    delayMs > MAX_LOCK_WAIT_MS -> emptyList()
+    else -> listOf(delayMs + LOCK_MARGIN_MS, delayMs + LOCK_MARGIN_MS + LOCK_GRACE_MS)
+}
+
+/** One UI's lock delay after a screen timeout, when the setting can't be read. */
+internal const val DEFAULT_LOCK_DELAY_MS = 5_000L
+private const val LOCK_MARGIN_MS = 600L
+private const val LOCK_GRACE_MS = 2_000L
+internal const val MAX_LOCK_WAIT_MS = 30_000L
+
+/**
  * The watchdog's question, a few seconds after the screen went off with a glow screen on top:
  * messages are waiting, nothing that rightly keeps the LED dark holds (Do Not Disturb, a call, the
  * phone put away, the last message just read), and yet the panel is still off.
