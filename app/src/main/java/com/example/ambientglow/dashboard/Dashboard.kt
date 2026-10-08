@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -52,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -63,7 +63,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -98,7 +100,6 @@ import com.example.ambientglow.R
 import com.example.ambientglow.ScreenGeometry
 import com.example.ambientglow.glassHaze
 import com.example.ambientglow.ui.components.Disclosure
-import com.example.ambientglow.ui.components.PrimaryButton
 import com.example.ambientglow.ui.components.SettingsGroup
 import com.example.ambientglow.ui.theme.GlowBrushes
 import com.example.ambientglow.ui.theme.GlowMotion
@@ -177,6 +178,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
 
     // The Apps screen, over the tabs; it keeps its own state (AppsModel).
     val appsModel = rememberAppsModel()
+    val lockedTest = rememberLockedTest()
     var appsOpen by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = appsOpen && !inSetup) { appsOpen = false }
 
@@ -355,8 +357,12 @@ internal fun Dashboard(reported: ScreenGeometry) {
                         }
                         Column(Modifier.fillMaxSize()) {
                             BrandHeader(Modifier.padding(start = PageGutter, end = PageGutter, top = 14.dp, bottom = 18.dp)) {
-                                AppsButton(marked = appsModel.hasNew, onClick = { appsOpen = true })
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    TestButton(lockedTest)
+                                    AppsButton(marked = appsModel.hasNew, onClick = { appsOpen = true })
+                                }
                             }
+                            TestHint(lockedTest, Modifier.padding(horizontal = PageGutter))
                             Box(Modifier.padding(horizontal = PageGutter)) {
                                 GlowTabBar(
                                     pager = pager,
@@ -401,8 +407,6 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                     }
                                 }
                             }
-
-                            TestDock()
                         }
                     }
                 }
@@ -678,67 +682,110 @@ private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, onSelect: (I
 
 private const val COUNTDOWN_SECONDS = (GlowLauncher.TEST_DELAY_MS / 1_000L).toInt()
 
-@Composable
-private fun TestDock() {
-    val context = LocalContext.current
-    var countdown by remember { mutableIntStateOf(0) }
-    var runs by remember { mutableIntStateOf(0) }
-    var blocked by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
-    val dim = animateFloatAsState(
-        targetValue = if (countdown > 0) 0.55f else 1f,
-        animationSpec = GlowMotion.stateChange(),
-        label = "test-dim",
-    )
+/**
+ * The one end-to-end check: real messages through the listener, on the locked phone. The effect
+ * alone replays at full size whenever it is changed, so this waits in the header, not on the page.
+ */
+@Stable
+private class LockedTest {
+    var countdown by mutableIntStateOf(0)
+    var blocked by mutableStateOf(false)
+    var runs by mutableIntStateOf(0)
+}
 
+@Composable
+private fun rememberLockedTest(): LockedTest {
+    val test = remember { LockedTest() }
     // Display-only countdown; the message itself is posted by GlowLauncher's single callback.
-    LaunchedEffect(runs) {
-        if (runs == 0) return@LaunchedEffect
+    LaunchedEffect(test.runs) {
+        if (test.runs == 0) return@LaunchedEffect
         for (remaining in COUNTDOWN_SECONDS downTo 1) {
-            countdown = remaining
+            test.countdown = remaining
             delay(1_000L)
         }
-        countdown = 0
+        test.countdown = 0
     }
+    return test
+}
 
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .graphicsLayer { alpha = 0.3f }
-            .background(GlowBrushes.SignatureHorizontal),
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GlowPalette.Void)
-            .padding(horizontal = PageGutter, vertical = 14.dp),
+/** A padlock while idle; the count to the messages while they wait, edged in the signature. */
+@Composable
+private fun TestButton(test: LockedTest) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val counting = test.countdown > 0
+    HeaderButton(
+        description = if (counting) {
+            stringResource(R.string.test_locked_countdown, test.countdown)
+        } else {
+            stringResource(R.string.test_locked)
+        },
+        onClick = {
+            test.blocked = !GlowLauncher.scheduleTestNotification(context)
+            haptics.performHapticFeedback(if (test.blocked) HapticFeedbackType.Reject else HapticFeedbackType.Confirm)
+            if (!test.blocked) test.runs++
+        },
+        enabled = !counting,
+        lit = counting,
     ) {
-        // The one end-to-end check: real messages through the listener, on the locked phone.
-        // The effect alone replays at full size whenever it is changed.
-        PrimaryButton(
-            text = if (countdown > 0) {
-                stringResource(R.string.test_locked_countdown, countdown)
-            } else {
-                stringResource(R.string.test_locked)
-            },
-            onClick = {
-                blocked = !GlowLauncher.scheduleTestNotification(context)
-                haptics.performHapticFeedback(if (blocked) HapticFeedbackType.Reject else HapticFeedbackType.Confirm)
-                if (!blocked) runs++
-            },
-            enabled = countdown == 0,
-            modifier = Modifier.graphicsLayer { alpha = dim.value },
-        )
-        // Carries its own gap, so the dock grows and shrinks in one movement.
-        Disclosure(visible = blocked || countdown > 0) {
-            Box(Modifier.padding(top = 10.dp)) {
+        AnimatedContent(
+            targetState = test.countdown,
+            transitionSpec = { GlowMotion.swap() },
+            contentAlignment = Alignment.Center,
+            label = "test-count",
+        ) { count ->
+            if (count > 0) {
                 Text(
-                    text = stringResource(if (blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (blocked) GlowPalette.Amber else GlowPalette.TextMuted,
+                    text = count.toString(),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                    color = GlowPalette.TextPrimary,
                 )
+            } else {
+                Padlock()
             }
         }
+    }
+}
+
+@Composable
+private fun Padlock() {
+    Canvas(Modifier.size(16.dp)) {
+        val line = 1.6.dp.toPx()
+        val shackle = 8.dp.toPx()
+        val left = (size.width - shackle) / 2f
+        val top = 1.dp.toPx()
+        val bodyTop = 7.dp.toPx()
+        drawArc(
+            color = GlowPalette.TextPrimary,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(left, top),
+            size = Size(shackle, shackle),
+            style = Stroke(width = line),
+        )
+        val legTop = top + shackle / 2f
+        drawLine(GlowPalette.TextPrimary, Offset(left, legTop), Offset(left, bodyTop), line)
+        drawLine(GlowPalette.TextPrimary, Offset(left + shackle, legTop), Offset(left + shackle, bodyTop), line)
+        drawRoundRect(
+            color = GlowPalette.TextPrimary,
+            topLeft = Offset(1.5.dp.toPx(), bodyTop),
+            size = Size(size.width - 3.dp.toPx(), size.height - bodyTop),
+            cornerRadius = CornerRadius(2.dp.toPx()),
+        )
+        drawCircle(GlowPalette.Surface, radius = 1.4.dp.toPx(), center = Offset(size.width / 2f, bodyTop + (size.height - bodyTop) / 2f))
+    }
+}
+
+/** What to do now (or why it can't run), unfolding under the header; it carries its own gap. */
+@Composable
+private fun TestHint(test: LockedTest, modifier: Modifier = Modifier) {
+    Disclosure(visible = test.blocked || test.countdown > 0) {
+        Text(
+            text = stringResource(if (test.blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (test.blocked) GlowPalette.Amber else GlowPalette.TextMuted,
+            modifier = modifier.padding(bottom = 14.dp),
+        )
     }
 }

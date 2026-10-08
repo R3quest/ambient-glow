@@ -79,6 +79,7 @@ import com.example.ambientglow.ui.components.OptionNote
 import com.example.ambientglow.ui.components.SectionLabel
 import com.example.ambientglow.ui.components.glowCard
 import com.example.ambientglow.ui.components.glowCardSlice
+import com.example.ambientglow.ui.theme.GlowBrushes
 import com.example.ambientglow.ui.theme.GlowPalette
 import com.example.ambientglow.ui.theme.GlowShapes
 import kotlinx.coroutines.Dispatchers
@@ -402,15 +403,22 @@ internal fun AppsButton(marked: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** A square button in the dashboard's header; [lit] edges it in the signature while it is busy. */
 @Composable
-private fun HeaderButton(description: String, onClick: () -> Unit, glyph: @Composable () -> Unit) {
+internal fun HeaderButton(
+    description: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    lit: Boolean = false,
+    glyph: @Composable () -> Unit,
+) {
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(GlowShapes.Pill)
             .background(GlowPalette.Surface)
-            .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Pill)
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(1.dp, if (lit) GlowBrushes.Signature else SolidColor(GlowPalette.OutlineSoft), GlowShapes.Pill)
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
