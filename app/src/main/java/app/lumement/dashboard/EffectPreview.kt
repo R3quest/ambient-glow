@@ -277,8 +277,8 @@ internal fun EffectPreview(
 /** "EFFECT → LED", the current step lit; just "LED" when there is no effect. */
 @Composable
 private fun PreviewSteps(ledActive: Boolean, effect: Boolean) {
-    val effectTint by animateColorAsState(if (ledActive) GlowPalette.TextFaint else GlowPalette.Cyan, label = "step-effect")
-    val ledTint by animateColorAsState(if (ledActive) GlowPalette.Cyan else GlowPalette.TextFaint, label = "step-led")
+    val effectTint by animateColorAsState(if (ledActive) GlowPalette.TextFaint else GlowPalette.TextPrimary, label = "step-effect")
+    val ledTint by animateColorAsState(if (ledActive) GlowPalette.TextPrimary else GlowPalette.TextFaint, label = "step-led")
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (effect) {
             Text(stringResource(R.string.preview_step_effect), style = MaterialTheme.typography.labelSmall, color = effectTint)

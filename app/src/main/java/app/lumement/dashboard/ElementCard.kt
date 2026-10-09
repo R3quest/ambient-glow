@@ -74,7 +74,7 @@ internal fun ElementCard(settings: GlowSettings, accent: Color, premium: Premium
     val presence = animateFloatAsState(if (settings.spawn) 1f else DIMMED, GlowMotion.stateChange(), label = "dim")
     // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
     Column(Modifier.glowCard()) {
-        SectionLabel(stringResource(R.string.element), GlowPalette.Cyan)
+        SectionLabel(stringResource(R.string.element), GlowPalette.TextMuted)
         Spacer(Modifier.height(12.dp))
         ToggleRow(
             title = stringResource(R.string.effect_spawn_title),

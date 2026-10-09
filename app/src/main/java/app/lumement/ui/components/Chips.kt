@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.lumement.Labeled
-import app.lumement.ui.theme.GlowBrushes
 import app.lumement.ui.theme.GlowMotion
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
@@ -132,7 +131,7 @@ internal fun SelectionRow(
                 .offset { IntOffset(((slotWidth + CHIP_GAP).toPx() * slot.value).roundToInt(), 0) }
                 .clip(GlowShapes.Pill)
                 .background(GlowPalette.SurfaceRaised)
-                .border(1.dp, GlowBrushes.Signature, GlowShapes.Pill),
+                .border(1.dp, GlowPalette.Cyan, GlowShapes.Pill),
         )
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP)) {
             repeat(count) { index ->
@@ -179,7 +178,7 @@ internal fun ChipLabel(text: String, lit: () -> Float, compact: Boolean = false)
 
 /**
  * A chip or tile's fill and edge, crossfading to the chosen look as [on] goes 0 → 1: the raised
- * fill and a [selectedStroke] signature edge. Outlines and strokes are built once per size; [on]
+ * fill and a [selectedStroke] cyan edge. Outlines and strokes are built once per size; [on]
  * is read in draw. For selections that can't slide (rows of unequal height, or no match).
  */
 internal fun Modifier.selectionSurface(shape: Shape, on: State<Float>, selectedStroke: Dp): Modifier = drawWithCache {
@@ -187,7 +186,7 @@ internal fun Modifier.selectionSurface(shape: Shape, on: State<Float>, selectedS
     val thick = selectedStroke.toPx()
     val fill = shape.createOutline(size, layoutDirection, this)
     val soft = shape.createOutline(Size(size.width - thin, size.height - thin), layoutDirection, this)
-    val signature = shape.createOutline(Size(size.width - thick, size.height - thick), layoutDirection, this)
+    val chosen = shape.createOutline(Size(size.width - thick, size.height - thick), layoutDirection, this)
     val thinStroke = Stroke(thin)
     val thickStroke = Stroke(thick)
     onDrawBehind {
@@ -198,7 +197,7 @@ internal fun Modifier.selectionSurface(shape: Shape, on: State<Float>, selectedS
             translate(thin / 2f, thin / 2f) { drawOutline(soft, GlowPalette.OutlineSoft, alpha = 1f - t, style = thinStroke) }
         }
         if (t > 0f) {
-            translate(thick / 2f, thick / 2f) { drawOutline(signature, GlowBrushes.Signature, alpha = t, style = thickStroke) }
+            translate(thick / 2f, thick / 2f) { drawOutline(chosen, GlowPalette.Cyan, alpha = t, style = thickStroke) }
         }
     }
 }

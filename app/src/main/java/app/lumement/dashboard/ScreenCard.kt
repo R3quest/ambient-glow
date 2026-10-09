@@ -45,7 +45,7 @@ internal fun ScreenCard(
 ) {
     val selected = settings.arrival
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.arrival_mode), GlowPalette.Cyan)
+        SectionLabel(stringResource(R.string.arrival_mode), GlowPalette.TextMuted)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             EffectPreview(
                 settings = settings,

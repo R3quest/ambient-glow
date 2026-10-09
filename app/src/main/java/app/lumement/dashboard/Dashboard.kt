@@ -103,7 +103,6 @@ import app.lumement.ScreenGeometry
 import app.lumement.glassHaze
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.SettingsGroup
-import app.lumement.ui.theme.GlowBrushes
 import app.lumement.ui.theme.GlowMotion
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
@@ -636,7 +635,8 @@ internal fun BrandHeader(modifier: Modifier = Modifier, action: (@Composable () 
 }
 
 /**
- * Segmented blade control. The highlighted blade and the label tints track the pager's scroll
+ * Segmented blade control: navigation, not a choice, so its blade is a raised grey tile, and cyan
+ * stays for what is picked on the pages. The blade and the label tints track the pager's scroll
  * position as you swipe; that is read in the layout and draw phases, so swiping does not
  * recompose the bar.
  */
@@ -661,8 +661,8 @@ private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, onSelect: (I
                     IntOffset((tabWidth.toPx() * position).roundToInt(), 0)
                 }
                 .clip(GlowShapes.Tile)
-                .background(GlowPalette.SurfaceRaised)
-                .border(1.dp, GlowBrushes.Signature, GlowShapes.Tile),
+                .background(GlowPalette.SurfaceHigh)
+                .border(1.dp, GlowPalette.Outline, GlowShapes.Tile),
         )
         Row(Modifier.fillMaxSize().selectableGroup()) {
             tabs.forEachIndexed { index, tab ->
@@ -720,7 +720,7 @@ private fun rememberLockedTest(): LockedTest {
     return test
 }
 
-/** A padlock while idle; the count to the messages while they wait, edged in the signature. */
+/** A padlock while idle; the count to the messages while they wait, edged in cyan. */
 @Composable
 private fun TestButton(test: LockedTest) {
     val context = LocalContext.current

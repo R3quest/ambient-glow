@@ -130,7 +130,7 @@ internal fun EffectCard(
 ) {
     val color = SAMPLE_COLORS[sample].color
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_effect), GlowPalette.Cyan)
+        SectionLabel(stringResource(R.string.section_effect), GlowPalette.TextMuted)
         // Preview beside the style list: what you pick is what plays, without scrolling.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             EffectPreview(settings = settings, color = color, heldBy = previewHeld, loop = loop)

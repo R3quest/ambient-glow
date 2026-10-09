@@ -79,7 +79,6 @@ import app.lumement.R
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.NoticeRow
 import app.lumement.ui.components.PrimaryButton
-import app.lumement.ui.theme.GlowBrushes
 import app.lumement.ui.theme.GlowMotion
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
@@ -460,17 +459,13 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
     }
 }
 
-/** One segment per step of this run: lime once granted, cyan for the one showing, faint to come. */
+/** One segment per step of this run, filling in cyan up to the one showing; faint to come. */
 @Composable
 private fun SetupProgress(done: Int, total: Int) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(total) { i ->
             val color by animateColorAsState(
-                targetValue = when {
-                    i < done -> GlowPalette.Lime
-                    i == done -> GlowPalette.Cyan
-                    else -> GlowPalette.SurfaceHighest
-                },
+                targetValue = if (i <= done) GlowPalette.Cyan else GlowPalette.SurfaceHighest,
                 animationSpec = GlowMotion.stateChange(),
                 label = "setup-segment",
             )
@@ -486,33 +481,28 @@ private fun SetupProgress(done: Int, total: Int) {
 }
 
 /**
- * The page's mark in a tile edged in the signature gradient: a bell, a message, a phone waking,
+ * The page's mark in a tile edged in cyan: a bell, a message, a phone waking,
  * a spark for the effects, or a check once all is set.
  */
 @Composable
 private fun StepGlyph(page: SetupPage, modifier: Modifier = Modifier) {
-    val glow by animateColorAsState(
-        targetValue = if (page == SetupPage.Done) GlowPalette.Lime else GlowPalette.Cyan,
-        animationSpec = GlowMotion.stateChange(),
-        label = "glyph-glow",
-    )
     Box(
         modifier
             // A soft halo past the tile's edge, the app's glow in miniature.
             .drawBehind {
                 drawCircle(
-                    Brush.radialGradient(listOf(glow.copy(alpha = 0.22f), Color.Transparent), center, size.maxDimension),
+                    Brush.radialGradient(listOf(GlowPalette.Cyan.copy(alpha = 0.22f), Color.Transparent), center, size.maxDimension),
                     radius = size.maxDimension,
                 )
             }
             .clip(GlowShapes.Tile)
             .background(GlowPalette.Surface)
-            .border(1.dp, GlowBrushes.Signature, GlowShapes.Tile),
+            .border(1.dp, GlowPalette.Cyan.copy(alpha = 0.6f), GlowShapes.Tile),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(30.dp)) {
             val line = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-            val tint = if (page == SetupPage.Done) GlowPalette.Lime else GlowPalette.Cyan
+            val tint = GlowPalette.Cyan
             when (page) {
                 is SetupPage.Grant -> when (page.step) {
                     AccessStep.BRIDGE -> bell(tint, line)

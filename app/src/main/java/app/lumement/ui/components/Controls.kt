@@ -85,7 +85,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import app.lumement.R
-import app.lumement.ui.theme.GlowBrushes
 import app.lumement.ui.theme.GlowMotion
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
@@ -350,15 +349,21 @@ internal fun SectionLabel(text: String, color: Color = GlowPalette.TextFaint) {
     Text(text = text, style = MaterialTheme.typography.labelSmall, color = color)
 }
 
-/** A page's one main action: full width, in the signature gradient. A new label swaps in place. */
+/**
+ * A page's one main action: full width, edged and lettered in the action cyan, outlined like
+ * every other button, so it leads by size and colour rather than a fill. Not [enabled], it greys
+ * out, still showing where the action will be. A new label swaps in place.
+ */
 @Composable
 internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val tint = if (enabled) GlowPalette.Cyan else GlowPalette.TextFaint
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(50.dp)
             .clip(GlowShapes.Button)
-            .background(GlowBrushes.SignatureHorizontal)
+            .background(if (enabled) GlowPalette.Cyan.copy(alpha = 0.08f) else GlowPalette.Surface)
+            .border(1.5.dp, if (enabled) GlowPalette.Cyan else GlowPalette.Outline, GlowShapes.Button)
             .clickable(role = Role.Button, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -371,7 +376,7 @@ internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier
             Text(
                 text = label.uppercase(),
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
-                color = GlowPalette.Void,
+                color = tint,
             )
         }
     }

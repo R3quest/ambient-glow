@@ -265,7 +265,7 @@ internal fun LedCard(
     val previewRadius = previewDotRadius(settings.dotSize, previewScale)
 
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_dot), GlowPalette.Cyan)
+        SectionLabel(stringResource(R.string.section_dot), GlowPalette.TextMuted)
 
         // Dragging or tapping the mock-up is the main way; the readouts and how-to sit beside it.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -332,7 +332,7 @@ internal fun LedCard(
                     Text(
                         text = stringResource(R.string.dot_beacon_note),
                         style = MaterialTheme.typography.bodySmall,
-                        color = GlowPalette.Cyan,
+                        color = GlowPalette.TextMuted,
                     )
                 }
             }
@@ -412,7 +412,7 @@ internal fun LedCard(
 @Composable
 internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit) {
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.Cyan)
+        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.TextMuted)
         OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
             SelectionRow(
                 count = DotSize.entries.size,
@@ -598,6 +598,7 @@ private fun SpotRow(spots: List<DotSpot>, dotX: Float, dotY: Float, onPick: (Dot
 /**
  * Graduated ruler for the dot mock-up: ticks every 5 % along the top and left edges, longer
  * marks at quarters, dashed crosshairs through the dot, the camera line, and a pin per spot.
+ * All in the text greys, so only the dot (the LED itself) is in colour.
  */
 @Composable
 private fun DotRuler(dotX: Float, dotY: Float, dotRadius: Dp, spots: List<DotSpot>, modifier: Modifier = Modifier) {
@@ -622,22 +623,22 @@ private fun DotRuler(dotX: Float, dotY: Float, dotRadius: Dp, spots: List<DotSpo
         }
 
         val center = dotCenter(dotX, dotY, size, margin)
-        val guide = GlowPalette.Cyan.copy(alpha = 0.22f)
+        val guide = GlowPalette.TextMuted.copy(alpha = 0.3f)
         drawLine(guide, Offset(center.x, 0f), Offset(center.x, size.height), hair, pathEffect = dash)
         drawLine(guide, Offset(0f, center.y), Offset(size.width, center.y), hair, pathEffect = dash)
-        drawLine(GlowPalette.Cyan, Offset(center.x, 0f), Offset(center.x, major), hair * 2f)
-        drawLine(GlowPalette.Cyan, Offset(0f, center.y), Offset(major, center.y), hair * 2f)
+        drawLine(GlowPalette.TextMuted, Offset(center.x, 0f), Offset(center.x, major), hair * 2f)
+        drawLine(GlowPalette.TextMuted, Offset(0f, center.y), Offset(major, center.y), hair * 2f)
 
         // The camera line: every spot on it shares the lens centre's height.
         spots.firstOrNull { it.onCameraLine }?.let { spot ->
             val y = dotCenter(0f, spot.y, size, margin).y
-            drawLine(GlowPalette.Lime.copy(alpha = 0.28f), Offset(0f, y), Offset(size.width, y), hair, pathEffect = dash)
+            drawLine(GlowPalette.TextMuted.copy(alpha = 0.28f), Offset(0f, y), Offset(size.width, y), hair, pathEffect = dash)
         }
 
         val pinRadius = 3.5.dp.toPx()
         spots.forEach { spot ->
             drawCircle(
-                color = if (spot.matches(dotX, dotY)) GlowPalette.Lime else GlowPalette.TextFaint,
+                color = if (spot.matches(dotX, dotY)) GlowPalette.TextMuted else GlowPalette.TextFaint,
                 radius = pinRadius,
                 center = dotCenter(spot.x, spot.y, size, margin),
                 style = Stroke(width = hair),

@@ -7,7 +7,6 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -15,7 +14,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** AMOLED palette: true black base, cold graphite surfaces, electric accents. */
+/**
+ * AMOLED palette: true black base, cold graphite surfaces, and accents that each mean one thing,
+ * so the chrome stays quiet and the effects (the app's real colour) stand out:
+ * - [Cyan]: what can be done or is chosen — the main action, selections, switches, sliders.
+ * - [Magenta]: premium, and nothing else.
+ * - [Amber]: a warning with a fix.
+ * Headings and information stay in the greys; colour on text means it acts or it warns.
+ */
 object GlowPalette {
     val Void = Color(0xFF000000)
     val Surface = Color(0xFF0B0D12)
@@ -34,12 +40,6 @@ object GlowPalette {
     val TextPrimary = Color(0xFFF2F5FA)
     val TextMuted = Color(0xFF8A93A6)
     val TextFaint = Color(0xFF4F586B)
-}
-
-object GlowBrushes {
-    val Signature = Brush.linearGradient(listOf(GlowPalette.Cyan, GlowPalette.Magenta))
-    val SignatureHorizontal = Brush.horizontalGradient(listOf(GlowPalette.Cyan, GlowPalette.Magenta))
-    val Warning = Brush.linearGradient(listOf(GlowPalette.Amber, GlowPalette.Magenta))
 }
 
 /** Asymmetric "blade" corners: soft on one diagonal, tight on the other. */

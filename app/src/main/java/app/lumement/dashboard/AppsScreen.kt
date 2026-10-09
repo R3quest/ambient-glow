@@ -80,7 +80,6 @@ import app.lumement.ui.components.OptionNote
 import app.lumement.ui.components.SectionLabel
 import app.lumement.ui.components.glowCard
 import app.lumement.ui.components.glowCardSlice
-import app.lumement.ui.theme.GlowBrushes
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
 import kotlinx.coroutines.Dispatchers
@@ -424,7 +423,7 @@ internal fun AppsButton(marked: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** A square button in the dashboard's header; [lit] edges it in the signature while it is busy. */
+/** A square button in the dashboard's header; [lit] edges it in cyan while it is busy. */
 @Composable
 internal fun HeaderButton(
     description: String,
@@ -438,7 +437,7 @@ internal fun HeaderButton(
             .size(40.dp)
             .clip(GlowShapes.Pill)
             .background(GlowPalette.Surface)
-            .border(1.dp, if (lit) GlowBrushes.Signature else SolidColor(GlowPalette.OutlineSoft), GlowShapes.Pill)
+            .border(1.dp, if (lit) GlowPalette.Cyan else GlowPalette.OutlineSoft, GlowShapes.Pill)
             .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,

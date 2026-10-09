@@ -11,11 +11,11 @@
         android:translateX="-64"
         android:translateY="-61">
 
-        <!-- Head, gold outline -->
+        <!-- Head, outlined in the app's cyan (glow_cyan) -->
         <path
             android:fillColor="#FF1B1533"
             android:pathData="M256,116 C228,116 212,122 196,130 C172,108 144,86 120,77 C106,72 94,70 92,81 C91,91 96,102 102,112 C88,136 74,184 76,246 C80,364 166,436 256,436 C346,436 432,364 436,246 C438,184 424,136 410,112 C416,102 421,91 420,81 C418,70 406,72 392,77 C368,86 340,108 316,130 C300,122 284,116 256,116 Z"
-            android:strokeColor="#FFE9C46A"
+            android:strokeColor="#FF00E5FF"
             android:strokeLineJoin="round"
             android:strokeWidth="20" />
 

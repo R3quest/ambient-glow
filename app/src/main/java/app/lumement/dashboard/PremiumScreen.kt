@@ -36,8 +36,8 @@ import app.lumement.ui.theme.GlowPalette
 
 /**
  * Where the trial stands and what premium adds, in one card; under it the page's one action,
- * Play's price to unlock it (or why it can't be bought right now: no Play Store, not signed
- * in), apart from the list so it never reads as one more item. What stays free comes last, so
+ * Play's price to unlock it (or that button greyed out, and why it can't be bought right now: no
+ * Play Store, not signed in), apart from the list so it never reads as one more item. What stays free comes last, so
  * buying is never mistaken for needing to.
  */
 @Composable
@@ -82,7 +82,10 @@ internal fun PremiumScreen(premium: PremiumModel, onBack: () -> Unit) {
                     text = stringResource(R.string.premium_over_buy, price),
                     onClick = { premium.unlock(activity) },
                 )
-                else -> OptionNote(stringResource(R.string.premium_unavailable))
+                else -> {
+                    PrimaryButton(text = stringResource(R.string.premium_unlock_waiting), onClick = {}, enabled = false)
+                    OptionNote(stringResource(R.string.premium_unavailable))
+                }
             }
             Spacer(Modifier.height(10.dp))
             OptionNote(stringResource(R.string.premium_free))
