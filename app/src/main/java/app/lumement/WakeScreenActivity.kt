@@ -664,9 +664,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (power.isInteractive) return
         DarkHold.acquire(this)
         if (blinkDark) {
-            // Asleep between breaths: the lock screen in front, if the display's report was missed.
+            // Asleep between breaths, the next one due: the lock screen in front, if the display's
+            // report was missed.
             if (face.value == Face.LED) showLockScreen()
-            armBlinkRelight()
             return
         }
         timers.removeCallbacks(takeOver)
@@ -711,8 +711,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             // Dark first, the LED on its next blink: lit at once, the phone would be awake again,
             // and a power press to see the lock screen once more would be a sleep request.
             GlowLog.d { "act blink: lock screen asleep, dark first" }
-            blinkDark = true
-            armBlinkRelight()
+            startBlinkDark()
             return
         }
         when (face.value) {
@@ -978,8 +977,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         blinkBreathing = GlowShield.showBlink(colors[blinkRound % colors.size], blinkRound, ::onUserDismiss, ::onBlinkBreathDone)
     }
 
-    /** The next breath, [BLINK_DARK_MS] from now. */
-    private fun armBlinkRelight() {
+    /**
+     * Dark until the next breath, [BLINK_DARK_MS] from now: timed from the breath's end (or the
+     * lock screen going dark), not from the screen-off reports, which come late and unevenly.
+     */
+    private fun startBlinkDark() {
+        blinkDark = true
         timers.removeCallbacks(blinkRelight)
         // Handler time stops while the CPU sleeps.
         DarkHold.acquire(this, BLINK_DARK_MS + RELIGHT_DELAY_MS + 500)
@@ -1001,7 +1004,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
         if (!GlowShield.sleepNow()) return false
         GlowLog.d { "act blink: breath out, sleeping" }
-        blinkDark = true
+        startBlinkDark()
         blinkSlept = !power.isInteractive
         blinkRound++
         timers.removeCallbacks(blinkSleepWatch)
@@ -1029,14 +1032,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /**
      * A display change while the blink's sleep is under way, the LED still in front. Asleep: the
-     * screen-off fade is up by now, so the lock screen goes in front under it, and the next breath
-     * is due. Awake after the sleep had begun: [wokenBeforeUncover].
+     * screen-off fade is up by now, so the lock screen goes in front under it. Awake after the
+     * sleep had begun: [wokenBeforeUncover].
      */
     private fun blinkSleepChanged() {
         if (!interactiveSeen) {
             GlowLog.d { "act blink: asleep, lock screen in front" }
             showLockScreen()
-            armBlinkRelight()
         } else if (blinkSlept) {
             wokenBeforeUncover()
         }
@@ -1482,8 +1484,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
         const val SLEEP_WATCH_MS = 50L
 
-        /** Asleep between two blinks; with the wake and the breath, a ~5.7 s period (S23). */
-        const val BLINK_DARK_MS = 3_000L
+        /**
+         * A breath's end to the next one's relight. With the wake (~0.25 s on the S23) and the
+         * breath, a ~4.6 s period against the lit LED's 3.37 s: asleep for over half of it, so
+         * most power presses wake the phone straight into the lock screen, and ~13 wakes a
+         * minute rather than ~18, while a glance still catches a breath within ~3 s.
+         */
+        const val BLINK_DARK_MS = 2_500L
 
         /**
          * Lock screen starting to sleep → relight. One UI's LOCKSCREEN → DOZING step takes ~260 ms
