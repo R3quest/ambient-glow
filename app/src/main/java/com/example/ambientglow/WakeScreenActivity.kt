@@ -134,9 +134,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val arrivalSeq = mutableIntStateOf(0)
 
     /**
-     * After a wake into the LED, One UI's shade keeps focus, the system bars and the system
-     * brightness until its wake transition ends (our brightness override only applies from then).
-     * Until our window gets focus the dot stays hidden and we ask for the lowest brightness.
+     * After a wake into the LED, One UI's shade keeps focus and the system bars until its wake
+     * transition ends. Until our window gets focus (and the bars have slid out) the dot stays hidden.
      */
     private val settling = mutableStateOf(false)
     private val settleNow = Runnable { finishSettling() }
@@ -296,8 +295,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (displayId != Display.DEFAULT_DISPLAY) return
             val wasInteractive = interactiveSeen
             interactiveSeen = power.isInteractive
+            val state = currentDisplay()?.state
             // Also true for a moment while a wake turns the panel on; it turns on with an event too.
-            val dark = interactiveSeen && currentDisplay()?.state == Display.STATE_OFF
+            val dark = interactiveSeen && state == Display.STATE_OFF
             if (dark != covered.value) {
                 GlowLog.d { "act panel ${if (dark) "covered" else "uncovered"} face=${face.value}" }
                 covered.value = dark
@@ -317,7 +317,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (wasInteractive && ledTurnedOff()) {
                 GlowLog.d { "act display changed: going to sleep with the LED in front" }
                 revealAfterPower()
-            } else if (revealingAfterPower && !interactiveSeen && panelOff()) {
+            } else if (revealingAfterPower && !interactiveSeen && isOff(state)) {
                 wakeRevealed()
             }
         }
@@ -507,7 +507,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             // Read elsewhere while the LED is lit: don't pop the lock screen up. Let the dot finish
             // its breath, then sleep under cover rather than at the screen timeout (10 min on some
             // phones), and finish when the screen goes off. An arrival in progress is cut short:
-            // brightness and rate drop, the dot lights no more.
+            // the rate drops, the dot lights no more.
             GlowLog.d { "act draining" }
             ending.value = true
             onArrivalDone()
@@ -892,7 +892,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         watchForSleep()
     }
 
-    private fun panelOff(): Boolean = currentDisplay()?.state.let { it != null && it != Display.STATE_ON }
+    private fun panelOff(): Boolean = isOff(currentDisplay()?.state)
+
+    /** Off, or dozing (always-on display): anything but lit for use. */
+    private fun isOff(state: Int?): Boolean = state != null && state != Display.STATE_ON
 
     /** Cover the lock screen with the LED; [arrival] first plays the effect on the black panel. */
     private fun showLed(arrival: Boolean = false) {
@@ -922,19 +925,15 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         window.setBackgroundDrawable(android.graphics.Color.BLACK.toDrawable())
         window.clearFlags(UNTOUCHABLE)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Arranged while dark (or before focus): come up at the lowest brightness, dot hidden,
-        // until we own the bars. Already focused: straight to the system brightness.
+        // Arranged while dark (or before focus): the dot stays hidden until we own the bars.
         val focused = hasWindowFocus() && power.isInteractive
         settling.value = !focused
         // One UI's bars come up over us until the hand-over; cover them if the user allowed it.
         if (!focused) GlowShield.show()
         // Already lit, so no SCREEN_ON will come to end the settling; if focus doesn't change
-        // either, the dot would stay hidden on a black panel at the lowest brightness.
+        // either, the dot would stay hidden on a black panel.
         if (!focused && power.isInteractive) timers.postDelayed(settleNow, SETTLE_FALLBACK_MS)
-        applyWindow(
-            brightness = if (focused) LED_WINDOW_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF,
-            lowRefresh = true,
-        )
+        applyWindow(lowRefresh = true)
         window.hideBarsOnBlack()
         face.value = Face.LED
         setLockScreenCover(cover = true)
@@ -967,7 +966,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (!message.systemPopsUp) GlowLauncher.showMessage(this, message.sbn)
     }
 
-    /** [ArrivalMode.MESSAGE]: slide the pop-up away while brightness and rate still hold. */
+    /** [ArrivalMode.MESSAGE]: slide the pop-up away while the rate still holds. */
     private fun retractMessage() {
         if (arriving.value) GlowLauncher.dismissMessage(this)
     }
@@ -1041,7 +1040,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d { "act arrival done" }
         arriving.value = false
         GlowLauncher.dismissMessage(this)
-        if (face.value == Face.LED && !settling.value) applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
+        if (face.value == Face.LED && !settling.value) applyWindow(lowRefresh = true)
         // Do Not Disturb came on while it played: no LED after it.
         if (GlowSession.resting && face.value == Face.LED && power.isInteractive && !ending.value) sleepUnderCover()
         // Laid face down or covered while it played (a stow waits for it): look again.
@@ -1076,8 +1075,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (!settling.value) return
         settling.value = false
         if (face.value == Face.LED) {
-            GlowLog.d { "act settled: LED at system brightness" }
-            applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
+            GlowLog.d { "act settled: LED shows" }
+            applyWindow(lowRefresh = true)
         }
     }
 
@@ -1097,7 +1096,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         setSeeThrough(true)
         window.addFlags(UNTOUCHABLE)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        applyWindow(brightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE, lowRefresh = false)
+        applyWindow(lowRefresh = false)
         releaseKeepOn()
     }
 
@@ -1192,12 +1191,18 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * the system never sees a reason to raise it. The lock-screen overlay never had this problem
      * because SystemUI keeps the rate up there. Otherwise the dot keeps the rate it asked for
      * ([ledFrameRate]), and a finger on it the top rate ([onLedTouch]).
+     *
+     * Brightness is never overridden: the LED and its effects show at the system brightness, the
+     * lock screen's own. Any override (even the lowest, while settling) turns the light sensor
+     * off, and whatever came next then showed at the override until auto-brightness had a fresh
+     * reading (~0.1 s): the lock screen over the LED at 100 % (measured 500 → 176 nits), or the
+     * settled dot at 0. So the dot follows the room's light like the rest of the phone, and the
+     * system's brightness slider is its control too.
      */
-    private fun applyWindow(brightness: Float, lowRefresh: Boolean) {
+    private fun applyWindow(lowRefresh: Boolean) {
         val playing = lowRefresh && arriving.value
         val boosted = playing || (lowRefresh && touching)
         window.attributes = window.attributes.apply {
-            screenBrightness = brightness
             preferredDisplayModeId = when {
                 !lowRefresh || boosted -> 0
                 ledFast -> panelModes.fade
@@ -1265,12 +1270,3 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         const val WAKE_VERIFY_MS = 1_200L
     }
 }
-
-/**
- * Window brightness while the dot is lit: the system's, the lock screen's own. Any override turns
- * the light sensor off, and once the lock screen came over the LED (tap, power, takeover) it then
- * showed at the override until auto-brightness had a fresh reading (~0.1 s, measured 500 → 176
- * nits). So the dot follows the room's light like the rest of the phone, and the system's
- * brightness slider is its control too.
- */
-private const val LED_WINDOW_BRIGHTNESS = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE

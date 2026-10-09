@@ -121,7 +121,7 @@ internal fun GlowScreen(
 /** How long the black panel holds the system's message pop-up before retracting it. */
 private const val MESSAGE_HOLD_MS = 6_000L
 
-/** The heads-up's slide-out before brightness drops and the dot starts; tune 350-450 against One UI. */
+/** The heads-up's slide-out before the rate drops and the dot starts; tune 350-450 against One UI. */
 private const val MESSAGE_RETRACT_MS = 400L
 
 /**
