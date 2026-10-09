@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No event types and no window content: the service only owns the overlay cover. -->
+<!-- No event types and no window content: the service only owns overlay windows and puts the phone to sleep between LED blinks. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/shield_description"
     android:summary="@string/shield_summary"

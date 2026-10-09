@@ -191,11 +191,35 @@ private fun LedLayer(
             }
         }
     }
+    RoundDot(settings, shown, cycle, geometry) { clock.value }
+}
+
+/**
+ * One breath in [GlowShield]'s blink window, once [running] (the panel is on), at the LED's own
+ * pace and look; [round] is its place in the burn-in guard. [onDone] once it is dark again.
+ */
+@Composable
+internal fun BlinkBreath(settings: GlowSettings, color: Int, round: Int, geometry: ScreenGeometry, running: Boolean, onDone: () -> Unit) {
+    val clock = remember { Animatable(0f) }
+    val done by rememberUpdatedState(onDone)
+    LaunchedEffect(running) {
+        if (!running) return@LaunchedEffect
+        withContext(RealTimeMotion) {
+            clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
+        }
+        done()
+    }
+    RoundDot(settings, color, round, geometry) { clock.value }
+}
+
+/** The round's dot in [color], [clock] ms into its breath, stepped through the burn-in guard by [cycle]. */
+@Composable
+private fun RoundDot(settings: GlowSettings, color: Int, cycle: Int, geometry: ScreenGeometry, clock: () -> Float) {
     val onCamera = settings.ledOnCamera
     val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
     LedDot(
-        color = Color(shown),
-        alpha = { ledBreathAt(clock.value) },
+        color = Color(color),
+        alpha = { ledBreathAt(clock()) },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
@@ -203,7 +227,7 @@ private fun LedLayer(
         geometry = geometry,
         ringGrowPx = if (onCamera) RING_SHIFTS[cycle % RING_SHIFTS.size] else 0f,
         material = ledMaterial(settings, elementFramesSupported),
-        clock = { clock.value },
+        clock = clock,
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {

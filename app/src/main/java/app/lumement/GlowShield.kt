@@ -8,7 +8,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -31,7 +33,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Optional overlay above the lock screen, for two short moments:
+ * Optional overlay above the lock screen, for a few short moments:
  *
  * - The arrival effect: when a new message lights the lock screen, the user's chosen style
  *   (edge frame, camera ring or dot) pulses over it, see-through and untouchable, so the lock
@@ -47,11 +49,15 @@ import kotlin.math.sqrt
  *   effect while it plays, so its last light still lands on the LED, then as the cover. The Edge
  *   Frame's LED goes out on its first exhale in that cover, and the glow screen's own LED starts
  *   once it has ([hideWhenDone]), so the light never cuts between the two windows.
+ * - The LED's blinks: between two breaths the phone sleeps ([sleepNow]), so the power key wakes
+ *   it straight into the lock screen; over a lit LED a press is a sleep request, which One UI
+ *   acts on only after waiting for more presses. Each breath plays in a blink window from the
+ *   moment the panel is on ([showBlink]), so the wake hand-over isn't dark time.
  *
  * No app window can draw over a visible lock screen; an accessibility overlay can, because it
  * sits above the system bars and the keyguard. The service subscribes to no accessibility events
  * and reads no window content, so it costs nothing while idle. If the user hasn't enabled it,
- * every call here does nothing and the lock screen simply lights up.
+ * every call here does nothing: the lock screen simply lights up, and the LED stays lit.
  */
 class GlowShield : AccessibilityService() {
 
@@ -101,7 +107,104 @@ class GlowShield : AccessibilityService() {
 
     override fun onInterrupt() = Unit
 
+    /** The blink window ([addBlink]), what keeps its composition alive, and its breath's go-ahead. */
+    private var blink: View? = null
+    private var blinkOwner: OverlayOwner? = null
+    private val blinkRunning = mutableStateOf(false)
+    private var blinkTap: (() -> Unit)? = null
+    private var blinkDone: (() -> Unit)? = null
+    private var blinkDowns = 0
+    private val blinkTapNow = Runnable { tapBlink() }
+    private val blinkTimeout = Runnable {
+        blinkOut()
+        removeBlink()
+    }
+
+    /**
+     * Black over everything, bars included, with one LED breath in [color] that starts once the
+     * panel is on ([blinkRunning]). It stands in for the glow screen while the phone wakes for a
+     * breath, so taps land here: as on the LED, a tap opens the lock screen ([onTap]), at the
+     * second press of a double tap or once the double-tap time is up, and neither press reaches
+     * the lock screen. [onDone] once the breath is out.
+     */
+    private fun addBlink(color: Int, round: Int, onTap: () -> Unit, onDone: () -> Unit): Boolean {
+        removeBlink()
+        val settings = GlowPrefs.loadPlaying(this)
+        val owner = OverlayOwner()
+        blinkRunning.value = false
+        blinkDowns = 0
+        val view = FrameLayout(this).apply {
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setBackgroundColor(Color.BLACK)
+        }
+        view.addView(
+            ComposeView(this).apply {
+                setContent {
+                    val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
+                    BlinkBreath(settings.forScreen(geometry.value), color, round, lens, blinkRunning.value, onDone = ::blinkOut)
+                }
+            },
+        )
+        ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
+            geometry.value = ScreenGeometry.from(insets)
+            insets
+        }
+        @SuppressLint("ClickableViewAccessibility")
+        view.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                blinkDowns++
+                timers.removeCallbacks(blinkTapNow)
+                if (blinkDowns >= 2) tapBlink() else timers.postDelayed(blinkTapNow, ViewConfiguration.getDoubleTapTimeout().toLong())
+            }
+            true
+        }
+        if (addOverlay(view, PixelFormat.OPAQUE, "Lumement:blink", touchable = true) == null) {
+            owner.destroy()
+            return false
+        }
+        blink = view
+        blinkOwner = owner
+        blinkTap = onTap
+        blinkDone = onDone
+        // Never left up by accident: a breath that never ends still ends, and the window goes.
+        timers.postDelayed(blinkTimeout, MAX_BLINK_MS)
+        GlowLog.d { "blink up" }
+        return true
+    }
+
+    private fun tapBlink() {
+        timers.removeCallbacks(blinkTapNow)
+        val tap = blinkTap ?: return
+        blinkTap = null
+        blinkDone = null
+        GlowLog.d { "blink tapped" }
+        tap()
+    }
+
+    /** The breath is out: a tap still waiting for its second press opens the lock screen now; else done. */
+    private fun blinkOut() {
+        timers.removeCallbacks(blinkTimeout)
+        val done = blinkDone ?: return
+        blinkDone = null
+        if (blinkDowns > 0) tapBlink() else done()
+    }
+
+    private fun removeBlink() {
+        timers.removeCallbacks(blinkTimeout)
+        timers.removeCallbacks(blinkTapNow)
+        blinkTap = null
+        blinkDone = null
+        val view = blink ?: return
+        blink = null
+        runCatching { windowManager.removeViewImmediate(view) }
+        blinkOwner?.destroy()
+        blinkOwner = null
+        GlowLog.d { "blink down" }
+    }
+
     private fun release() {
+        removeBlink()
         removeArrival()
         removeCover()
         if (instance === this) instance = null
@@ -111,8 +214,9 @@ class GlowShield : AccessibilityService() {
      * [format]: OPAQUE lets the compositor skip what is under it. A [blackout] needs TRANSLUCENT:
      * the screen timeout comes from the top window that isn't hidden by an opaque one, so an opaque
      * cover would hide the lock screen's short timeout and leave the screen to its long one.
+     * [onShown]: once the cover's first frame is on screen (API 29+), at once if it was up already.
      */
-    private fun addCover(maxMs: Long, format: Int) {
+    private fun addCover(maxMs: Long, format: Int, onShown: (() -> Unit)? = null) {
         removeArrival() // the LED is taking over; the effect has done its job
         timers.removeCallbacks(hideNow)
         // Never left up by accident: a missed hide() still clears it.
@@ -124,9 +228,13 @@ class GlowShield : AccessibilityService() {
                 params.format = format
                 runCatching { windowManager.updateViewLayout(view, params) }
             }
+            onShown?.invoke()
             return
         }
         val view = View(this).apply { setBackgroundColor(Color.BLACK) }
+        if (onShown != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            view.viewTreeObserver.registerFrameCommitCallback { onShown() }
+        }
         val params = addOverlay(view, format, "Lumement:shield") ?: return
         cover = view
         coverParams = params
@@ -438,14 +546,14 @@ class GlowShield : AccessibilityService() {
         runCatching { windowManager.updateViewLayout(view, params) }
     }
 
-    /** Full display, bars and cutout included; untouchable, so taps reach whatever is underneath. */
-    private fun addOverlay(view: View, format: Int, name: String): WindowManager.LayoutParams? {
+    /** Full display, bars and cutout included; unless [touchable], taps reach whatever is underneath. */
+    private fun addOverlay(view: View, format: Int, name: String, touchable: Boolean = false): WindowManager.LayoutParams? {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                (if (touchable) 0 else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             format,
@@ -485,6 +593,9 @@ class GlowShield : AccessibilityService() {
         /** Upper bound for one cover; a wake hand-over takes well under a second. */
         private const val MAX_COVER_MS = 2_000L
 
+        /** Upper bound for one blink window: its wake takes well under a second, then one breath. */
+        private const val MAX_BLINK_MS = 4_000L
+
         /** Upper bound for a [blackout]: the lock screen's own timeout and dim run out well within it. */
         private const val MAX_BLACKOUT_MS = 20_000L
 
@@ -506,6 +617,17 @@ class GlowShield : AccessibilityService() {
         }
 
         /**
+         * [show], then [onShown] once the cover is on screen. False, and nothing happens, when the
+         * service is off or Android can't tell when the cover is on screen (below 10).
+         */
+        fun showThen(onShown: () -> Unit): Boolean {
+            val shield = instance ?: return false
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+            shield.addCover(MAX_COVER_MS, PixelFormat.OPAQUE, onShown)
+            return shield.cover != null
+        }
+
+        /**
          * Holds the display black while the lock screen, handed back so the panel can sleep, runs
          * out its own timeout; ends with [hide]. No-op when the service is off.
          */
@@ -520,6 +642,23 @@ class GlowShield : AccessibilityService() {
 
         fun hide() {
             instance?.removeCover()
+        }
+
+        /**
+         * The blink window, up in the dark before a wake for one breath: black over everything,
+         * the breath waiting for [startBlink]. [round] steps the LED's burn-in guard. A tap opens
+         * the lock screen ([onTap]); [onDone] once the breath is out. False when the service is off.
+         */
+        fun showBlink(color: Int, round: Int, onTap: () -> Unit, onDone: () -> Unit): Boolean =
+            instance?.addBlink(color, round, onTap, onDone) ?: false
+
+        /** The panel is on: the blink's breath starts. */
+        fun startBlink() {
+            instance?.blinkRunning?.value = true
+        }
+
+        fun hideBlink() {
+            instance?.removeBlink()
         }
 
         /**
@@ -539,6 +678,20 @@ class GlowShield : AccessibilityService() {
 
         fun stopArrival() {
             instance?.removeArrival()
+        }
+
+        /** [sleepNow] can work: the service is on, on Android 9+. */
+        val canSleep: Boolean get() = instance != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+
+        /**
+         * Puts the phone to sleep as the power key does, through the lock-screen action the system
+         * offers accessibility services: the fingerprint stays allowed on the lock screen (a device
+         * admin's lockNow would ask for the PIN). False, and nothing happens, if it [canSleep] not.
+         */
+        fun sleepNow(): Boolean {
+            val shield = instance ?: return false
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+            return shield.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
         }
 
         /** Enabled and bound: also what lets the app start the glow screen from the background. */

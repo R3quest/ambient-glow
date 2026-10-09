@@ -54,6 +54,9 @@ internal enum class Face {
  *   power "opens" the phone like it would without the app.
  * - Screen off with the lock screen in front (timeout, or power on the lock screen): switch to
  *   the LED, then wake. The panel comes on already black with the dot.
+ * - With [GlowShield], the LED blinks ([blinks]): the phone sleeps between breaths, the lock
+ *   screen in front, so power wakes it straight into the lock screen. The screen-offs above are
+ *   then the blink's, and the lock screen going dark stays dark until the next breath.
  * - A new message ([ArrivalMode.LOCK_SCREEN], default): light the system lock screen (all its
  *   notifications) and play the user's chosen effect over it ([GlowShield]). If nobody touched
  *   it, the LED dot covers it again just before the lock screen would dim and sleep (about 3 s
@@ -105,6 +108,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private val timers = Handler(Looper.getMainLooper())
     private val wakeNow = Runnable {
+        // Woken by the user between the blink putting the LED up and this wake: they want the lock screen.
+        if (blinkWaking && power.isInteractive && face.value == Face.LED) {
+            blinkWaking = false
+            GlowLog.d { "act blink: woken by the user before its breath" }
+            showLockScreen()
+            return@Runnable
+        }
+        blinkWaking = false
         PanelWaker.wake(this)
         timers.postDelayed(verifyWake, WAKE_VERIFY_MS)
     }
@@ -309,12 +320,15 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 // down, the watch puts it away again a moment later.
                 if (!dark && interactiveSeen && stowed && face.value == Face.LED) takenOut()
             }
+            if (blinkBreathing && interactiveSeen && state == Display.STATE_ON) startBlinkBreath()
             if (interactiveSeen) {
                 // Awake again: the sleep we were handling was cancelled; the next one is the user's.
                 ledArmedForSleep = false
                 revealingAfterPower = false
             }
-            if (wasInteractive && ledTurnedOff()) {
+            if (blinkDark && face.value == Face.LED) {
+                blinkSleepChanged()
+            } else if (wasInteractive && ledTurnedOff()) {
                 GlowLog.d { "act display changed: going to sleep with the LED in front" }
                 revealAfterPower()
             } else if (revealingAfterPower && !interactiveSeen && isOff(state)) {
@@ -425,7 +439,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // double-tapped to sleep). Normally [sleepSignal] has already handled it; otherwise open
         // the lock screen now rather than waiting for the late ACTION_SCREEN_OFF, which arrives
         // ~0.3 s after the panel is already dark.
-        if (ledTurnedOff()) revealAfterPower()
+        if (ledTurnedOff()) {
+            revealAfterPower()
+        } else if (blinkBreathing && power.isInteractive) {
+            // Something came over the LED while it breathes (an alarm, a call): the blink
+            // window, above every window, would hide it.
+            endBlinkBreath()
+        }
         super.onPause()
     }
 
@@ -444,6 +464,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
+    override fun onStop() {
+        // Stopped behind the lock screen after a power press: it has drawn and is waking up.
+        if (coveringReveal) {
+            GlowLog.d { "act stopped behind the lock screen: cover off" }
+            coveringReveal = false
+            GlowShield.hide()
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         GlowLog.d { "act onDestroy" }
         afterCall.cancel()
@@ -451,6 +481,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         timers.removeCallbacksAndMessages(null)
         GlowSession.detach(this)
         GlowShield.hide()
+        GlowShield.hideBlink()
         GlowShield.stopArrival()
         GlowLauncher.dismissMessage(this)
         unregisterReceiver(screenSignals)
@@ -468,6 +499,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (face.value == Face.AWAY) return
         ending.value = false
         if (stowed) return // nobody to show it to: the LED has it once the phone is taken out
+        stopBlinking() // the message takes the screen; the LED blinks again after it
         timers.removeCallbacks(sleepAfterBreath)
         settings.value = GlowPrefs.loadPlaying(this) // the arrival choice may have changed since launch
         val arrival = arrivalFor(settings.value.arrival, GlowSession.resting)
@@ -532,6 +564,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     override fun ensureLed() {
+        if (blinkDark) return
         val missing = face.value != Face.AWAY && ledMissing(
             screenOn = power.isInteractive,
             waiting = !GlowPending.isEmpty,
@@ -558,6 +591,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     override fun onRestChanged() {
         GlowLog.d { "act rest=${GlowSession.resting} face=${face.value} interactive=${power.isInteractive}" }
         if (GlowSession.resting) {
+            stopBlinking()
             timers.removeCallbacks(takeOver)
             timers.removeCallbacks(dimForTakeover)
             timers.removeCallbacks(relightLater)
@@ -588,6 +622,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun start(intent: Intent?) {
         GlowLauncher.dismissBridge(this)
         timers.removeCallbacksAndMessages(null)
+        stopBlinking()
         settings.value = GlowPrefs.loadPlaying(this)
         if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
@@ -628,6 +663,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // the LED over a lit lock screen.
         if (power.isInteractive) return
         DarkHold.acquire(this)
+        if (blinkDark) {
+            // Asleep between breaths: the lock screen in front, if the display's report was missed.
+            if (face.value == Face.LED) showLockScreen()
+            armBlinkRelight()
+            return
+        }
         timers.removeCallbacks(takeOver)
         timers.removeCallbacks(dimForTakeover)
         timers.removeCallbacks(verifyWake)
@@ -666,6 +707,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             wakeAfter(RELIGHT_DELAY_MS)
             return
         }
+        if (blinks && face.value == Face.LOCK_SCREEN) {
+            // Dark first, the LED on its next blink: lit at once, the phone would be awake again,
+            // and a power press to see the lock screen once more would be a sleep request.
+            GlowLog.d { "act blink: lock screen asleep, dark first" }
+            blinkDark = true
+            armBlinkRelight()
+            return
+        }
         when (face.value) {
             // The user turned the LED off (power, double tap): open the phone, like without us.
             Face.LED -> revealAfterPower()
@@ -679,6 +728,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun onScreenOn() {
         // Woken by the user while put away: they have it in hand; the lock screen as ever.
         if (stowed) unstow()
+        // Woken between breaths, by the user: the lock screen, even if the LED's uncover was missed.
+        // The blink starts over when the screen goes off again.
+        if (blinkDark && face.value == Face.LED) showLockScreen()
+        blinkDark = false
+        timers.removeCallbacks(blinkRelight)
+        if (blinkBreathing) startBlinkBreath()
         revealingAfterPower = false
         ledArmedForSleep = false
         timers.removeCallbacks(relightLater)
@@ -766,6 +821,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun onGoingToSleep() {
         GlowLog.d { "act going to sleep on the lock screen" }
+        if (blinks) return // blinking: the lock screen sleeps, and the LED comes on its next blink
         if (audio.inCall || GlowPending.isEmpty || ledResting || !takeRelightToken()) return
         DarkHold.acquire(this)
         showLed()
@@ -821,11 +877,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     /**
      * The LED face idles at the panel's lowest rate (10 Hz on One UI), where a 0.4 s fade is only
      * four frames. Each breath asks for ~[LED_FADE_HZ] just before it lights and lets go once it
-     * is dark again, so the rate only ever changes while the dot is off.
+     * is dark again, so the rate only ever changes while the dot is off. Blinking, the phone
+     * sleeps instead once the breath is out.
      */
     private fun ledFrameRate(fast: Boolean) {
         if (ledFast == fast) return
         ledFast = fast
+        if (!fast && !settling.value && sleepUntilNextBreath()) return
         if (face.value != Face.LED || arriving.value || settling.value || touching) return
         val idle = panelModes.idle
         val fade = panelModes.fade
@@ -861,7 +919,169 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * Nor while [stowed]: covered, the LED stays in front and the phone sleeps at its own timeout.
      */
     private fun ledTurnedOff(): Boolean =
-        face.value == Face.LED && !ending.value && !power.isInteractive && !audio.inCall && !ledArmedForSleep && !stowed
+        face.value == Face.LED && !ending.value && !power.isInteractive && !audio.inCall && !ledArmedForSleep && !stowed && !blinkDark
+
+    /**
+     * The LED blinks while [GlowShield] can put the phone to sleep: once a breath is out the phone
+     * sleeps, the lock screen in front, and [BLINK_DARK_MS] later the LED lights for the next one.
+     * Over the lit LED a power press is a sleep request, which One UI acts on only after waiting
+     * for more presses, and the lock screen then has to be lit again; between breaths the phone is
+     * asleep, so the press wakes it on key down, straight into the lock screen, as without the app.
+     * Without the service, the LED stays lit.
+     */
+    private val blinks: Boolean get() = GlowShield.canSleep
+
+    /** Asleep, or going to sleep, between breaths: the next one is due ([blinkRelight]). */
+    private var blinkDark = false
+
+    /** The sleep [blinkDark] asked for has begun: the phone was no longer interactive. */
+    private var blinkSlept = false
+
+    /** The next breath's LED is up in the dark; our wake ([wakeNow]) is due. */
+    private var blinkWaking = false
+
+    /** [GlowShield]'s blink window is up: its breath plays, or waits for the panel. */
+    private var blinkBreathing = false
+
+    /** Breaths slept after: whose colour the next blink shows, and the burn-in guard's step. */
+    private var blinkRound = 0
+
+    /**
+     * Right after a wake One UI holds the panel at its top rate, so the screen-off fade changes no
+     * display mode and [sleepSignal] hears of a power press only once the panel is off. While the
+     * blink breathes, look every [SLEEP_WATCH_MS] instead, as [sleepWatch] does on the lock screen.
+     */
+    private val breathSleepWatch = object : Runnable {
+        override fun run() {
+            if (!blinkBreathing) return
+            if (power.isInteractive) {
+                timers.postDelayed(this, SLEEP_WATCH_MS)
+            } else if (ledTurnedOff()) {
+                GlowLog.d { "act blink: power pressed during the breath" }
+                revealAfterPower()
+            }
+        }
+    }
+
+    private val blinkRelight = Runnable {
+        blinkDark = false
+        if (audio.inCall) {
+            afterCall.arm() // the LED once the call is over, as after a screen-off in one
+            return@Runnable
+        }
+        relightLed(RELIGHT_DELAY_MS)
+        // Not relit (Do Not Disturb, all read, the rate limit, woken meanwhile): each has its way back.
+        if (face.value != Face.LED || power.isInteractive) return@Runnable
+        GlowLog.d { "act blink: relight" }
+        blinkWaking = true
+        val colors = GlowPending.colors()
+        blinkBreathing = GlowShield.showBlink(colors[blinkRound % colors.size], blinkRound, ::onUserDismiss, ::onBlinkBreathDone)
+    }
+
+    /** The next breath, [BLINK_DARK_MS] from now. */
+    private fun armBlinkRelight() {
+        timers.removeCallbacks(blinkRelight)
+        // Handler time stops while the CPU sleeps.
+        DarkHold.acquire(this, BLINK_DARK_MS + RELIGHT_DELAY_MS + 500)
+        timers.postDelayed(blinkRelight, BLINK_DARK_MS)
+    }
+
+    /**
+     * A breath is out with the LED in front: sleep until the next one. False, with nothing done,
+     * where the LED stays lit as ever: without [GlowShield]; with something the sleep would cut
+     * short or hide (an arrival, a finger on the dot, the last message read, a call, another
+     * window in front such as an alarm); or put away, or covered, where the proximity lock already
+     * has the panel off and [COVERED_MS] puts it away.
+     */
+    private fun sleepUntilNextBreath(): Boolean {
+        if (!blinks || face.value != Face.LED || !power.isInteractive || arriving.value || touching || ending.value ||
+            stowed || covered.value || audio.inCall || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) {
+            return false
+        }
+        if (!GlowShield.sleepNow()) return false
+        GlowLog.d { "act blink: breath out, sleeping" }
+        blinkDark = true
+        blinkSlept = !power.isInteractive
+        blinkRound++
+        timers.removeCallbacks(blinkSleepWatch)
+        timers.postDelayed(blinkSleepWatch, SLEEP_WATCH_MS)
+        return true
+    }
+
+    /**
+     * From the blink's sleep request until the uncover. One UI starts the sleep only after the
+     * request has returned, and while it holds the panel at its top rate after a wake, neither the
+     * sleep nor a wake during its fade need change the display; so look every [SLEEP_WATCH_MS].
+     */
+    private val blinkSleepWatch = object : Runnable {
+        override fun run() {
+            if (!blinkDark || face.value != Face.LED) return
+            if (!power.isInteractive) {
+                blinkSlept = true
+            } else if (blinkSlept) {
+                wokenBeforeUncover()
+                return
+            }
+            timers.postDelayed(this, SLEEP_WATCH_MS)
+        }
+    }
+
+    /**
+     * A display change while the blink's sleep is under way, the LED still in front. Asleep: the
+     * screen-off fade is up by now, so the lock screen goes in front under it, and the next breath
+     * is due. Awake after the sleep had begun: [wokenBeforeUncover].
+     */
+    private fun blinkSleepChanged() {
+        if (!interactiveSeen) {
+            GlowLog.d { "act blink: asleep, lock screen in front" }
+            showLockScreen()
+            armBlinkRelight()
+        } else if (blinkSlept) {
+            wokenBeforeUncover()
+        }
+    }
+
+    /** Asleep, then awake again with the LED still in front: the user woke the phone, and wants the lock screen. */
+    private fun wokenBeforeUncover() {
+        GlowLog.d { "act blink: woken before the uncover" }
+        blinkDark = false
+        timers.removeCallbacks(blinkRelight)
+        showLockScreen()
+    }
+
+    private fun startBlinkBreath() {
+        GlowShield.startBlink()
+        timers.removeCallbacks(breathSleepWatch)
+        timers.postDelayed(breathSleepWatch, SLEEP_WATCH_MS)
+    }
+
+    /** The blink's breath is out: back to sleep, or, where the LED stays lit, the glow screen's own dot. */
+    private fun onBlinkBreathDone() {
+        if (!blinkBreathing) return
+        blinkBreathing = false
+        timers.removeCallbacks(breathSleepWatch)
+        // Going to sleep, the window comes down with the uncover, under the screen-off fade.
+        if (sleepUntilNextBreath()) return
+        endBlinkBreath()
+        finishSettling()
+    }
+
+    /** The blink window comes down, its breath out or cut short. */
+    private fun endBlinkBreath() {
+        blinkBreathing = false
+        timers.removeCallbacks(breathSleepWatch)
+        GlowShield.hideBlink()
+    }
+
+    /** Something else has the screen now (a message, Do Not Disturb, an unlock): no breath due or playing. */
+    private fun stopBlinking() {
+        blinkDark = false
+        blinkWaking = false
+        timers.removeCallbacks(blinkRelight)
+        timers.removeCallbacks(blinkSleepWatch)
+        endBlinkBreath()
+    }
 
     /** Set from the power press until the panel is back on: the lock screen is in front, waiting to be lit. */
     private var revealingAfterPower = false
@@ -879,12 +1099,33 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         DarkHold.acquire(this)
         showLockScreen()
         // From onPause or SCREEN_OFF the panel is already off: no display change will come.
-        if (panelOff()) wakeRevealed()
+        if (panelOff()) {
+            wakeRevealed()
+        } else if (GlowShield.showThen(::wakeUnderCover)) {
+            coveringReveal = true
+        }
+    }
+
+    /** [GlowShield]'s cover hides the lock screen coming back from a cancelled sleep; lifted in [onStop]. */
+    private var coveringReveal = false
+
+    /** The cover is on screen: wake, cancelling the sleep, unless the panel has gone off already. */
+    private fun wakeUnderCover() {
+        if (!coveringReveal || !revealingAfterPower || power.isInteractive || panelOff()) return
+        GlowLog.d { "act cover up: cancelling the sleep" }
+        timers.removeCallbacks(wakeNow)
+        wakeNow.run()
+        watchForSleep()
     }
 
     /** [revealAfterPower]'s panel is off: light the lock screen. */
     private fun wakeRevealed() {
         GlowLog.d { "act panel off: lighting the lock screen" }
+        // Too late to cancel the sleep: Android holds the panel dark itself, so the cover only hides.
+        if (coveringReveal) {
+            coveringReveal = false
+            GlowShield.hide()
+        }
         timers.removeCallbacks(wakeNow)
         wakeNow.run()
         // showLockScreen ran while asleep, so it couldn't start this; a quick second press on the
@@ -901,6 +1142,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun showLed(arrival: Boolean = false) {
         GlowLog.d { "act showLed arrival=$arrival pending=${GlowPending.entries.size}" }
         coverSleep = false
+        coveringReveal = false // the cover, if up, is the LED's hand-over now
         timers.removeCallbacks(sleepWatch)
         timers.removeCallbacks(takeOver)
         timers.removeCallbacks(dimForTakeover)
@@ -947,6 +1189,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun showLockScreen(auto: Boolean = false, underCover: Boolean = false) {
         GlowLog.d { "act showLockScreen auto=$auto underCover=$underCover interactive=${power.isInteractive}" }
         ledArmedForSleep = false
+        endBlinkBreath()
         autoTakeover = auto
         coverSleep = underCover
         listenForSleep(true)
@@ -1057,11 +1300,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
         face.value = Face.AWAY
         coverSleep = false
+        stopBlinking()
         unstow()
         listenForSleep(false)
         ledArmedForSleep = false
         // Nothing resets it while away; the next power press must start clean.
         revealingAfterPower = false
+        coveringReveal = false
         arrivalDue = false
         GlowShield.stopArrival()
         becomeInvisible()
@@ -1070,6 +1315,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     private fun finishSettling() {
+        if (blinkBreathing) return // the blink window has the screen until its breath is out
         timers.removeCallbacks(settleNow)
         // The Edge Frame's LED may still be going out on its first exhale in the cover: the dot
         // starts its round once it has, in the same spot, so the light never cuts.
@@ -1235,6 +1481,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         const val UNTOUCHABLE = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 
         const val SLEEP_WATCH_MS = 50L
+
+        /** Asleep between two blinks; with the wake and the breath, a ~5.7 s period (S23). */
+        const val BLINK_DARK_MS = 3_000L
 
         /**
          * Lock screen starting to sleep → relight. One UI's LOCKSCREEN → DOZING step takes ~260 ms
