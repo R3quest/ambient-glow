@@ -1,15 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Status-bar glyph: alpha-only ring and dot. -->
+<!-- Status-bar glyph: the owl reduced to what survives 24dp (silhouette, eye holes, pupils). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path
-        android:pathData="M12,5.5 a6.5,6.5 0 1,1 0,13 a6.5,6.5 0 1,1 0,-13"
-        android:strokeWidth="2"
-        android:strokeColor="#FFFFFFFF" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M17,6 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+
+    <group
+        android:scaleX="0.055"
+        android:scaleY="0.055"
+        android:translateX="-2.08"
+        android:translateY="-1.92">
+
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M256,116 C228,116 212,122 196,130 C172,108 144,86 120,77 C106,72 94,70 92,81 C91,91 96,102 102,112 C88,136 74,184 76,246 C80,364 166,436 256,436 C346,436 432,364 436,246 C438,184 424,136 410,112 C416,102 421,91 420,81 C418,70 406,72 392,77 C368,86 340,108 316,130 C300,122 284,116 256,116 Z M112,266 A72,72 0 1,1 256,266 A72,72 0 1,1 112,266 Z M256,266 A72,72 0 1,1 400,266 A72,72 0 1,1 256,266 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M146,262 A38,38 0 1,1 222,262 A38,38 0 1,1 146,262 Z M290,262 A38,38 0 1,1 366,262 A38,38 0 1,1 290,262 Z" />
+    </group>
 </vector>

@@ -3,7 +3,9 @@
 ## Name: Lumement
 - [ ] **Domain**: register `lumement.app` (unregistered on 2026-10-09). The app ID `app.lumement` mirrors it, and the listing's privacy policy can live at `lumement.app/privacy`.
 - [ ] **Trademark check**: search "Lumement" on EUIPO and USPTO before the listing goes live. Play had no app by that name on 2026-10-09.
-- [ ] **Logo and launcher icon**: redesign for Lumement. Keep "Lum" and "ement" readable as parts, so it isn't misread as "Lumament" or "lu-meme-nt".
+- [x] **Logo and launcher icon**: the Friendly Owl (board 10 on the Lumement Logo canvas) is the launcher icon, themed icon and notification glyph.
+- [ ] **Play listing icon**: Play wants a 512×512 PNG; export it from the owl icon SVG on the canvas.
+- [ ] **Wordmark**: still to design. Keep "Lum" and "ement" readable as parts, so it isn't misread as "Lumament" or "lu-meme-nt".
 - [ ] **Old install on the S23**: `app.lumement` installs as a new app. Uninstall the old Ambient Glow (`com.example.ambientglow`) by hand, then grant setup again in Lumement.
 
 ## Play Store

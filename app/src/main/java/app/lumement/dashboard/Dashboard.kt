@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -68,10 +69,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -82,6 +81,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
@@ -623,8 +623,8 @@ private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding:
 @Composable
 internal fun BrandHeader(modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        GlowEmblem(Modifier.size(26.dp))
-        Spacer(Modifier.width(12.dp))
+        Image(painterResource(R.drawable.ic_owl), contentDescription = null, modifier = Modifier.size(30.dp))
+        Spacer(Modifier.width(10.dp))
         Text(
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
@@ -632,26 +632,6 @@ internal fun BrandHeader(modifier: Modifier = Modifier, action: (@Composable () 
             modifier = Modifier.weight(1f),
         )
         if (action != null) Box(Modifier.height(0.dp).wrapContentHeight(unbounded = true)) { action() }
-    }
-}
-
-/** Brand mark: a cyan→magenta ring with a lime signal dot riding its edge. */
-@Composable
-private fun GlowEmblem(modifier: Modifier = Modifier) {
-    val ringBrush = remember {
-        Brush.sweepGradient(listOf(GlowPalette.Cyan, GlowPalette.Magenta, GlowPalette.Cyan))
-    }
-    Canvas(modifier) {
-        val strokePx = size.minDimension * 0.12f
-        val radius = size.minDimension / 2f - strokePx * 1.4f
-        drawCircle(brush = ringBrush, radius = radius, style = Stroke(width = strokePx, cap = StrokeCap.Round))
-        val angle = Math.toRadians(-50.0)
-        val dot = Offset(
-            x = center.x + radius * kotlin.math.cos(angle).toFloat(),
-            y = center.y + radius * kotlin.math.sin(angle).toFloat(),
-        )
-        drawCircle(color = GlowPalette.Void, radius = strokePx * 1.5f, center = dot)
-        drawCircle(color = GlowPalette.Lime, radius = strokePx * 1.05f, center = dot)
     }
 }
 

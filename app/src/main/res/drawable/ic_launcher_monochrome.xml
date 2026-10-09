@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon layer (Android 13+): same ring + dot geometry, single tint. -->
+<!-- Themed-icon layer (Android 13+): the owl as one tinted silhouette, eyes and beak cut out. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:pathData="M54,35 a19,19 0 1,1 0,38 a19,19 0 1,1 0,-38"
-        android:strokeWidth="6"
-        android:strokeColor="#FFFFFFFF" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M67.4,34.6 m-5.5,0 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0" />
+
+    <group
+        android:scaleX="0.13"
+        android:scaleY="0.13"
+        android:translateX="20.72"
+        android:translateY="21.11">
+
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M256,116 C228,116 212,122 196,130 C172,108 144,86 120,77 C106,72 94,70 92,81 C91,91 96,102 102,112 C88,136 74,184 76,246 C80,364 166,436 256,436 C346,436 432,364 436,246 C438,184 424,136 410,112 C416,102 421,91 420,81 C418,70 406,72 392,77 C368,86 340,108 316,130 C300,122 284,116 256,116 Z M118,266 A66,66 0 1,1 250,266 A66,66 0 1,1 118,266 Z M262,266 A66,66 0 1,1 394,266 A66,66 0 1,1 262,266 Z M256,318 C268,318 274,326 271,336 L259,366 Q256,372 253,366 L241,336 C238,326 244,318 256,318 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M154,262 A30,30 0 1,1 214,262 A30,30 0 1,1 154,262 Z M185,250 A10,10 0 1,1 205,250 A10,10 0 1,1 185,250 Z M298,262 A30,30 0 1,1 358,262 A30,30 0 1,1 298,262 Z M329,250 A10,10 0 1,1 349,250 A10,10 0 1,1 329,250 Z" />
+    </group>
 </vector>

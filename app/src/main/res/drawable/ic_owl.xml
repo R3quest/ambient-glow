@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Lumement owl, cropped to its own bounds: the app header draws it as is, and the launcher
+     foreground insets it into the adaptive-icon safe zone. Eyes ringed in fire, air, water and earth. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="384"
+    android:viewportHeight="384">
+
+    <group
+        android:translateX="-64"
+        android:translateY="-61">
+
+        <!-- Head, gold outline -->
+        <path
+            android:fillColor="#FF1B1533"
+            android:pathData="M256,116 C228,116 212,122 196,130 C172,108 144,86 120,77 C106,72 94,70 92,81 C91,91 96,102 102,112 C88,136 74,184 76,246 C80,364 166,436 256,436 C346,436 432,364 436,246 C438,184 424,136 410,112 C416,102 421,91 420,81 C418,70 406,72 392,77 C368,86 340,108 316,130 C300,122 284,116 256,116 Z"
+            android:strokeColor="#FFE9C46A"
+            android:strokeLineJoin="round"
+            android:strokeWidth="20" />
+
+        <!-- Face discs -->
+        <path
+            android:fillColor="#FF2C2354"
+            android:pathData="M102,266 A82,82 0 1,1 266,266 A82,82 0 1,1 102,266 Z M246,266 A82,82 0 1,1 410,266 A82,82 0 1,1 246,266 Z" />
+
+        <!-- Left eye: keyline, fire / air / water / earth ring, white, pupil with catch-lights -->
+        <path
+            android:fillColor="#FF0E0A1C"
+            android:pathData="M140,266 A44,44 0 1,1 228,266 A44,44 0 1,1 140,266 Z" />
+        <path
+            android:fillColor="#FFF0582B"
+            android:pathData="M137.33,219.33 A66,66 0 0,1 230.67,219.33 L215.11,234.89 A44,44 0 0,0 152.89,234.89 Z" />
+        <path
+            android:fillColor="#FFA6DCF2"
+            android:pathData="M137.33,312.67 A66,66 0 0,1 137.33,219.33 L152.89,234.89 A44,44 0 0,0 152.89,297.11 Z" />
+        <path
+            android:fillColor="#FF2BA6DF"
+            android:pathData="M230.67,312.67 A66,66 0 0,1 137.33,312.67 L152.89,297.11 A44,44 0 0,0 215.11,297.11 Z" />
+        <path
+            android:fillColor="#FF5DB866"
+            android:pathData="M230.67,219.33 A66,66 0 0,1 230.67,312.67 L215.11,297.11 A44,44 0 0,0 215.11,234.89 Z" />
+        <path
+            android:fillColor="#FFF7EFDF"
+            android:pathData="M144,266 A40,40 0 1,1 224,266 A40,40 0 1,1 144,266 Z" />
+        <path
+            android:fillColor="#FF0E0A1C"
+            android:fillType="evenOdd"
+            android:pathData="M158,262 A26,26 0 1,1 210,262 A26,26 0 1,1 158,262 Z M185,251 A9,9 0 1,1 203,251 A9,9 0 1,1 185,251 Z" />
+
+        <!-- Right eye, mirrored: air on the outside, earth towards the beak -->
+        <path
+            android:fillColor="#FF0E0A1C"
+            android:pathData="M284,266 A44,44 0 1,1 372,266 A44,44 0 1,1 284,266 Z" />
+        <path
+            android:fillColor="#FFF0582B"
+            android:pathData="M281.33,219.33 A66,66 0 0,1 374.67,219.33 L359.11,234.89 A44,44 0 0,0 296.89,234.89 Z" />
+        <path
+            android:fillColor="#FFA6DCF2"
+            android:pathData="M374.67,219.33 A66,66 0 0,1 374.67,312.67 L359.11,297.11 A44,44 0 0,0 359.11,234.89 Z" />
+        <path
+            android:fillColor="#FF2BA6DF"
+            android:pathData="M374.67,312.67 A66,66 0 0,1 281.33,312.67 L296.89,297.11 A44,44 0 0,0 359.11,297.11 Z" />
+        <path
+            android:fillColor="#FF5DB866"
+            android:pathData="M281.33,312.67 A66,66 0 0,1 281.33,219.33 L296.89,234.89 A44,44 0 0,0 296.89,297.11 Z" />
+        <path
+            android:fillColor="#FFF7EFDF"
+            android:pathData="M288,266 A40,40 0 1,1 368,266 A40,40 0 1,1 288,266 Z" />
+        <path
+            android:fillColor="#FF0E0A1C"
+            android:fillType="evenOdd"
+            android:pathData="M302,262 A26,26 0 1,1 354,262 A26,26 0 1,1 302,262 Z M329,251 A9,9 0 1,1 347,251 A9,9 0 1,1 329,251 Z" />
+
+        <!-- Beak -->
+        <path
+            android:fillColor="#FFE9C46A"
+            android:pathData="M256,318 C268,318 274,326 271,336 L259,366 Q256,372 253,366 L241,336 C238,326 244,318 256,318 Z" />
+    </group>
+</vector>

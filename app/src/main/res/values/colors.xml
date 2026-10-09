@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="glow_void">#FF000000</color>
+    <color name="owl_night">#FF0E0A1C</color>
     <color name="glow_surface">#FF0B0D12</color>
     <color name="glow_cyan">#FF00E5FF</color>
 </resources>
