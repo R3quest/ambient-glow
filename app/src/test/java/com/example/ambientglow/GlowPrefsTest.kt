@@ -31,7 +31,7 @@ class GlowPrefsTest {
         fireWake = FireWake.COALS,
         airGust = AirGust.GALE,
         airFlow = AirFlow.VORTEX,
-        airColor = AirColor.BLEND,
+        airColor = AirColor.APP,
         airCarry = AirCarry.LEAVES,
         airBlur = GlassBlur.STRONG,
         earthForce = EarthForce.UPHEAVAL,

@@ -1,5 +1,6 @@
 package com.example.ambientglow
 
+import android.os.Build
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.Dp
@@ -395,6 +396,15 @@ enum class ArrivalMode(@param:StringRes override val label: Int, @param:StringRe
 }
 
 /**
+ * The element a fresh install starts on. Air where its look runs (Android 13+): premium, so every
+ * new user gets the trial with their first message, in its lightest, calmest look, which keeps
+ * the lock screen readable. Water, the free one, below that, where every element plays the same
+ * gradient fallback and a trial would show nothing of premium.
+ */
+internal fun firstElement(sdk: Int): SpawnElement =
+    if (sdk >= Build.VERSION_CODES.TIRAMISU) SpawnElement.AIR else SpawnElement.WATER
+
+/**
  * The user's saved choices; the defaults here are also what a fresh install loads. Dot
  * coordinates are stored as 0..1 fractions of the screen so a position chosen on the dashboard
  * preview maps exactly onto any physical resolution. A new setting needs a field here and one
@@ -419,7 +429,7 @@ data class GlowSettings(
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
     val spawn: Boolean = true,
     /** The element the spawn wave takes after; Water, the glass wave, is the free one. */
-    val element: SpawnElement = SpawnElement.WATER,
+    val element: SpawnElement = firstElement(Build.VERSION.SDK_INT),
     val glassBlur: GlassBlur = GlassBlur.MEDIUM,
     val glassArea: GlassArea = GlassArea.REVEAL,
     val glassFrost: GlassFrost = GlassFrost.SOFT,
@@ -429,7 +439,8 @@ data class GlowSettings(
     val fireWake: FireWake = FireWake.BURN,
     val airGust: AirGust = AirGust.GUST,
     val airFlow: AirFlow = AirFlow.CURLS,
-    val airColor: AirColor = AirColor.CLEAR,
+    // Blend: the white wind still says which app it is, as the effect promises to.
+    val airColor: AirColor = AirColor.BLEND,
     val airCarry: AirCarry = AirCarry.PETALS,
     /** How much the gust blurs the screen it passes over, in a band behind its front. */
     val airBlur: GlassBlur = GlassBlur.LIGHT,

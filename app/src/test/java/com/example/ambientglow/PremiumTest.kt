@@ -70,4 +70,12 @@ class PremiumTest {
         assertEquals(null, trialStage("0"))
         assertEquals(null, trialStage("8"))
     }
+
+    @Test
+    fun aFreshInstallTriesPremiumWhereItsLookRuns() {
+        assertEquals(SpawnElement.AIR, firstElement(33))
+        assertEquals(SpawnElement.AIR, firstElement(36))
+        assertEquals(SpawnElement.WATER, firstElement(32))
+        assertTrue(GlowSettings(element = firstElement(36)).playsPremium)
+    }
 }
