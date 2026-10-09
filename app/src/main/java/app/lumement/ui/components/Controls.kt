@@ -612,10 +612,14 @@ internal fun Readout(text: String) {
     }
 }
 
+/**
+ * For a position, not an amount: the track is one grey on both sides of the thumb, so nothing
+ * fills up from the left as if more of something were chosen; only the thumb is lit.
+ */
 @Composable
 internal fun glowSliderColors(): SliderColors = SliderDefaults.colors(
     thumbColor = GlowPalette.Cyan,
-    activeTrackColor = GlowPalette.Cyan,
+    activeTrackColor = GlowPalette.SurfaceHigh,
     activeTickColor = GlowPalette.Void,
     inactiveTrackColor = GlowPalette.SurfaceHigh,
     inactiveTickColor = GlowPalette.Outline,

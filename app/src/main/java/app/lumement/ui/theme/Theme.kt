@@ -39,7 +39,7 @@ object GlowPalette {
 
     val TextPrimary = Color(0xFFF2F5FA)
     val TextMuted = Color(0xFF8A93A6)
-    val TextFaint = Color(0xFF4F586B)
+    val TextFaint = Color(0xFF717A8D)
 }
 
 /** Asymmetric "blade" corners: soft on one diagonal, tight on the other. */

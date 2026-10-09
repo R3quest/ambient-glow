@@ -428,7 +428,11 @@ internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit) {
     }
 }
 
-/** One axis of the precise position: a slider between its − / + steps. [onStep] gets −1 or +1. */
+/**
+ * One axis of the precise position: its label and where the dot is on it, then a slider between
+ * its − / + steps. [onStep] gets −1 or +1. The value has a decimal, since a step moves it less
+ * than a whole percent and each tap should show.
+ */
 @Composable
 private fun AxisRow(
     label: String,
@@ -440,7 +444,16 @@ private fun AxisRow(
     onStep: (Float) -> Unit,
     colors: SliderColors,
 ) {
-    OptionGroup(label) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(label)
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.dot_axis_value, value * 100f),
+                style = MaterialTheme.typography.labelMedium,
+                color = GlowPalette.TextPrimary,
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StepButton(plus = false, description = minus, onStep = { onStep(-1f) })
             Slider(

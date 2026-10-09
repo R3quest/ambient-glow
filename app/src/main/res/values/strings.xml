@@ -254,7 +254,7 @@
     <string name="dot_body">Only these pixels light up. Drag the dot or tap where it should go; it snaps to the spots below and the ruler marks. The real LED shows on this screen as you change it.</string>
     <string name="dot_beacon_note">The LED Beacon lights up here when a message arrives.</string>
     <string name="dot_size">SIZE</string>
-    <string name="dot_size_led">LED</string>
+    <string name="dot_size_xs">XS</string>
     <string name="dot_size_s">S</string>
     <string name="dot_size_m">M</string>
     <string name="dot_size_l">L</string>
@@ -289,6 +289,7 @@
     <string name="dot_vertical">VERTICAL</string>
     <string name="dot_readout_x">X %1$d%%</string>
     <string name="dot_readout_y">Y %1$d%%</string>
+    <string name="dot_axis_value">%1$.1f%%</string>
 
     <string name="tab_effect">EFFECT</string>
     <string name="tab_screen">SCREEN</string>

@@ -35,7 +35,7 @@ enum class GlowStyle(@param:StringRes override val label: Int, @param:StringRes 
  * phones had in the bezel; the others step up for easier visibility.
  */
 enum class DotSize(val radius: Dp, @param:StringRes override val label: Int) : Labeled {
-    LED(3.dp, R.string.dot_size_led),
+    LED(3.dp, R.string.dot_size_xs),
     SMALL(4.5.dp, R.string.dot_size_s),
     MEDIUM(6.5.dp, R.string.dot_size_m),
     LARGE(9.dp, R.string.dot_size_l),
