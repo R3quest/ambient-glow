@@ -63,7 +63,6 @@ import com.example.ambientglow.GlowGraphic
 import com.example.ambientglow.GlowMetrics
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.GlowStyle
-import com.example.ambientglow.LedBrightness
 import com.example.ambientglow.R
 import com.example.ambientglow.dotCenter
 import com.example.ambientglow.dotFraction
@@ -406,9 +405,12 @@ internal fun LedCard(
     }
 }
 
-/** How the LED looks wherever it sits: its size (on the camera, the ring's thickness) and brightness. */
+/**
+ * How the LED looks wherever it sits: its size (on the camera, the ring's thickness). It lights at
+ * the system brightness, so the room's light and the system slider set how bright it is.
+ */
 @Composable
-internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit, onBrightness: (LedBrightness) -> Unit) {
+internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit) {
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.section_led_look), GlowPalette.Cyan)
         OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
@@ -421,18 +423,6 @@ internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit, onBr
                 Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
                 Spacer(Modifier.width(8.dp))
                 ChipLabel(stringResource(size.label), lit)
-            }
-        }
-        OptionGroup(stringResource(R.string.led_brightness)) {
-            SelectionRow(
-                count = LedBrightness.entries.size,
-                selected = settings.ledBrightness.ordinal,
-                onSelect = { onBrightness(LedBrightness.entries[it]) },
-            ) { index, lit ->
-                val level = LedBrightness.entries[index]
-                Canvas(Modifier.size(8.dp)) { drawCircle(GlowPalette.Cyan.copy(alpha = level.level)) }
-                Spacer(Modifier.width(8.dp))
-                ChipLabel(stringResource(level.label), lit)
             }
         }
     }

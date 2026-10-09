@@ -40,17 +40,6 @@ enum class DotSize(val radius: Dp, @param:StringRes override val label: Int) : L
     LARGE(9.dp, R.string.dot_size_l),
 }
 
-/**
- * How bright the LED dot's own light is, as its alpha over the black panel, at the system
- * brightness (on the LED screen and in the dashboard preview alike), so it follows the room's
- * light like the rest of the phone and this dims the dot and nothing else.
- */
-enum class LedBrightness(val level: Float, @param:StringRes override val label: Int) : Labeled {
-    SOFT(0.35f, R.string.led_brightness_soft),
-    BRIGHT(0.7f, R.string.led_brightness_bright),
-    MAX(1f, R.string.led_brightness_max),
-}
-
 /** Edge Frame line thickness at full screen. */
 enum class EdgeWidth(
     val stroke: Dp,
@@ -426,7 +415,6 @@ data class GlowSettings(
     val lensOffsetDp: Float = 0f,
     val lensOffsetXDp: Float = 0f,
     val lensGrowDp: Float = 0f,
-    val ledBrightness: LedBrightness = LedBrightness.MAX,
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
     val spawn: Boolean = true,
@@ -489,10 +477,10 @@ data class GlowSettings(
 }
 
 /**
- * This look as the arrival effect sees it: LED-only fields reset, so changing the LED's brightness
- * or the lens fit doesn't restart effect previews. Where the LED sits and its size stay: the
+ * This look as the arrival effect sees it: LED-only fields reset, so changing the lens fit
+ * doesn't restart effect previews. Where the LED sits and its size stay: the
  * beacon plays there and becomes it, and the Edge Frame's last light flies to it ([LedHandOff]).
  * The lens fit reaches the effect through its geometry instead.
  */
 fun GlowSettings.forPreview(): GlowSettings =
-    copy(ledBrightness = LedBrightness.MAX, lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
+    copy(lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)

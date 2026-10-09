@@ -19,7 +19,6 @@ class GlowPrefsTest {
         lensOffsetDp = 1.5f,
         lensOffsetXDp = -2f,
         lensGrowDp = 0.5f,
-        ledBrightness = LedBrightness.SOFT,
         arrival = ArrivalMode.LED_ONLY,
         spawn = false,
         element = SpawnElement.EARTH,

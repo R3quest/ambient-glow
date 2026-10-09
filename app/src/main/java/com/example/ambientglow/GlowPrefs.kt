@@ -19,7 +19,6 @@ object GlowPrefs {
     private const val KEY_LENS_OFFSET = "lens_offset_dp"
     private const val KEY_LENS_OFFSET_X = "lens_offset_x_dp"
     private const val KEY_LENS_GROW = "lens_grow_dp"
-    private const val KEY_LED_BRIGHTNESS = "led_brightness"
     private const val KEY_ARRIVAL = "arrival"
     private const val KEY_SPAWN = "spawn"
     private const val KEY_ELEMENT = "element"
@@ -82,7 +81,6 @@ object GlowPrefs {
             lensOffsetDp = getFloat(KEY_LENS_OFFSET, defaults.lensOffsetDp),
             lensOffsetXDp = getFloat(KEY_LENS_OFFSET_X, defaults.lensOffsetXDp),
             lensGrowDp = getFloat(KEY_LENS_GROW, defaults.lensGrowDp),
-            ledBrightness = getEnum(KEY_LED_BRIGHTNESS, defaults.ledBrightness),
             arrival = getEnum(KEY_ARRIVAL, defaults.arrival),
             spawn = getBoolean(KEY_SPAWN, defaults.spawn),
             // An element that no longer exists (the plain wave) falls back to Water.
@@ -121,7 +119,6 @@ object GlowPrefs {
             putFloat(KEY_LENS_OFFSET, settings.lensOffsetDp)
             putFloat(KEY_LENS_OFFSET_X, settings.lensOffsetXDp)
             putFloat(KEY_LENS_GROW, settings.lensGrowDp)
-            putString(KEY_LED_BRIGHTNESS, settings.ledBrightness.name)
             putString(KEY_ARRIVAL, settings.arrival.name)
             putBoolean(KEY_SPAWN, settings.spawn)
             putString(KEY_ELEMENT, settings.element.name)

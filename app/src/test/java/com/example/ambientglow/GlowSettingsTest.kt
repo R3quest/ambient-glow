@@ -24,9 +24,9 @@ class GlowSettingsTest {
     }
 
     @Test
-    fun ledBrightnessAndLensFitNeverReachThePreview() {
+    fun lensFitNeverReachesThePreview() {
         val base = GlowSettings(style = GlowStyle.BEACON, ledOnCamera = true)
-        val changed = base.copy(ledBrightness = LedBrightness.SOFT, lensOffsetDp = 3f, lensOffsetXDp = -1f)
+        val changed = base.copy(lensOffsetDp = 3f, lensOffsetXDp = -1f)
         assertEquals(base.forPreview(), changed.forPreview())
     }
 }

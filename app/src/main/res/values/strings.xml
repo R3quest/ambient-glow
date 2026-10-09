@@ -171,10 +171,6 @@
     <string name="arrival_led_only">Just the LED</string>
     <string name="arrival_led_only_body">No effect: the screen comes on black and only the LED dot lights. The least battery of all.</string>
     <string name="arrival_message_body">Black screen, the effect, and a pop-up of only the new message. Your lock-screen privacy settings decide how much shows.</string>
-    <string name="led_brightness">BRIGHTNESS</string>
-    <string name="led_brightness_soft">SOFT</string>
-    <string name="led_brightness_bright">BRIGHT</string>
-    <string name="led_brightness_max">MAX</string>
 
 
     <string name="setup_step">STEP %1$d OF %2$d</string>

@@ -195,7 +195,7 @@ private fun LedLayer(
     val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
     LedDot(
         color = Color(shown),
-        alpha = { ledBreathAt(clock.value) * settings.ledBrightness.level },
+        alpha = { ledBreathAt(clock.value) },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,

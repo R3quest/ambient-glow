@@ -54,8 +54,7 @@ private fun riseMsAt(level: Float): Float = solveRising(level, 0f, LED_RISE_MS, 
 
 /**
  * The real LED over the darkened dashboard: its own drawing ([LedDot]) at its real size and
- * position and chosen brightness. The window keeps the system brightness: raised under the scrim,
- * the darkened dashboard would visibly grey, and only the dot should change. While [holding] (the
+ * position, at the system brightness as the real one lights. While [holding] (the
  * dot is being moved) it stays lit and follows; otherwise it breathes once with the LED's curve
  * and fades away. A new [run] breathes again; [leaving] hands the screen to a real-size effect.
  *
@@ -128,7 +127,7 @@ internal fun LedShowcase(
     Spacer(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = scrim.value) })
     LedDot(
         color = color,
-        alpha = { maxOf(glow.value, ledBreathAt(clock.value)) * settings.ledBrightness.level },
+        alpha = { maxOf(glow.value, ledBreathAt(clock.value)) },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,

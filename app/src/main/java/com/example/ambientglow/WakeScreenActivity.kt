@@ -1270,7 +1270,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
  * Window brightness while the dot is lit: the system's, the lock screen's own. Any override turns
  * the light sensor off, and once the lock screen came over the LED (tap, power, takeover) it then
  * showed at the override until auto-brightness had a fresh reading (~0.1 s, measured 500 → 176
- * nits). So the dot follows the room's light like the rest of the phone, and [LedBrightness] only
- * dims it from there.
+ * nits). So the dot follows the room's light like the rest of the phone, and the system's
+ * brightness slider is its control too.
  */
 private const val LED_WINDOW_BRIGHTNESS = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE

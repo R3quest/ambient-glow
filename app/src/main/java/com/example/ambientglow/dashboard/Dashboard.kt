@@ -574,10 +574,6 @@ private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding:
                 edit(save = true) { it.copy(dotSize = size) }
                 onLed(false)
             },
-            onBrightness = { level ->
-                edit(save = true) { it.copy(ledBrightness = level) }
-                onLed(false)
-            },
         )
     }
 }
