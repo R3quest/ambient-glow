@@ -26,7 +26,7 @@
     <string name="element_air">AIR</string>
     <string name="element_earth">EARTH</string>
     <string name="element_fire_body">A ring of fire bursts from the camera and sweeps the screen, setting the glow alight as it passes.</string>
-    <string name="element_water_body">The wave rolls in like water over glass: a soft, shimmering crest of light with a gentle ripple behind it.</string>
+    <string name="element_water_body">The wave rolls in like water over glass: a soft, shimmering crest of light with a gentle ripple behind it. Clear as glass, it always glows in the colour of the app that sent the message.</string>
     <string name="element_air_body">The camera lets out a gust that sweeps the screen in curling lines of wind, setting the glow alight as it passes.</string>
     <string name="element_earth_body">The camera strikes the ground: a shock runs out of it and the screen breaks open in light and stone, setting the glow alight as it passes.</string>
     <string name="element_premium">PREMIUM · FREE TO TRY FOR NOW</string>
