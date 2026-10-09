@@ -397,6 +397,17 @@ internal fun AppsButton(marked: Boolean, onClick: () -> Unit) {
                 }
             }
         }
+        // Its own colours are premium's, so it carries premium's sparkle in its square corner, as
+        // the element tiles do; the new-apps dot sits there too, and takes it while it shows.
+        if (!marked) {
+            Sparkle(
+                PremiumTint,
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 5.dp, end = 5.dp)
+                    .size(8.dp),
+            )
+        }
         if (marked) {
             Box(
                 Modifier
