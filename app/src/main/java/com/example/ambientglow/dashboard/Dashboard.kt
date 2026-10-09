@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -179,6 +180,16 @@ internal fun Dashboard(reported: ScreenGeometry) {
     // The Apps screen, over the tabs; it keeps its own state (AppsModel).
     val appsModel = rememberAppsModel()
     val premium = rememberPremiumModel()
+    // One prompt per open at most, never in setup: the trial's end (PremiumOverCard), or else, once
+    // ever and a week in, Play's review card. Decided as the dashboard opens, so dismissing the
+    // trial's card doesn't bring the review on after it.
+    val activity = LocalActivity.current
+    LaunchedEffect(Unit) {
+        if (inSetup || premium.overUnseen || activity == null) return@LaunchedEffect
+        if (!reviewDue(appsModel.current.apps, GlowPrefs.reviewAsked(context), System.currentTimeMillis())) return@LaunchedEffect
+        GlowPrefs.markReviewAsked(context)
+        askForReview(activity)
+    }
     val lockedTest = rememberLockedTest()
     var appsOpen by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = appsOpen && !inSetup) { appsOpen = false }

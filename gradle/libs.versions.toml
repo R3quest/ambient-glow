@@ -7,6 +7,7 @@ coreKtx = "1.19.1"
 lifecycle = "2.11.0"
 palette = "1.0.0"
 billing = "9.1.0"
+playReview = "2.0.2"
 junit = "4.13.2"
 
 [libraries]
@@ -15,6 +16,7 @@ androidx-activity-compose = { group = "androidx.activity", name = "activity-comp
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 billing = { group = "com.android.billingclient", name = "billing", version.ref = "billing" }
+play-review = { group = "com.google.android.play", name = "review", version.ref = "playReview" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }

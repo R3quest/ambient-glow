@@ -9,6 +9,8 @@
   - buying works, and the purchase is acknowledged (`billing acknowledged 0` in logcat): Play refunds unacknowledged purchases after 3 days
   - a refund takes premium back on the next dashboard open
   - a pending payment (a slow card) unlocks once it completes
+- [ ] **Review card**: Play only shows it for an app installed from Play, so test it from the internal track. It's asked once, on the first dashboard open a week after the first app was heard from (not on the open that shows the trial-over card). To ask again on a test phone: `adb shell run-as <package> cat shared_prefs/ambient_glow.xml`, then clear `review_asked` (reinstalling doesn't).
+- [ ] **Locked swatch → purchase sheet**: after the trial (`make install TRIAL=over`), tapping a dimmed colour opens Play's purchase sheet. That needs the `premium` product, so it can't be seen before then.
 - [ ] **Store listing / data safety**: say premium is a one-time purchase, and that the app has no internet permission (the Play Store app handles the purchase).
 
 ## Premium trial on the device

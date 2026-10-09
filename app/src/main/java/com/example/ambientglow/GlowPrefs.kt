@@ -50,6 +50,9 @@ object GlowPrefs {
     // Not a setting: whether setup has offered the optional shield step, so it is offered once.
     private const val KEY_SHIELD_OFFERED = "setup_shield_offered"
 
+    // Not a setting: whether the dashboard has asked for a review, so it asks once.
+    private const val KEY_REVIEW_ASKED = "review_asked"
+
     private val defaults = GlowSettings()
 
     private fun prefs(context: Context): SharedPreferences =
@@ -69,6 +72,10 @@ object GlowPrefs {
     fun shieldOffered(context: Context): Boolean = prefs(context).getBoolean(KEY_SHIELD_OFFERED, false)
 
     fun markShieldOffered(context: Context) = prefs(context).edit { putBoolean(KEY_SHIELD_OFFERED, true) }
+
+    fun reviewAsked(context: Context): Boolean = prefs(context).getBoolean(KEY_REVIEW_ASKED, false)
+
+    fun markReviewAsked(context: Context) = prefs(context).edit { putBoolean(KEY_REVIEW_ASKED, true) }
 
     /** Writes every choice at once: a handful of keys, applied asynchronously. */
     fun save(context: Context, settings: GlowSettings) = save(prefs(context), settings)

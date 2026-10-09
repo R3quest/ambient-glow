@@ -88,6 +88,8 @@ dependencies {
     implementation(libs.billing) {
         exclude(group = "com.google.android.datatransport")
     }
+    // Google's own review card, asked for once (dashboard/ReviewAsk.kt); also through the Play Store app.
+    implementation(libs.play.review)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

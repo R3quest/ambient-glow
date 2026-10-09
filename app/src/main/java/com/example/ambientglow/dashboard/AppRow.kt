@@ -3,6 +3,7 @@ package com.example.ambientglow.dashboard
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.LruCache
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -47,6 +48,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -90,6 +92,9 @@ private const val MUTED_ALPHA = 0.4f
 
 /** How far a colour fades that is premium's, after its trial. */
 private const val LOCKED_ALPHA = 0.35f
+
+/** A colour that is premium's after its trial: a tap offers premium, or rests until Play has a price. */
+private enum class Locked { FOR_SALE, RESTING }
 
 /**
  * Icon, name and what sets it apart (muted, a look-alike, kept apart from one, or a colour of the
@@ -205,13 +210,15 @@ private enum class ColorNote { AUTO, APART, OWN, LOCKED }
 /**
  * Its icon's colour first (the icon on it, so it reads as "the icon's"; the colour it is kept
  * apart in, if that is taken), then [APP_COLORS], which are [premium]'s: after its trial they
- * dim and only the first can be picked. What the pick means is said under the swatches, and a
+ * dim, and tapping one opens Play's purchase sheet (once Play has a price; until then they rest). What the pick means is said under the swatches, and a
  * look-alike is named with why it matters.
  */
 @Composable
 private fun ColorPicker(app: GlowApp, icon: ImageBitmap?, alike: GlowApp?, premium: PremiumModel, onColor: (Int?) -> Unit) {
     val choices = remember { listOf<AppColor?>(null) + APP_COLORS }
     val unlocked = premium.state.unlocked
+    val activity = LocalActivity.current
+    val buy = stringResource(R.string.premium_unlock_action, premium.price.orEmpty())
     OptionGroup(stringResource(R.string.apps_color)) {
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             choices.chunked(SWATCHES_PER_ROW).forEach { row ->
@@ -222,8 +229,14 @@ private fun ColorPicker(app: GlowApp, icon: ImageBitmap?, alike: GlowApp?, premi
                             icon = if (choice == null) icon else null,
                             name = stringResource(choice?.name ?: R.string.apps_color_auto),
                             selected = app.color == choice?.color,
-                            enabled = unlocked || choice == null,
-                            onClick = { onColor(choice?.color) },
+                            // Locked: the tap is a reach for premium, so it offers it.
+                            locked = when {
+                                unlocked || choice == null -> null
+                                premium.price == null || activity == null -> Locked.RESTING
+                                else -> Locked.FOR_SALE
+                            },
+                            buyLabel = buy,
+                            onClick = { if (unlocked || choice == null) onColor(choice?.color) else activity?.let(premium::unlock) },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -265,7 +278,8 @@ private fun Swatch(
     icon: ImageBitmap?,
     name: String,
     selected: Boolean,
-    enabled: Boolean,
+    locked: Locked?,
+    buyLabel: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -275,12 +289,20 @@ private fun Swatch(
         modifier = modifier
             .height(44.dp)
             .clip(GlowShapes.Pill)
-            .graphicsLayer { alpha = if (enabled) 1f else LOCKED_ALPHA }
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) {
-                if (!selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            .graphicsLayer { alpha = if (locked == null) 1f else LOCKED_ALPHA }
+            .selectable(selected = selected, enabled = locked != Locked.RESTING, role = Role.RadioButton) {
+                if (!selected && locked == null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 onClick()
             }
-            .semantics { contentDescription = name },
+            .semantics {
+                contentDescription = name
+                if (locked == Locked.FOR_SALE) {
+                    onClick(label = buyLabel) {
+                        onClick()
+                        true
+                    }
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(SwatchSize)) {
