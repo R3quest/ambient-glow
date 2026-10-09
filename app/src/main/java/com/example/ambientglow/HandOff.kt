@@ -8,7 +8,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -28,7 +27,6 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 // ---------------------------------------------------------------------------------------------
 // The Edge Frame's hand-over to the LED, told in beats as an animator would: the heads meet at the
@@ -138,15 +136,12 @@ internal fun handOffToken(settings: GlowSettings, shaders: Boolean): HandOffToke
  * hops up and over, a drop falls, a wisp swirls, a gem and a spark arc gently. An arc with no
  * room above it ([top], the highest the token may go) bows downwards instead, and a wisp always
  * swirls below its line: the camera and the LED usually sit right at the top of the screen.
- * With [around], it circles the lens at [end]'s distance from [start] instead, from below it,
- * once round.
+ * (Round the camera the token closes the ring instead: [LedHandOff].)
  */
 internal class HandOffPath(
     private val token: HandOffToken,
     private val start: Offset,
     private val end: Offset,
-    private val around: Boolean,
-    private val radius: Float,
     top: Float = 0f,
 ) {
     private val span = end - start
@@ -175,10 +170,6 @@ internal class HandOffPath(
 
     /** Where the token is [f] of the way along. */
     fun at(f: Float): Offset {
-        if (around) {
-            val a = PI.toFloat() / 2f + 2f * PI.toFloat() * f
-            return Offset(start.x + radius * cos(a), start.y + radius * sin(a))
-        }
         val g = 1f - f
         var p = start * (g * g) + control * (2f * g * f) + end * (f * f)
         if (token == HandOffToken.WISP && length > 0f) {
@@ -223,11 +214,11 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val flies = !around && (target - origin).getDistance() > HANDOFF_MIN_FLIGHT.toPx() * scale
                 val u = max(TOKEN_UNIT.toPx() * scale, TOKEN_UNIT_MIN_PX)
                 // Room for the token and the glow round its heart.
-                val path = HandOffPath(token, origin, target, around = false, radius = ledRing, top = TOKEN_ROOM * u)
+                val path = HandOffPath(token, origin, target, top = TOKEN_ROOM * u)
                 val look = TokenLook(token, settings, color, u)
                 // The LED itself, in the material it will breathe in.
                 val ledLook = LedLook(ledMaterial(settings, elementFramesSupported), color, led.light, around)
-                val splash = Splash(token, settings, color, look, u)
+                val touch = landingTouch(token, settings, color, look.landing, look.trail, u)
                 // Where the light lands from: round the ring, or off the dot's edge.
                 val landFrom = if (around) ledRing + ledLine else ledCore * 1.3f
                 // The spring swells the LED by about this much at its peak.
@@ -274,6 +265,7 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                     motion == EdgeMotion.COMET -> Offset(target.x, target.y - ledRing)
                     else -> Offset(target.x + 0.71f * ledRing, target.y - 0.71f * ledRing)
                 }
+                val landing = Landing(target, landFrom, if (around) ledRing else ledCore, seal, around)
                 // Pulse has no heads to land: the token is born out of a flash of its own.
                 val birthGlint = if (motion == EdgeMotion.PULSE) {
                     Brush.radialGradient(
@@ -323,7 +315,7 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                         // Where it closed, a burst of light rather than a disc.
                         translate(seal.x, seal.y) { scale(1.3f * u * flashLevel, Offset.Zero) { drawCircle(sealGlow, 1f, Offset.Zero, alpha = 0.8f * flashLevel) } }
                     }
-                    splash.draw(this, ms, target, landFrom, if (around) ledRing else ledCore, seal, around)
+                    touch.draw(this, ms - HANDOFF_LANDED_MS, landing, front = false)
                     // The LED itself, from the landing on: it swells on the spring and settles, and
                     // goes out on its own exhale, moving as the LED moves.
                     if (morph > 0f) {
@@ -336,7 +328,7 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                             }
                         }
                     }
-                    splash.draw(this, ms, target, landFrom, if (around) ledRing else ledCore, seal, around, front = true)
+                    touch.draw(this, ms - HANDOFF_LANDED_MS, landing, front = true)
                 }
             },
     )
@@ -391,7 +383,8 @@ private fun DrawScope.drawRingForming(
         else -> {
             val twin = motion == EdgeMotion.TWIN
             val sweep = (if (twin) 180f else 360f) * f
-            for (side in if (twin) intArrayOf(1, -1) else intArrayOf(1)) {
+            for (s in 0 until if (twin) 2 else 1) {
+                val side = if (s == 0) 1 else -1
                 // The ring laid down faintly where the light has been, and a comet's tail behind
                 // the head: widest and brightest at it, thinning and fading over the last stretch.
                 drawArc(tint, -90f, side * sweep, false, box, span, alpha = 0.3f * gone, style = laid)
@@ -423,394 +416,6 @@ private const val TRAIL_STEP_DEG = 14f
 /** Pulse's ring opens out of the lens and a little past its place before it settles there. */
 private val PulseOpen = CubicBezierEasing(0.34f, 1.4f, 0.64f, 1f)
 
-/** A stable pseudo-random 0..1 for particle [i], so every run splashes the same. */
-private fun jitter(i: Int): Float {
-    val x = sin(i * 12.9898f + 4.1414f) * 43758.547f
-    return x - kotlin.math.floor(x)
-}
-
-/**
- * The element's touch as the LED lands, built once per size in units [u]: one small gesture
- * each, in the element's own way, so the landing has a character without competing with the LED.
- * - Water: a splash where it closed, fine spray bursting out and gone, and a ripple on the surface.
- * - Fire: the flame catches at the bottom of the ring and runs up both sides as two warm streams;
- *   where they meet at the top a soft flame lifts off and fades, and embers drift up like fireflies.
- * - Air: wind streaming round it, as the gust's lines do on the lock screen, and what the gust
- *   carries ([GlowSettings.airCarry]) fluttering off.
- * - Earth: chips of stone gather round it as it settles, on a tilted orbit (passing behind it and
- *   in front), slow, and sink into the ring; it jolts once, gently, as a stone set down.
- * - Neon: a ripple, and a small sparkle where it closed.
- */
-private class Splash(
-    private val token: HandOffToken,
-    private val settings: GlowSettings,
-    brand: Color,
-    private val look: TokenLook,
-    private val u: Float,
-) {
-    private val hot = lerp(look.landing, Color.White, 0.6f)
-    private val thin = Stroke(max(1f, 0.22f * u))
-    private val crisp = Stroke(max(1f, 0.16f * u))
-    private val crest = Stroke(max(1f, 0.18f * u))
-    private val trough = Stroke(1.1f * u)
-    private val ripple = lerp(look.landing, Color.White, 0.3f)
-    // A glow, about the origin at a radius of 1, scaled to its size.
-    private val glow: Brush
-    // A four-point sparkle, a unit from its centre to each point.
-    private val star = Path()
-    // Fire: the two streams' steps of flame, hot at the head; the soft flame that lifts off where
-    // they meet (its root at the origin, its tip at (0, -1)) and its hot core; an ember's glow.
-    private val flameStroke = Array(STREAK_STEPS) { k -> Stroke((0.36f - 0.045f * k) * u, cap = if (k == 0) StrokeCap.Round else StrokeCap.Butt) }
-    private val flameColors: Array<Color>
-    private val wisp = Path()
-    private val wispOuter: Brush
-    private val wispInner: Brush
-    private val ember: Brush
-    // Air: a streak of wind, widest at its head, in steps.
-    private val streak = Array(STREAK_STEPS) { k -> Stroke(max(1f, (0.2f - 0.025f * k) * u), cap = if (k == 0) StrokeCap.Round else StrokeCap.Butt) }
-    private val carried = Path()
-    private val carriedVein = Path()
-    private val carriedLight: Color
-    private val carriedShade: Color
-    // Earth: a chip of stone, lit and shaded faces about the origin, a unit across.
-    private val chipLit = Path()
-    private val chipShade = Path()
-    private val chipLight: Color
-    private val chipDeep: Color
-
-    init {
-        glow = Brush.radialGradient(
-            0f to hot,
-            0.3f to look.landing.copy(alpha = 0.55f),
-            1f to look.landing.copy(alpha = 0f),
-            center = Offset.Zero,
-            radius = 1f,
-        )
-        star.apply {
-            moveTo(0f, -1f)
-            lineTo(0.16f, -0.16f)
-            lineTo(1f, 0f)
-            lineTo(0.16f, 0.16f)
-            lineTo(0f, 1f)
-            lineTo(-0.16f, 0.16f)
-            lineTo(-1f, 0f)
-            lineTo(-0.16f, -0.16f)
-            close()
-        }
-        val fire = firePalette(settings.fireColor, brand)
-        flameColors = Array(STREAK_STEPS) { k -> lerp(fire.hot, fire.flare, k / (STREAK_STEPS - 1f)) }
-        wisp.apply {
-            moveTo(0f, -1f)
-            cubicTo(0.2f, -0.66f, 0.46f, -0.38f, 0.42f, -0.12f)
-            cubicTo(0.38f, 0.06f, 0.2f, 0.12f, 0f, 0.12f)
-            cubicTo(-0.2f, 0.12f, -0.38f, 0.06f, -0.42f, -0.12f)
-            cubicTo(-0.46f, -0.38f, -0.2f, -0.66f, 0f, -1f)
-            close()
-        }
-        wispOuter = Brush.verticalGradient(
-            0f to fire.flare.copy(alpha = 0f),
-            0.35f to fire.flare.copy(alpha = 0.6f),
-            0.7f to fire.body,
-            1f to fire.hot,
-            startY = -1f,
-            endY = 0.12f,
-        )
-        wispInner = Brush.verticalGradient(
-            0f to fire.hot.copy(alpha = 0f),
-            0.5f to fire.hot.copy(alpha = 0.7f),
-            1f to fire.core,
-            startY = -1f,
-            endY = 0.12f,
-        )
-        ember = Brush.radialGradient(
-            0f to fire.core,
-            0.22f to fire.hot,
-            0.5f to fire.flare.copy(alpha = 0.45f),
-            1f to fire.flare.copy(alpha = 0f),
-            center = Offset.Zero,
-            radius = 1f,
-        )
-        val air = airPalette(settings.airColor, brand)
-        if (settings.airCarry == AirCarry.LEAVES) {
-            // A leaf: pointed at both ends, with its midrib.
-            carried.apply {
-                moveTo(0f, -0.55f * u)
-                quadraticTo(0.42f * u, -0.1f * u, 0f, 0.55f * u)
-                quadraticTo(-0.42f * u, -0.1f * u, 0f, -0.55f * u)
-                close()
-            }
-            carriedVein.apply {
-                moveTo(0f, -0.45f * u)
-                lineTo(0f, 0.5f * u)
-            }
-            carriedLight = air.leaf
-            carriedShade = air.leafShade
-        } else {
-            // A petal: a rounded teardrop, notched at its tip, as a cherry blossom's is.
-            carried.apply {
-                moveTo(0f, 0.42f * u)
-                cubicTo(0.42f * u, 0.2f * u, 0.36f * u, -0.38f * u, 0.1f * u, -0.42f * u)
-                lineTo(0f, -0.3f * u)
-                lineTo(-0.1f * u, -0.42f * u)
-                cubicTo(-0.36f * u, -0.38f * u, -0.42f * u, 0.2f * u, 0f, 0.42f * u)
-                close()
-            }
-            carriedVein.apply {
-                moveTo(0f, 0.38f * u)
-                lineTo(0f, 0.05f * u)
-            }
-            carriedLight = air.petal
-            carriedShade = air.petalShade
-        }
-        // A chip: an irregular stone, lit from the top left.
-        chipLit.apply {
-            moveTo(-0.5f * u, -0.1f * u)
-            lineTo(-0.15f * u, -0.5f * u)
-            lineTo(0.35f * u, -0.38f * u)
-            lineTo(0.08f * u, 0.05f * u)
-            close()
-        }
-        chipShade.apply {
-            moveTo(0.35f * u, -0.38f * u)
-            lineTo(0.5f * u, 0.1f * u)
-            lineTo(0.2f * u, 0.45f * u)
-            lineTo(-0.3f * u, 0.38f * u)
-            lineTo(-0.5f * u, -0.1f * u)
-            lineTo(0.08f * u, 0.05f * u)
-            close()
-        }
-        val earth = earthPalette(settings.earthColor, brand)
-        chipLight = earth.light
-        chipDeep = earth.deep
-    }
-
-    /**
-     * At [ms]: the LED at [center], what is thrown leaving it [from] out (its ring, or its dot's
-     * edge), its ripples starting at [base], and where it closed, [seal]. [around]: the ring.
-     */
-    fun draw(scope: DrawScope, ms: Float, center: Offset, from: Float, base: Float, seal: Offset, around: Boolean, front: Boolean = false) = with(scope) {
-        val t = ms - HANDOFF_LANDED_MS
-        if (t <= 0f) return@with
-        // Only Earth's chips pass in front of the LED; everything else is drawn under it.
-        if (front) {
-            if (token == HandOffToken.GEM) earth(t, center, from, seal, around, front = true)
-            return@with
-        }
-        // Outwards from where it closed; off a dot, up for what is thrown and down into the ground.
-        val normal = if (around && seal != center) (seal - center) / (seal - center).getDistance() else Offset(0f, -1f)
-        val start = if (around) seal else center + normal * from
-        when (token) {
-            HandOffToken.DROP -> water(t, center, base, start, normal)
-            HandOffToken.EMBER -> fire(t, center, base, from, around)
-            HandOffToken.WISP -> air(t, center, from, around)
-            HandOffToken.GEM -> earth(t, center, from, seal, around, front = false)
-            HandOffToken.SPARK -> neon(t, center, base, seal)
-        }
-    }
-
-    /** A soft glow of [radius] at [at]. */
-    private fun DrawScope.glowAt(brush: Brush, at: Offset, radius: Float, alpha: Float, blend: BlendMode = BlendMode.SrcOver) {
-        if (alpha <= 0f || radius <= 0f) return
-        translate(at.x, at.y) { scale(radius, Offset.Zero) { drawCircle(brush, 1f, Offset.Zero, alpha = alpha, blendMode = blend) } }
-    }
-
-    private fun DrawScope.water(t: Float, center: Offset, base: Float, start: Offset, normal: Offset) {
-        // A ripple running out on the surface, a bright crest over a soft trough.
-        val p = t / 620f
-        if (p < 1f) {
-            val q = 1f - p
-            val r = base + 2.8f * u * glideOut(p)
-            val a = 0.5f * q * q * (p / 0.08f).coerceAtMost(1f)
-            drawCircle(ripple, r, center, alpha = a, style = crest)
-            drawCircle(look.landing, r - 0.6f * u, center, alpha = 0.07f * a, style = trough)
-        }
-        // The splash: fine spray bursting out of where it closed, slowing at once and gone.
-        for (i in 0 until 11) {
-            val life = 220f + 140f * jitter(i + 83)
-            val sp = t / life
-            if (sp >= 1f) continue
-            val sq = 1f - sp
-            val dir = rotateBy(normal, (-1f + 2f * (i + jitter(i)) / 11f) * 1.5f)
-            val reach = (1.1f + 1.3f * jitter(i + 31)) * u
-            val at = start + dir * (reach * glideOut(sp))
-            val r = (0.09f + 0.08f * jitter(i + 57)) * u * (0.4f + 0.6f * sq)
-            drawCircle(hot, r, at, alpha = sq * (sp / 0.06f).coerceAtMost(1f))
-        }
-    }
-
-    private fun DrawScope.fire(t: Float, center: Offset, base: Float, from: Float, around: Boolean) {
-        // The flame catches at the bottom of the ring and runs up both sides, two warm streams
-        // with their heat at the head, as Air's wind runs round it.
-        if (around) {
-            val travel = 180f * FlameRun.transform((t / 300f).coerceAtMost(1f))
-            val fade = 1f - smoothstep(250f, 520f, t)
-            val box = Offset(center.x - base, center.y - base)
-            val span = Size(2f * base, 2f * base)
-            if (fade > 0f) {
-                for (side in intArrayOf(1, -1)) {
-                    for (k in 0 until STREAK_STEPS) {
-                        val near = travel - k * FLAME_STEP_DEG
-                        if (near <= 0f) break
-                        val far = max(0f, near - FLAME_STEP_DEG)
-                        val a = fade * (1f - k / STREAK_STEPS.toFloat())
-                        drawArc(
-                            flameColors[k], 90f + side * far, side * (near - far), false, box, span,
-                            alpha = a, style = flameStroke[k], blendMode = BlendMode.Plus,
-                        )
-                    }
-                }
-            }
-        }
-        // Where they meet at the top a soft flame lifts off, sways and fades.
-        val top = Offset(center.x, center.y - from + 0.2f * u)
-        val wt = t - (if (around) 230f else 0f)
-        val wp = wt / 560f
-        if (wp > 0f && wp < 1f) {
-            val grow = FlareUp.transform((wt / 140f).coerceAtMost(1f))
-            val h = 1.9f * u * grow * (1f - 0.35f * wp)
-            val w = 0.9f * u * (1f + 0.08f * sin(wt * 0.06f))
-            val a = 1f - smoothstep(0.35f, 1f, wp)
-            translate(top.x, top.y - 1.1f * u * wp) {
-                rotate(8f * sin(wt * 0.018f), Offset.Zero) {
-                    scale(w, h, Offset.Zero) { drawPath(wisp, wispOuter, alpha = a, blendMode = BlendMode.Plus) }
-                    scale(0.5f * w, 0.55f * h, Offset.Zero) { drawPath(wisp, wispInner, alpha = a, blendMode = BlendMode.Plus) }
-                }
-            }
-        }
-        // And embers drifting up off it like fireflies, slow, swaying, glowing and going out.
-        for (i in 0 until 3) {
-            val born = (if (around) 240f else 60f) + 120f * i
-            val life = 900f + 300f * jitter(i + 71)
-            val p = (t - born) / life
-            if (p <= 0f || p >= 1f) continue
-            val s = (t - born) / 1000f
-            val at = top + Offset((i - 1) * 0.9f * u + 0.4f * u * sin(s * 6f + i * 2.1f), -(1.4f * s + 2f * s * s) * u)
-            val flick = 0.75f + 0.25f * sin(s * 23f + i * 2.3f)
-            val a = (1f - p) * (1f - p) * (p / 0.12f).coerceAtMost(1f) * flick
-            glowAt(ember, at, 0.4f * u * (1f - 0.4f * p), a, BlendMode.Plus)
-        }
-    }
-
-    private fun DrawScope.air(t: Float, center: Offset, from: Float, around: Boolean) {
-        val secs = t / 1000f
-        // Wind streaming round it, as the gust's lines do across the lock screen: thin streaks,
-        // brightest at their heads, sweeping round it the way the LED's curl turns (anticlockwise),
-        // easing off and thinning away.
-        for (i in 0 until 6) {
-            val life = 440f + 200f * jitter(i + 7)
-            val p = t / life
-            if (p >= 1f) continue
-            val q = 1f - p
-            val r = from + (0.5f + 2.1f * jitter(i + 13)) * u + 0.8f * u * p
-            val length = 50f + 45f * jitter(i + 19)
-            val head = 360f * jitter(i + 3) - 230f * glideOut(p)
-            val step = length / STREAK_STEPS
-            val a = q * sqrt(q) * (p / 0.1f).coerceAtMost(1f)
-            for (k in 0 until STREAK_STEPS) {
-                val fade = 1f - k / STREAK_STEPS.toFloat()
-                drawArc(
-                    look.trail, head + k * step, step, false, Offset(center.x - r, center.y - r), Size(2f * r, 2f * r),
-                    alpha = 0.85f * a * fade * fade, style = streak[k],
-                )
-            }
-        }
-        // What the gust carried, let go: a petal or leaf each way, turning over as it flutters off.
-        when (settings.airCarry) {
-            AirCarry.NONE -> Unit
-            AirCarry.DUST -> for (i in 0 until 5) {
-                val p = t / (600f + 300f * jitter(i + 29))
-                if (p >= 1f) continue
-                val angle = (i + jitter(i + 2)) * 2f * PI.toFloat() / 5f
-                val d = from + 3f * u * glideOut(p)
-                drawCircle(look.trail, 0.11f * u, Offset(center.x + d * cos(angle), center.y + d * sin(angle)), alpha = 0.7f * (1f - p))
-            }
-            else -> for (i in 0 until 2) {
-                val life = 950f + 200f * jitter(i + 17)
-                val p = t / life
-                if (p >= 1f) continue
-                val side = if (i == 0) 1f else -1f
-                val start = if (around) center + Offset(side * from * 0.9f, 0.35f * from) else center
-                val at = start + Offset(side * 4.5f * u * glideOut(p), (1.2f + 4f * secs) * u * secs * 4f) +
-                    Offset(0.5f * u * sin(secs * 9f + i * 1.7f), 0f)
-                val flip = cos(secs * 10f + i * 1.3f)
-                val a = 0.9f * (1f - smoothstep(0.6f, 1f, p)) * (p / 0.06f).coerceAtMost(1f)
-                translate(at.x, at.y) {
-                    rotate(side * 220f * secs + i * 70f, Offset.Zero) {
-                        scale((0.25f + 0.75f * abs(flip)) * 0.85f, 0.85f, Offset.Zero) {
-                            drawPath(carried, if (flip > 0f) carriedLight else carriedShade, alpha = a)
-                            drawPath(carriedVein, carriedShade, alpha = 0.6f * a, style = crisp)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun DrawScope.earth(t: Float, center: Offset, from: Float, seal: Offset, around: Boolean, front: Boolean) {
-        // Chips of stone rise from where it closed and gather round it on a tilted orbit, as
-        // dust round a planet: they spread out and swing round, passing behind it and in front
-        // (smaller and dimmer behind), slow, and sink back into the ring as it settles.
-        val life = 820f
-        if (t >= life) return
-        val sealAngle = if (around && seal != center) atan2(seal.y - center.y, seal.x - center.x) else PI.toFloat() / 2f
-        val out = smoothstep(0f, 220f, t) * (1f - smoothstep(480f, life, t))
-        val radius = from + 1.3f * u * out
-        val flat = 1f - 0.55f * out
-        val tilt = -18f * out * (PI.toFloat() / 180f)
-        val spread = glideOut((t / 260f).coerceAtMost(1f))
-        val swing = 1.5f * PI.toFloat() * (1f - exp(-t / 380f))
-        val fade = (t / 60f).coerceAtMost(1f) * (1f - smoothstep(560f, life, t))
-        for (i in 0 until EARTH_CHIPS) {
-            val a = sealAngle + spread * i * 2f * PI.toFloat() / EARTH_CHIPS + swing
-            val depth = sin(a)
-            // The lower half of the orbit is the near side.
-            if ((depth >= 0f) != front) continue
-            val x = radius * cos(a)
-            val y = radius * flat * depth
-            val at = center + Offset(x * cos(tilt) - y * sin(tilt), x * sin(tilt) + y * cos(tilt))
-            val near = 0.5f + 0.5f * depth * out + 0.5f * (1f - out)
-            val size = (0.65f + 0.35f * jitter(i + 23)) * (0.7f + 0.3f * near)
-            val alpha = fade * (0.45f + 0.55f * near)
-            translate(at.x, at.y) {
-                rotate(200f * t / 1000f + 70f * i, Offset.Zero) {
-                    scale(size, Offset.Zero) {
-                        drawPath(chipShade, chipDeep, alpha = alpha)
-                        drawPath(chipLit, chipLight, alpha = alpha)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun DrawScope.neon(t: Float, center: Offset, base: Float, seal: Offset) {
-        // A ripple, and a small sparkle where it closed.
-        val rp = t / 320f
-        if (rp < 1f) {
-            val rq = 1f - rp
-            drawCircle(look.landing, base + 2.6f * u * glideOut(rp), center, alpha = 0.5f * rq * rq, style = thin)
-        }
-        val p = t / 360f
-        if (p >= 1f) return
-        val q = 1f - p
-        val g = q * q * (p / 0.08f).coerceAtMost(1f)
-        translate(seal.x, seal.y) {
-            rotate(15f * p, Offset.Zero) { scale(1.6f * u * g, Offset.Zero) { drawPath(star, hot, alpha = g) } }
-        }
-    }
-}
-
-/** The wind's streaks, in this many steps from head to tail. */
-private const val STREAK_STEPS = 5
-
-/** Earth: the chips of stone that gather round the LED as it lands. */
-private const val EARTH_CHIPS = 5
-
-/** Fire: the streams' steps of flame, each this many degrees of the ring. */
-private const val FLAME_STEP_DEG = 16f
-
-/** Fire: running up the ring, quick off the mark and easing as it reaches the top. */
-private val FlameRun = CubicBezierEasing(0.3f, 0f, 0.2f, 1f)
-
 /**
  * The LED's jolt as it lands on stone (Earth), in units, at [ms]: one sharp knock down, a
  * rebound, and still within a fifth of a second.
@@ -820,27 +425,6 @@ internal fun handOffJoltAt(ms: Float): Float {
     if (t <= 0f) return 0f
     return exp(-t / 70f) * sin(2f * PI.toFloat() * t / 90f)
 }
-
-private const val TAU_F = 2f * PI.toFloat()
-
-/** [v] turned by [radians]. */
-private fun rotateBy(v: Offset, radians: Float): Offset {
-    val c = cos(radians)
-    val s = sin(radians)
-    return Offset(v.x * c - v.y * s, v.x * s + v.y * c)
-}
-
-/** A flame catching: up past its height in a blink, then back. */
-private val FlareUp = CubicBezierEasing(0.2f, 1.5f, 0.5f, 1f)
-
-/** A spire shooting out of the ring, a little past its length, and back. */
-private val SpireOut = CubicBezierEasing(0.25f, 1.45f, 0.5f, 1f)
-
-/** And sinking back into it, slowly at first, as something heavy settles. */
-private val SpireIn = CubicBezierEasing(0.5f, 0f, 0.8f, 0.4f)
-
-/** Leaves fast and loses energy as it spreads. */
-private fun glideOut(x: Float): Float = 1f - (1f - x) * (1f - x)
 
 /**
  * One token's look, built once per size: its shapes about the origin, [u] px to a unit, and its

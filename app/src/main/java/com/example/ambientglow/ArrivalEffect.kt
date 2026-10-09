@@ -926,6 +926,9 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                     val ms = time()
                     val wave = waveAt(ms, spawn)
                     if (wave < MIN_WAVE) return@onDrawBehind
+                    // Drained and faded: through the hand-off's tail (the LED's first exhale) the
+                    // frame records none of its shader passes, frame after frame, for nothing.
+                    if (levelAt(ms, spawn) <= 0f) return@onDrawBehind
                     // Pulse breathes in the glow, which also draws in and spreads out; the line
                     // barely dims, so it stays crisp. 1 elsewhere.
                     val b = if (motion == EdgeMotion.PULSE) breathAt(ms, spawn) else 1f

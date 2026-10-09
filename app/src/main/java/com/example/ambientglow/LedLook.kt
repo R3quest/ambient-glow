@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
@@ -169,342 +168,72 @@ private class Tones(color: Color) {
  * The LED in [material] and [color], sized by [light], built about the origin: the dot, or with
  * [onCamera] the ring round the lens. [draw] puts it at a centre; everything stays inside
  * [LedLight.bloom], so [LedDot]'s layer holds it. [moves]: a frame changes more than its alpha.
+ * Each material is its own [MaterialLook], built only with what it draws.
  */
-internal class LedLook(val material: LedMaterial, private val color: Color, light: LedLight, private val onCamera: Boolean) {
+internal class LedLook(val material: LedMaterial, color: Color, light: LedLight, onCamera: Boolean) {
     val moves: Boolean = material != LedMaterial.NEON
 
-    private val core = light.core
-    private val line = light.line
-    private val ring = light.ring
-    private val bloom = light.bloom
-    private val tones = Tones(color)
-    private val clear = color.copy(alpha = 0f)
-
-    // Neon's, and the base the others build on.
-    private val hot = lerp(color, Color.White, 0.45f)
-    private val halo: Brush = if (onCamera) {
-        Brush.radialGradient(
-            0f to clear,
-            light.lens / bloom to clear,
-            ring / bloom to color.copy(alpha = 0.65f),
-            (ring + (bloom - ring) * 0.35f) / bloom to color.copy(alpha = 0.22f),
-            1f to clear,
-            center = Offset.Zero,
-            radius = bloom,
-        )
-    } else {
-        Brush.radialGradient(
-            0f to color.copy(alpha = 0.65f),
-            0.35f to color.copy(alpha = 0.22f),
-            1f to clear,
-            center = Offset.Zero,
-            radius = bloom,
-        )
-    }
-    private val ringStroke = Stroke(line)
-    private val hotStroke = Stroke(line * 0.4f)
-
-    // Coal: lit from inside and above, a crust below, its glow rising off it.
-    private val coalRise = 0.3f * core
-    private val coalHeart = tones.pale(0.95f, 0.35f)
-    private lateinit var coalHalo: Brush
-    private lateinit var coalBody: Brush
-    private lateinit var coalPlume: Brush
-    private val outsideRing = Path()
-    // Round the camera: warmest across the top, and a flame running round it once a breath.
-    private lateinit var coalWarm: Brush
-    private lateinit var flameRun: Brush
-    private lateinit var flameRunHot: Brush
-    private val sparkHot = tones.pale(0.93f, 0.5f)
-    private lateinit var sparkGlow: Brush
-    private val sparkGlowRadius = 0.5f * core
-
-    // Bead: glass lit from the top left, a highlight, light focused on its far side, a ripple.
-    private val beadLight = tones.at(0.16f, 0.55f)
-    private val beadSpecular = tones.pale(0.97f, 0.15f)
-    private val rippleStroke = Stroke(max(1f, 0.2f * core))
-    private lateinit var beadBody: Brush
-    private lateinit var beadRing: Brush
-    private val specularStroke = Stroke(line * 0.42f, cap = StrokeCap.Round)
-    private val causticStroke = Stroke(if (onCamera) line * 0.3f else 0.22f * core, cap = StrokeCap.Round)
-
-    // Wisp: no hard edge, a soft glow drawn off to one side and a curl of wind round it.
-    private val wispBodyColor = tones.at(0.06f, 0.85f)
-    private val wispPale = tones.pale(0.96f, 0.3f)
-    private lateinit var wispHalo: Brush
-    private lateinit var wispCore: Brush
-    private lateinit var wispLobe: Brush
-    private lateinit var wispCurlBrush: Brush
-    private lateinit var wispRing: Brush
-    private lateinit var wispRingHot: Brush
-    private lateinit var wispWind: Brush
-    private val wispCurl = Path()
-    private val wispCurlMeasure = PathMeasure()
-    private var wispCurlLength = 0f
-    private val wispCurlOut = Path()
-    private val wispCurlStroke = Stroke(max(1f, 0.16f * core), cap = StrokeCap.Round)
-    private val wispWindStroke = Stroke(line * 0.35f, cap = StrokeCap.Round)
-
-    // Gem: the token's cut crystal, its facets lit by where they face, a table of light, a glint.
-    private val gemFacets = List(5) { Path() }
-    private var gemFacetColors: List<Color> = emptyList()
-    private var gemTable = Offset.Zero
-    private var glintSpot = Offset.Zero
-    private val gemPale = tones.pale(0.98f, 0.1f)
-    private var gemRingColors: List<Color> = emptyList()
-    private var gemRingHotAlpha: List<Float> = emptyList()
-    // Where each facet lies along the sheen's way: across the gem in cores, or round the ring in radians.
-    private val gemFacetAlong = FloatArray(if (onCamera) GEM_RING_FACETS else 5)
-    private val glintWidth = max(1f, 0.13f * core)
-    // Two little stones orbiting it, a moonlet's lit and shaded faces about the origin.
-    private val moonLit = Path()
-    private val moonShade = Path()
-    private val moonLight = tones.at(0.1f)
-    private val moonDeep = tones.at(-0.18f)
-    private val orbitX = if (onCamera) ring + 1.05f * core else 1.9f * core
-    private val orbitY = GEM_ORBIT_FLAT * orbitX
-
-    init {
-        if (material == LedMaterial.GEM) {
-            // An irregular chip, lit from the top left.
-            val r = 0.45f * core
-            moonLit.apply {
-                moveTo(-0.9f * r, -0.2f * r)
-                lineTo(-0.3f * r, -0.95f * r)
-                lineTo(0.6f * r, -0.7f * r)
-                lineTo(0.15f * r, 0.1f * r)
-                close()
-            }
-            moonShade.apply {
-                moveTo(0.6f * r, -0.7f * r)
-                lineTo(0.95f * r, 0.15f * r)
-                lineTo(0.4f * r, 0.85f * r)
-                lineTo(-0.55f * r, 0.7f * r)
-                lineTo(-0.9f * r, -0.2f * r)
-                lineTo(0.15f * r, 0.1f * r)
-                close()
-            }
-        }
-        when (material) {
-            LedMaterial.NEON -> Unit
-            LedMaterial.COAL -> buildCoal()
-            LedMaterial.BEAD -> buildBead()
-            LedMaterial.WISP -> buildWisp()
-            LedMaterial.GEM -> buildGem()
-        }
+    private val look: MaterialLook = when (material) {
+        LedMaterial.NEON -> NeonLook(color, light, onCamera)
+        LedMaterial.COAL -> CoalLook(color, light, onCamera)
+        LedMaterial.BEAD -> BeadLook(color, light, onCamera)
+        LedMaterial.WISP -> WispLook(color, light, onCamera)
+        LedMaterial.GEM -> GemLook(color, light, onCamera)
     }
 
-    private fun buildCoal() {
-        val glow = tones.at(0.16f, 1.1f)
-        val crust = tones.at(-0.24f, 0.9f)
-        // Its glow sits a little high, as heat rises: centred above the coal, and no bigger for it.
-        coalHalo = Brush.radialGradient(
-            0f to glow.copy(alpha = 0.6f),
-            0.3f to color.copy(alpha = 0.26f),
-            1f to clear,
-            center = Offset(0f, -coalRise),
-            radius = bloom - coalRise,
-        )
-        coalBody = Brush.radialGradient(
-            0f to glow,
-            0.4f to color,
-            1f to crust,
-            center = Offset(0f, -0.35f * core),
-            radius = 1.25f * core,
-        )
-        // Round the camera: hottest across the top, the glow lifting off it.
-        coalPlume = Brush.radialGradient(
-            0f to glow.copy(alpha = 0.35f),
-            1f to glow.copy(alpha = 0f),
-            center = Offset(0f, -ring),
-            radius = 2.2f * core,
-        )
-        // It rises off the ring, not in towards the lens, which neon's halo leaves dark too.
-        outsideRing.fillType = PathFillType.EvenOdd
-        outsideRing.addRect(Rect(Offset.Zero, bloom))
-        outsideRing.addOval(Rect(Offset.Zero, ring))
-        // A spark: a hot point in a glow of the coal's own light, scaled as it burns down.
-        sparkGlow = Brush.radialGradient(
-            0f to glow.copy(alpha = 0.85f),
-            0.35f to glow.copy(alpha = 0.35f),
-            1f to glow.copy(alpha = 0f),
-            center = Offset.Zero,
-            radius = sparkGlowRadius,
-        )
-        // A sweep starts at 3 o'clock and runs clockwise: a quarter in is the bottom, three the top.
-        coalWarm = Brush.sweepGradient(0f to color, 0.25f to color, 0.5f to color, 0.75f to glow, 1f to color, center = Offset.Zero)
-        // The flame: a head of heat at a quarter round (the bottom, unturned) with its glow
-        // trailing behind it, the way it runs (clockwise).
-        flameRun = Brush.sweepGradient(
-            0f to glow.copy(alpha = 0f),
-            0.12f to glow.copy(alpha = 0.35f),
-            0.24f to glow,
-            0.27f to glow.copy(alpha = 0f),
-            1f to glow.copy(alpha = 0f),
-            center = Offset.Zero,
-        )
-        flameRunHot = Brush.sweepGradient(
-            0f to coalHeart.copy(alpha = 0f),
-            0.18f to coalHeart.copy(alpha = 0.3f),
-            0.245f to coalHeart,
-            0.265f to coalHeart.copy(alpha = 0f),
-            1f to coalHeart.copy(alpha = 0f),
-            center = Offset.Zero,
-        )
-    }
-
-    private fun buildBead() {
-        val deep = tones.at(-0.12f)
-        beadBody = Brush.radialGradient(
-            0f to beadLight,
-            0.5f to color,
-            1f to deep,
-            center = Offset(-0.35f * core, -0.35f * core),
-            radius = 1.5f * core,
-        )
-        beadRing = Brush.linearGradient(0f to beadLight, 0.5f to color, 1f to deep, start = Offset(-ring, -ring), end = Offset(ring, ring))
-    }
-
-    private fun buildWisp() {
-        wispHalo = if (onCamera) {
-            Brush.radialGradient(
-                0f to clear,
-                ring / bloom * 0.85f to clear,
-                ring / bloom to color.copy(alpha = 0.55f),
-                (ring + (bloom - ring) * 0.4f) / bloom to color.copy(alpha = 0.2f),
-                1f to clear,
-                center = Offset.Zero,
-                radius = bloom,
-            )
-        } else {
-            Brush.radialGradient(
-                0f to color.copy(alpha = 0.5f),
-                0.4f to color.copy(alpha = 0.18f),
-                1f to clear,
-                center = Offset.Zero,
-                radius = bloom,
-            )
-        }
-        // A core with a soft rim instead of an edge, as much light as neon's.
-        wispCore = Brush.radialGradient(
-            0f to wispPale,
-            0.4f to color,
-            0.78f to color,
-            1f to clear,
-            center = Offset.Zero,
-            radius = 1.15f * core,
-        )
-        // The glow drawn off to one side, as wind carries it: round the turn, it trails the curl.
-        wispLobe = Brush.radialGradient(
-            0f to wispBodyColor.copy(alpha = 0.42f),
-            1f to wispBodyColor.copy(alpha = 0f),
-            center = Offset(1.35f * core, 0f),
-            radius = 1.5f * core,
-        )
-        // One arm opening out fast, clockwise as it turns anticlockwise, so its outer end trails:
-        // under a turn, or at this size it reads as an orbit rather than a curl.
-        val steps = 28
-        for (i in 0..steps) {
-            val t = i / steps.toFloat()
-            val r = (1.05f + 1.5f * t * t) * core
-            val a = 1.6f * PI.toFloat() * t
-            if (i == 0) wispCurl.moveTo(r * cos(a), r * sin(a)) else wispCurl.lineTo(r * cos(a), r * sin(a))
-        }
-        wispCurlMeasure.setPath(wispCurl, false)
-        wispCurlLength = wispCurlMeasure.length
-        wispCurlBrush = Brush.radialGradient(
-            0f to color,
-            0.4f to color,
-            1f to color.copy(alpha = 0f),
-            center = Offset.Zero,
-            radius = 2.6f * core,
-        )
-        // Round the camera: gusts along the ring, brighter and fainter, that the turn carries round.
-        wispRing = Brush.sweepGradient(
-            0f to color,
-            0.25f to color.copy(alpha = 0.5f),
-            0.5f to color.copy(alpha = 0.9f),
-            0.75f to color.copy(alpha = 0.5f),
-            1f to color,
-            center = Offset.Zero,
-        )
-        wispRingHot = Brush.sweepGradient(
-            0f to wispPale,
-            0.14f to wispPale.copy(alpha = 0f),
-            0.36f to wispPale.copy(alpha = 0f),
-            0.5f to wispPale.copy(alpha = 0.7f),
-            0.64f to wispPale.copy(alpha = 0f),
-            0.86f to wispPale.copy(alpha = 0f),
-            1f to wispPale,
-            center = Offset.Zero,
-        )
-        // The wind line comes out of nothing and thins away again, as a gust does.
-        wispWind = Brush.sweepGradient(
-            0f to wispBodyColor.copy(alpha = 0f),
-            WISP_WIND_SWEEP / 720f to wispBodyColor.copy(alpha = 0.6f),
-            WISP_WIND_SWEEP / 360f to wispBodyColor.copy(alpha = 0f),
-            1f to wispBodyColor.copy(alpha = 0f),
-            center = Offset.Zero,
-        )
-    }
-
-    private fun buildGem() {
-        val light = LIGHT_FROM / LIGHT_FROM.getDistance()
-        if (!onCamera) {
-            // The hand-off's crystal, its box centred on the LED and as tall as the dot is wide.
-            val u = core / 1.25f
-            val drop = 0.175f * u
-            val points = listOf(
-                Offset(0f, -1.6f * u + drop), Offset(1.1f * u, -0.5f * u + drop), Offset(0.75f * u, 1.25f * u + drop),
-                Offset(-0.75f * u, 1.25f * u + drop), Offset(-1.1f * u, -0.5f * u + drop),
-            )
-            gemTable = Offset(0f, -0.15f * u + drop)
-            glintSpot = points[1]
-            gemFacetColors = points.indices.map { i ->
-                val a = points[i]
-                val b = points[(i + 1) % points.size]
-                gemFacets[i].apply {
-                    moveTo(gemTable.x, gemTable.y)
-                    lineTo(a.x, a.y)
-                    lineTo(b.x, b.y)
-                    close()
-                }
-                // Along the light's way, for the sheen that follows it across.
-                val mid = (gemTable + a + b) / 3f
-                gemFacetAlong[i] = -(mid.x * light.x + mid.y * light.y) / core
-                // Lit by how squarely it faces the light.
-                val out = (a + b) / 2f - gemTable
-                tones.at(facetLight((out.x * light.x + out.y * light.y) / out.getDistance()))
-            }
-        } else {
-            val facing = List(GEM_RING_FACETS) { i ->
-                val a = (i + 0.5f) * 2f * PI.toFloat() / GEM_RING_FACETS
-                gemFacetAlong[i] = a
-                cos(a) * light.x + sin(a) * light.y
-            }
-            // Every other facet a touch brighter, so the cut shows where the light is even.
-            gemRingColors = facing.mapIndexed { i, f -> tones.at(facetLight(f) + if (i % 2 == 0) 0.02f else -0.02f) }
-            gemRingHotAlpha = facing.map { 0.25f + 0.5f * max(0f, it) }
-            val g = -PI.toFloat() / 4f
-            glintSpot = Offset(ring * cos(g), ring * sin(g))
-        }
-    }
-
-    /** At [center] and [alpha], [ms] into its breath; [accents] off leaves out the one-off moments (sparks, ripples, sheen, glint). */
+    /** At [center] and [alpha], [ms] into its breath; [accents] off leaves out the one-off moments (sparks, ripples, glint). */
     fun draw(scope: DrawScope, center: Offset, alpha: Float, ms: Float, accents: Boolean = true) {
         if (alpha <= 0f) return
-        scope.translate(center.x, center.y) {
-            when (material) {
-                LedMaterial.NEON -> drawNeon(alpha)
-                LedMaterial.COAL -> drawCoal(alpha, ms, accents)
-                LedMaterial.BEAD -> drawBead(alpha, ms, accents)
-                LedMaterial.WISP -> drawWisp(alpha, ms, accents)
-                LedMaterial.GEM -> drawGem(alpha, ms, accents)
-            }
+        scope.translate(center.x, center.y) { with(look) { draw(alpha, ms, accents) } }
+    }
+}
+
+/** What every material is built from: the light's size, the app's colour and its tones, and neon's halo. */
+private abstract class MaterialLook(protected val color: Color, light: LedLight, protected val onCamera: Boolean) {
+    protected val core = light.core
+    protected val line = light.line
+    protected val ring = light.ring
+    protected val bloom = light.bloom
+    private val lens = light.lens
+    protected val tones by lazy(LazyThreadSafetyMode.NONE) { Tones(color) }
+    protected val clear = color.copy(alpha = 0f)
+    protected val ringStroke = Stroke(line)
+    protected val hotStroke = Stroke(line * 0.4f)
+    protected val ringBox = Offset(-ring, -ring)
+    protected val ringSpan = Size(2f * ring, 2f * ring)
+
+    /** Neon's halo, which the coal's ring, the bead and the gem glow in too. */
+    protected val halo: Brush by lazy(LazyThreadSafetyMode.NONE) {
+        if (onCamera) {
+            Brush.radialGradient(
+                0f to clear,
+                lens / bloom to clear,
+                ring / bloom to color.copy(alpha = 0.65f),
+                (ring + (bloom - ring) * 0.35f) / bloom to color.copy(alpha = 0.22f),
+                1f to clear,
+                center = Offset.Zero,
+                radius = bloom,
+            )
+        } else {
+            Brush.radialGradient(
+                0f to color.copy(alpha = 0.65f),
+                0.35f to color.copy(alpha = 0.22f),
+                1f to clear,
+                center = Offset.Zero,
+                radius = bloom,
+            )
         }
     }
 
-    private fun DrawScope.drawNeon(alpha: Float) {
+    /** About the origin, [ms] into the breath, at [alpha]. */
+    abstract fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean)
+}
+
+/** A plain light: a bright core (or ring) with a hot centre, in a soft bloom. */
+private class NeonLook(color: Color, light: LedLight, onCamera: Boolean) : MaterialLook(color, light, onCamera) {
+    private val hot = lerp(color, Color.White, 0.45f)
+
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
         drawCircle(halo, bloom, Offset.Zero, alpha = alpha)
         if (onCamera) {
             drawCircle(color, ring, Offset.Zero, alpha = alpha, style = ringStroke)
@@ -514,24 +243,103 @@ internal class LedLook(val material: LedMaterial, private val color: Color, ligh
             drawCircle(hot, core * 0.5f, Offset.Zero, alpha = alpha)
         }
     }
+}
 
-    private fun DrawScope.drawCoal(alpha: Float, ms: Float, accents: Boolean) {
-        val glow = coalGlowAt(ms)
+/**
+ * Fire's coal: lit from inside and above, its glow wavering and rising off it, the odd spark.
+ * Round the camera it is warmest across the top, and a flame runs round it once a breath.
+ */
+private class CoalLook(color: Color, light: LedLight, onCamera: Boolean) : MaterialLook(color, light, onCamera) {
+    private val glow = tones.at(0.16f, 1.1f)
+    private val heart = tones.pale(0.95f, 0.35f)
+    private val sparkHot = tones.pale(0.93f, 0.5f)
+    private val sparkGlowRadius = 0.5f * core
+
+    // A spark: a hot point in a glow of the coal's own light, scaled as it burns down.
+    private val sparkGlow = Brush.radialGradient(
+        0f to glow.copy(alpha = 0.85f),
+        0.35f to glow.copy(alpha = 0.35f),
+        1f to glow.copy(alpha = 0f),
+        center = Offset.Zero,
+        radius = sparkGlowRadius,
+    )
+
+    // The dot: its glow sits a little high, as heat rises (centred above it, and no bigger for it),
+    // over a body lit from inside and above with a crust below.
+    private val rise = 0.3f * core
+    private val dotHalo by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.radialGradient(
+            0f to glow.copy(alpha = 0.6f),
+            0.3f to color.copy(alpha = 0.26f),
+            1f to clear,
+            center = Offset(0f, -rise),
+            radius = bloom - rise,
+        )
+    }
+    private val dotBody by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.radialGradient(
+            0f to glow,
+            0.4f to color,
+            1f to tones.at(-0.24f, 0.9f),
+            center = Offset(0f, -0.35f * core),
+            radius = 1.25f * core,
+        )
+    }
+
+    // The ring: the glow lifting off its top (only outside it: neon's halo leaves the lens dark
+    // too); warmest across the top (a sweep starts at 3 o'clock and runs clockwise, so three
+    // quarters in is the top); and the running flame, a head of heat at a quarter round (the
+    // bottom, unturned) with its glow trailing behind it, the way it runs.
+    private val plume by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.radialGradient(0f to glow.copy(alpha = 0.35f), 1f to glow.copy(alpha = 0f), center = Offset(0f, -ring), radius = 2.2f * core)
+    }
+    private val outsideRing by lazy(LazyThreadSafetyMode.NONE) {
+        Path().apply {
+            fillType = PathFillType.EvenOdd
+            addRect(Rect(Offset.Zero, bloom))
+            addOval(Rect(Offset.Zero, ring))
+        }
+    }
+    private val warm by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.sweepGradient(0f to color, 0.25f to color, 0.5f to color, 0.75f to glow, 1f to color, center = Offset.Zero)
+    }
+    private val flame by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.sweepGradient(
+            0f to glow.copy(alpha = 0f),
+            0.12f to glow.copy(alpha = 0.35f),
+            0.24f to glow,
+            0.27f to glow.copy(alpha = 0f),
+            1f to glow.copy(alpha = 0f),
+            center = Offset.Zero,
+        )
+    }
+    private val flameHot by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.sweepGradient(
+            0f to heart.copy(alpha = 0f),
+            0.18f to heart.copy(alpha = 0.3f),
+            0.245f to heart,
+            0.265f to heart.copy(alpha = 0f),
+            1f to heart.copy(alpha = 0f),
+            center = Offset.Zero,
+        )
+    }
+
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
+        val glowing = coalGlowAt(ms)
         if (onCamera) {
-            drawCircle(halo, bloom, Offset.Zero, alpha = alpha * glow)
-            clipPath(outsideRing) { drawCircle(coalPlume, 2.2f * core, Offset(0f, -ring), alpha = alpha * glow) }
-            // Warm all round and warmest at the top, with a flame running round it once a breath.
-            drawCircle(coalWarm, ring, Offset.Zero, alpha = alpha, style = ringStroke)
+            drawCircle(halo, bloom, Offset.Zero, alpha = alpha * glowing)
+            clipPath(outsideRing) { drawCircle(plume, 2.2f * core, Offset(0f, -ring), alpha = alpha * glowing) }
+            drawCircle(warm, ring, Offset.Zero, alpha = alpha, style = ringStroke)
             rotate(coalRunAt(ms), Offset.Zero) {
-                drawCircle(flameRun, ring, Offset.Zero, alpha = alpha * glow, style = ringStroke)
-                drawCircle(flameRunHot, ring, Offset.Zero, alpha = alpha * (0.6f + 0.4f * glow), style = hotStroke)
+                drawCircle(flame, ring, Offset.Zero, alpha = alpha * glowing, style = ringStroke)
+                drawCircle(flameHot, ring, Offset.Zero, alpha = alpha * (0.6f + 0.4f * glowing), style = hotStroke)
             }
         } else {
-            drawCircle(coalHalo, bloom - coalRise, Offset(0f, -coalRise), alpha = alpha * glow)
-            drawCircle(coalBody, core, Offset.Zero, alpha = alpha)
+            drawCircle(dotHalo, bloom - rise, Offset(0f, -rise), alpha = alpha * glowing)
+            drawCircle(dotBody, core, Offset.Zero, alpha = alpha)
             // Its heart wanders inside it, slowly, as the hottest spot in an ember does.
-            val heart = Offset(0.16f * core * sin(ms * 0.0042f), -0.3f * core + 0.1f * core * cos(ms * 0.0057f))
-            drawCircle(coalHeart, 0.32f * core, heart, alpha = alpha * (0.7f + 0.3f * glow))
+            val at = Offset(0.16f * core * sin(ms * 0.0042f), -0.3f * core + 0.1f * core * cos(ms * 0.0057f))
+            drawCircle(heart, 0.32f * core, at, alpha = alpha * (0.7f + 0.3f * glowing))
         }
         if (accents) for (i in 0 until COAL_SPARKS) drawSpark(i, coalSparkAt(ms, i), alpha)
     }
@@ -544,19 +352,19 @@ internal class LedLook(val material: LedMaterial, private val color: Color, ligh
         if (p <= 0f || p >= 1f) return
         val x0: Float
         val y0: Float
-        val rise: Float
+        val climb: Float
         if (onCamera) {
             x0 = COAL_SPARK_X[i] * 0.9f * ring
             y0 = -sqrt(ring * ring - x0 * x0) - line / 2f
-            rise = 1.7f * core
+            climb = 1.7f * core
         } else {
             x0 = COAL_SPARK_X[i] * core
             y0 = -0.8f * core
-            rise = 2f * core
+            climb = 2f * core
         }
         val q = 1f - p
         val x = x0 + 0.3f * core * p * sin(PI.toFloat() * 1.6f * p + 1.7f * i)
-        val y = y0 - rise * (1f - q * q)
+        val y = y0 - climb * (1f - q * q)
         val size = 1f - 0.65f * p
         val a = alpha * q * sqrt(q) * (p / 0.1f).coerceAtMost(1f)
         translate(x, y) {
@@ -564,31 +372,46 @@ internal class LedLook(val material: LedMaterial, private val color: Color, ligh
             drawCircle(sparkHot, 0.13f * core * size, Offset.Zero, alpha = a)
         }
     }
+}
 
-    private fun DrawScope.drawBead(alpha: Float, ms: Float, accents: Boolean) {
+/** Water's bead: glass lit from the top left, a highlight, light focused on its far side; it fills, wobbles and ripples. */
+private class BeadLook(color: Color, light: LedLight, onCamera: Boolean) : MaterialLook(color, light, onCamera) {
+    private val lit = tones.at(0.16f, 0.55f)
+    private val specular = tones.pale(0.97f, 0.15f)
+    private val rippleStroke = Stroke(max(1f, 0.2f * core))
+    private val specularStroke = Stroke(line * 0.42f, cap = StrokeCap.Round)
+    private val causticStroke = Stroke(if (onCamera) line * 0.3f else 0.22f * core, cap = StrokeCap.Round)
+    private val body: Brush = if (onCamera) {
+        Brush.linearGradient(0f to lit, 0.5f to color, 1f to tones.at(-0.12f), start = Offset(-ring, -ring), end = Offset(ring, ring))
+    } else {
+        Brush.radialGradient(
+            0f to lit,
+            0.5f to color,
+            1f to tones.at(-0.12f),
+            center = Offset(-0.35f * core, -0.35f * core),
+            radius = 1.5f * core,
+        )
+    }
+
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
         drawCircle(halo, bloom, Offset.Zero, alpha = alpha)
         val swell = beadSwellAt(ms)
         val from: Float
         if (onCamera) {
-            drawCircle(beadRing, ring, Offset.Zero, alpha = alpha, style = ringStroke)
-            val box = Offset(-ring, -ring)
-            val span = Size(2f * ring, 2f * ring)
+            drawCircle(body, ring, Offset.Zero, alpha = alpha, style = ringStroke)
             // The highlight high on the left, and the light it focuses low on the right, sloshing
             // round the ring as the water in it settles.
             val slosh = 16f * swell
-            drawArc(beadSpecular, 195f + slosh, 50f, false, box, span, alpha = 0.9f * alpha, style = specularStroke)
-            drawArc(beadLight, 15f + slosh, 50f, false, box, span, alpha = 0.55f * alpha, style = causticStroke)
+            drawArc(specular, 195f + slosh, 50f, false, ringBox, ringSpan, alpha = 0.9f * alpha, style = specularStroke)
+            drawArc(lit, 15f + slosh, 50f, false, ringBox, ringSpan, alpha = 0.55f * alpha, style = causticStroke)
             from = ring + line / 2f
         } else {
             // It fills and wobbles: wider as it is shorter and back, as a drop holds its volume.
             scale(1f + 0.09f * swell, 1f - 0.07f * swell, Offset.Zero) {
-                drawCircle(beadBody, core, Offset.Zero, alpha = alpha)
+                drawCircle(body, core, Offset.Zero, alpha = alpha)
                 val inner = 0.68f * core
-                drawArc(
-                    beadLight, 20f, 60f, false, Offset(-inner, -inner), Size(2f * inner, 2f * inner),
-                    alpha = 0.55f * alpha, style = causticStroke,
-                )
-                drawCircle(beadSpecular, 0.26f * core, Offset(-0.36f * core, -0.38f * core), alpha = 0.95f * alpha)
+                drawArc(lit, 20f, 60f, false, Offset(-inner, -inner), Size(2f * inner, 2f * inner), alpha = 0.55f * alpha, style = causticStroke)
+                drawCircle(specular, 0.26f * core, Offset(-0.36f * core, -0.38f * core), alpha = 0.95f * alpha)
             }
             from = 1.15f * core
         }
@@ -600,57 +423,210 @@ internal class LedLook(val material: LedMaterial, private val color: Color, ligh
             val q = 1f - p
             // Leaves fast and loses energy as it spreads; fades in, so it doesn't pop off the edge.
             val r = from + reach * (1f - q * q)
-            val a = alpha * BEAD_RIPPLE_STRENGTH[i] * q * q * (p / 0.12f).coerceAtMost(1f)
-            drawCircle(color, r, Offset.Zero, alpha = a, style = rippleStroke)
+            drawCircle(color, r, Offset.Zero, alpha = alpha * BEAD_RIPPLE_STRENGTH[i] * q * q * (p / 0.12f).coerceAtMost(1f), style = rippleStroke)
         }
     }
+}
 
-    private fun DrawScope.drawWisp(alpha: Float, ms: Float, accents: Boolean) {
+/**
+ * Air's wisp: no hard edge, a soft glow drawn off to one side and a curl of wind round it that
+ * unfurls and spins with the breath. Round the camera, gusts along the ring and wind lines outside it.
+ */
+private class WispLook(color: Color, light: LedLight, onCamera: Boolean) : MaterialLook(color, light, onCamera) {
+    private val body = tones.at(0.06f, 0.85f)
+    private val pale = tones.pale(0.96f, 0.3f)
+    private val wispHalo: Brush = if (onCamera) {
+        Brush.radialGradient(
+            0f to clear,
+            ring / bloom * 0.85f to clear,
+            ring / bloom to color.copy(alpha = 0.55f),
+            (ring + (bloom - ring) * 0.4f) / bloom to color.copy(alpha = 0.2f),
+            1f to clear,
+            center = Offset.Zero,
+            radius = bloom,
+        )
+    } else {
+        Brush.radialGradient(0f to color.copy(alpha = 0.5f), 0.4f to color.copy(alpha = 0.18f), 1f to clear, center = Offset.Zero, radius = bloom)
+    }
+
+    // The dot: a core with a soft rim instead of an edge (as much light as neon's), the glow drawn
+    // off to one side as wind carries it, and one arm of curl opening out fast, clockwise as it
+    // turns anticlockwise so its outer end trails (under a turn: more reads as an orbit).
+    private val dotCore by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.radialGradient(0f to pale, 0.4f to color, 0.78f to color, 1f to clear, center = Offset.Zero, radius = 1.15f * core)
+    }
+    private val lobe by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.radialGradient(0f to body.copy(alpha = 0.42f), 1f to body.copy(alpha = 0f), center = Offset(1.35f * core, 0f), radius = 1.5f * core)
+    }
+    private val curlBrush by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.radialGradient(0f to color, 0.4f to color, 1f to color.copy(alpha = 0f), center = Offset.Zero, radius = 2.6f * core)
+    }
+    private val curlMeasure by lazy(LazyThreadSafetyMode.NONE) {
+        val curl = Path()
+        val steps = 28
+        for (i in 0..steps) {
+            val t = i / steps.toFloat()
+            val r = (1.05f + 1.5f * t * t) * core
+            val a = 1.6f * PI.toFloat() * t
+            if (i == 0) curl.moveTo(r * cos(a), r * sin(a)) else curl.lineTo(r * cos(a), r * sin(a))
+        }
+        PathMeasure().apply { setPath(curl, false) }
+    }
+    private val curlOut = Path()
+    private val curlStroke = Stroke(max(1f, 0.16f * core), cap = StrokeCap.Round)
+
+    // The ring: gusts along it, brighter and fainter, that the turn carries round; and the wind
+    // lines outside it, coming out of nothing and thinning away again, as a gust does.
+    private val gusts by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.sweepGradient(
+            0f to color, 0.25f to color.copy(alpha = 0.5f), 0.5f to color.copy(alpha = 0.9f), 0.75f to color.copy(alpha = 0.5f), 1f to color,
+            center = Offset.Zero,
+        )
+    }
+    private val gustsHot by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.sweepGradient(
+            0f to pale, 0.14f to pale.copy(alpha = 0f), 0.36f to pale.copy(alpha = 0f), 0.5f to pale.copy(alpha = 0.7f),
+            0.64f to pale.copy(alpha = 0f), 0.86f to pale.copy(alpha = 0f), 1f to pale,
+            center = Offset.Zero,
+        )
+    }
+    private val wind by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.sweepGradient(
+            0f to body.copy(alpha = 0f), WISP_WIND_SWEEP / 720f to body.copy(alpha = 0.6f), WISP_WIND_SWEEP / 360f to body.copy(alpha = 0f),
+            1f to body.copy(alpha = 0f),
+            center = Offset.Zero,
+        )
+    }
+    private val windStroke = Stroke(line * 0.35f, cap = StrokeCap.Round)
+
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
         drawCircle(wispHalo, bloom, Offset.Zero, alpha = alpha)
         // Without the one-off moments (a hand-off landing on it), all of it is out already.
         val unfurl = if (accents) wispUnfurlAt(ms) else 1f
         rotate(wispTurnAt(ms), Offset.Zero) {
             if (onCamera) {
-                drawCircle(wispRing, ring, Offset.Zero, alpha = alpha, style = ringStroke)
-                drawCircle(wispRingHot, ring, Offset.Zero, alpha = alpha, style = hotStroke)
-                // Two wind lines running just outside the ring, the far one closer in and fainter,
-                // drawn out from their tails as the gust gets up.
+                drawCircle(gusts, ring, Offset.Zero, alpha = alpha, style = ringStroke)
+                drawCircle(gustsHot, ring, Offset.Zero, alpha = alpha, style = hotStroke)
+                // Two wind lines just outside the ring, the far one closer in and fainter, drawn
+                // out from their tails as the gust gets up.
                 val sweep = WISP_WIND_SWEEP * unfurl
                 val r = ring + 1.6f * line
-                drawArc(wispWind, 0f, sweep, false, Offset(-r, -r), Size(2f * r, 2f * r), alpha = alpha, style = wispWindStroke)
+                drawArc(wind, 0f, sweep, false, Offset(-r, -r), Size(2f * r, 2f * r), alpha = alpha, style = windStroke)
                 val near = ring + 1.15f * line
                 rotate(180f, Offset.Zero) {
-                    drawArc(wispWind, 0f, sweep, false, Offset(-near, -near), Size(2f * near, 2f * near), alpha = 0.6f * alpha, style = wispWindStroke)
+                    drawArc(wind, 0f, sweep, false, Offset(-near, -near), Size(2f * near, 2f * near), alpha = 0.6f * alpha, style = windStroke)
                 }
             } else {
-                drawCircle(wispLobe, 1.5f * core, Offset(1.35f * core, 0f), alpha = alpha)
+                drawCircle(lobe, 1.5f * core, Offset(1.35f * core, 0f), alpha = alpha)
                 // The curl unfurls from the light; a shorter, fainter arm opposite makes it a swirl.
-                wispCurlOut.reset()
-                wispCurlMeasure.getSegment(0f, wispCurlLength * unfurl, wispCurlOut, true)
-                drawPath(wispCurlOut, wispCurlBrush, alpha = alpha, style = wispCurlStroke)
+                curlOut.reset()
+                curlMeasure.getSegment(0f, curlMeasure.length * unfurl, curlOut, true)
+                drawPath(curlOut, curlBrush, alpha = alpha, style = curlStroke)
                 rotate(180f, Offset.Zero) {
-                    scale(0.72f, Offset.Zero) { drawPath(wispCurlOut, wispCurlBrush, alpha = 0.5f * alpha, style = wispCurlStroke) }
+                    scale(0.72f, Offset.Zero) { drawPath(curlOut, curlBrush, alpha = 0.5f * alpha, style = curlStroke) }
                 }
             }
         }
-        if (!onCamera) drawCircle(wispCore, 1.15f * core, Offset.Zero, alpha = alpha)
+        if (!onCamera) drawCircle(dotCore, 1.15f * core, Offset.Zero, alpha = alpha)
+    }
+}
+
+/**
+ * Earth's stone: the hand-off's cut crystal (or a ring cut into facets), each facet lit by how
+ * squarely it faces the light, with two little stones orbiting it, passing behind it and in
+ * front, and a glint at the breath's peak.
+ */
+private class GemLook(color: Color, light: LedLight, onCamera: Boolean) : MaterialLook(color, light, onCamera) {
+    private val pale = tones.pale(0.98f, 0.1f)
+    private val glintWidth = max(1f, 0.13f * core)
+    private val facets: List<Path>
+    private val facetColors: List<Color>
+    private val facetHotAlpha: List<Float>
+    private val table: Offset
+    private val glintSpot: Offset
+
+    // The moonlets: an irregular chip lit from the top left, on an orbit seen a little from above.
+    private val moonLit = Path()
+    private val moonShade = Path()
+    private val moonLight = tones.at(0.1f)
+    private val moonDeep = tones.at(-0.18f)
+    private val orbitX = if (onCamera) ring + 1.05f * core else 1.9f * core
+    private val orbitY = GEM_ORBIT_FLAT * orbitX
+    private val tiltCos = cos(GEM_ORBIT_TILT * (PI.toFloat() / 180f))
+    private val tiltSin = sin(GEM_ORBIT_TILT * (PI.toFloat() / 180f))
+
+    init {
+        val light = LIGHT_FROM / LIGHT_FROM.getDistance()
+        if (onCamera) {
+            val facing = List(GEM_RING_FACETS) { i ->
+                val a = (i + 0.5f) * 2f * PI.toFloat() / GEM_RING_FACETS
+                cos(a) * light.x + sin(a) * light.y
+            }
+            facets = emptyList()
+            // Every other facet a touch brighter, so the cut shows where the light is even.
+            facetColors = facing.mapIndexed { i, f -> tones.at(facetLight(f) + if (i % 2 == 0) 0.02f else -0.02f) }
+            facetHotAlpha = facing.map { 0.25f + 0.5f * max(0f, it) }
+            table = Offset.Zero
+            val g = -PI.toFloat() / 4f
+            glintSpot = Offset(ring * cos(g), ring * sin(g))
+        } else {
+            // The hand-off's crystal, its box centred on the LED and as tall as the dot is wide.
+            val u = core / 1.25f
+            val drop = 0.175f * u
+            val points = listOf(
+                Offset(0f, -1.6f * u + drop), Offset(1.1f * u, -0.5f * u + drop), Offset(0.75f * u, 1.25f * u + drop),
+                Offset(-0.75f * u, 1.25f * u + drop), Offset(-1.1f * u, -0.5f * u + drop),
+            )
+            table = Offset(0f, -0.15f * u + drop)
+            glintSpot = points[1]
+            facets = points.indices.map { i ->
+                val a = points[i]
+                val b = points[(i + 1) % points.size]
+                Path().apply {
+                    moveTo(table.x, table.y)
+                    lineTo(a.x, a.y)
+                    lineTo(b.x, b.y)
+                    close()
+                }
+            }
+            facetColors = points.indices.map { i ->
+                val out = (points[i] + points[(i + 1) % points.size]) / 2f - table
+                tones.at(facetLight((out.x * light.x + out.y * light.y) / out.getDistance()))
+            }
+            facetHotAlpha = emptyList()
+        }
+        val r = 0.45f * core
+        moonLit.apply {
+            moveTo(-0.9f * r, -0.2f * r)
+            lineTo(-0.3f * r, -0.95f * r)
+            lineTo(0.6f * r, -0.7f * r)
+            lineTo(0.15f * r, 0.1f * r)
+            close()
+        }
+        moonShade.apply {
+            moveTo(0.6f * r, -0.7f * r)
+            lineTo(0.95f * r, 0.15f * r)
+            lineTo(0.4f * r, 0.85f * r)
+            lineTo(-0.55f * r, 0.7f * r)
+            lineTo(-0.9f * r, -0.2f * r)
+            lineTo(0.15f * r, 0.1f * r)
+            close()
+        }
     }
 
-    private fun DrawScope.drawGem(alpha: Float, ms: Float, accents: Boolean) {
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
         drawCircle(halo, bloom, Offset.Zero, alpha = alpha)
         // The moonlets on the far side of their orbit pass behind the stone.
         for (i in 0 until GEM_MOONLETS) drawMoonlet(i, ms, alpha, front = false)
         if (onCamera) {
             val sweep = 360f / GEM_RING_FACETS
-            val box = Offset(-ring, -ring)
-            val span = Size(2f * ring, 2f * ring)
             for (i in 0 until GEM_RING_FACETS) {
-                drawArc(gemRingColors[i], i * sweep, sweep, false, box, span, alpha = alpha, style = ringStroke)
-                drawArc(gemPale, i * sweep, sweep, false, box, span, alpha = alpha * gemRingHotAlpha[i], style = hotStroke)
+                drawArc(facetColors[i], i * sweep, sweep, false, ringBox, ringSpan, alpha = alpha, style = ringStroke)
+                drawArc(pale, i * sweep, sweep, false, ringBox, ringSpan, alpha = alpha * facetHotAlpha[i], style = hotStroke)
             }
         } else {
-            for (i in gemFacets.indices) drawPath(gemFacets[i], gemFacetColors[i], alpha = alpha)
-            drawCircle(gemPale, 0.28f * core, gemTable, alpha = 0.75f * alpha)
+            for (i in facets.indices) drawPath(facets[i], facetColors[i], alpha = alpha)
+            drawCircle(pale, 0.28f * core, table, alpha = 0.75f * alpha)
         }
         // The near side of the orbit, in front of it.
         for (i in 0 until GEM_MOONLETS) drawMoonlet(i, ms, alpha, front = true)
@@ -667,26 +643,24 @@ internal class LedLook(val material: LedMaterial, private val color: Color, ligh
         val a = gemOrbitAt(ms, i)
         val depth = sin(a)
         if ((depth >= 0f) != front) return
-        val tilt = GEM_ORBIT_TILT * (PI.toFloat() / 180f)
         val x = orbitX * cos(a)
         val y = orbitY * depth
-        val at = Offset(x * cos(tilt) - y * sin(tilt), x * sin(tilt) + y * cos(tilt))
         val near = 0.5f + 0.5f * depth
-        translate(at.x, at.y) {
+        val shade = alpha * (0.45f + 0.55f * near)
+        translate(x * tiltCos - y * tiltSin, x * tiltSin + y * tiltCos) {
             rotate(70f * ms / 1000f + 140f * i, Offset.Zero) {
                 scale(0.75f + 0.25f * near, Offset.Zero) {
-                    drawPath(moonShade, moonDeep, alpha = alpha * (0.45f + 0.55f * near))
-                    drawPath(moonLit, moonLight, alpha = alpha * (0.45f + 0.55f * near))
+                    drawPath(moonShade, moonDeep, alpha = shade)
+                    drawPath(moonLit, moonLight, alpha = shade)
                 }
             }
         }
     }
 
-    /** A four-point star of arms [s] at [at]: a pinpoint of light caught by the gem. */
+    /** A four-point star of arms [s] at [at]: a pinpoint of light caught by the stone. */
     private fun DrawScope.twinkle(at: Offset, s: Float, alpha: Float) {
-        if (s <= 0f || alpha <= 0f) return
-        drawLine(gemPale, Offset(at.x - s, at.y), Offset(at.x + s, at.y), glintWidth, StrokeCap.Round, alpha = alpha)
-        drawLine(gemPale, Offset(at.x, at.y - s), Offset(at.x, at.y + s), glintWidth, StrokeCap.Round, alpha = alpha)
-        drawCircle(gemPale, 0.16f * s, at, alpha = alpha)
+        drawLine(pale, Offset(at.x - s, at.y), Offset(at.x + s, at.y), glintWidth, StrokeCap.Round, alpha = alpha)
+        drawLine(pale, Offset(at.x, at.y - s), Offset(at.x, at.y + s), glintWidth, StrokeCap.Round, alpha = alpha)
+        drawCircle(pale, 0.16f * s, at, alpha = alpha)
     }
 }

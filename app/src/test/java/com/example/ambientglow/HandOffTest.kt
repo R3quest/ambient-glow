@@ -65,7 +65,7 @@ class HandOffTest {
         val camera = Offset(540f, 60f)
         val led = Offset(90f, 300f)
         for (token in HandOffToken.entries) {
-            val path = HandOffPath(token, camera, led, around = false, radius = 0f)
+            val path = HandOffPath(token, camera, led)
             assertEquals("$token start", camera, path.at(0f))
             assertClose("$token end", led, path.at(1f))
         }
@@ -76,7 +76,7 @@ class HandOffTest {
         val camera = Offset(540f, 60f)
         val led = Offset(90f, 40f)
         for (token in HandOffToken.entries) {
-            val path = HandOffPath(token, camera, led, around = false, radius = 0f, top = 30f)
+            val path = HandOffPath(token, camera, led, top = 30f)
             for (i in 0..100) {
                 val y = path.at(i / 100f).y
                 assertTrue("$token leaves the top at ${i / 100f}: $y", y >= 30f - 0.5f)
@@ -86,17 +86,8 @@ class HandOffTest {
 
     @Test
     fun withRoomAboveAnEmberHopsUp() {
-        val path = HandOffPath(HandOffToken.EMBER, Offset(540f, 600f), Offset(90f, 600f), around = false, radius = 0f, top = 30f)
+        val path = HandOffPath(HandOffToken.EMBER, Offset(540f, 600f), Offset(90f, 600f), top = 30f)
         assertTrue(path.at(0.5f).y < 600f)
-    }
-
-    @Test
-    fun aroundTheLensItCirclesOnceFromBelow() {
-        val camera = Offset(540f, 60f)
-        val path = HandOffPath(HandOffToken.GEM, camera, camera, around = true, radius = 30f)
-        assertClose("below", Offset(540f, 90f), path.at(0f))
-        assertClose("round", Offset(540f, 90f), path.at(1f))
-        assertClose("above", Offset(540f, 30f), path.at(0.5f))
     }
 
     @Test
