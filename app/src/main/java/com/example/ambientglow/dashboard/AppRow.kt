@@ -97,8 +97,9 @@ private const val LOCKED_ALPHA = 0.35f
 private enum class Locked { FOR_SALE, RESTING }
 
 /**
- * Icon, name and what sets it apart (muted, a look-alike, kept apart from one, or a colour of the
- * user's), the colour itself, and its switch. The switch is the only way to mute, so a tap meant for the colours
+ * Icon, name and what sets it apart (muted, a look-alike, a colour of the user's, one [saved] for
+ * when premium is unlocked again, or kept apart from a look-alike), the colour itself, and its
+ * switch. The switch is the only way to mute, so a tap meant for the colours
  * never silences an app; muted, the row dims and has no colours to open. The colour shows once it
  * is known ([colorReady]), so it doesn't flash the default first.
  */
@@ -109,6 +110,7 @@ internal fun AppRow(
     colorReady: Boolean,
     new: Boolean,
     alike: GlowApp?,
+    saved: Int?,
     premium: PremiumModel,
     open: Boolean,
     onOpen: () -> Unit,
@@ -162,10 +164,12 @@ internal fun AppRow(
                     }
                 }
                 // Only what sets the app apart: its icon's colour is the usual case, and the dot shows it.
+                val waiting = lit && alike == null && saved != null
                 val note = when {
                     !lit -> stringResource(R.string.apps_muted)
                     alike != null -> stringResource(R.string.apps_alike, alike.label)
                     app.color != null -> stringResource(R.string.apps_color_own)
+                    waiting -> stringResource(R.string.apps_color_saved)
                     app.apart != null -> stringResource(R.string.apps_apart, app.apart.from)
                     else -> null
                 }
@@ -173,7 +177,11 @@ internal fun AppRow(
                     Text(
                         text = note,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (lit && alike != null) GlowPalette.Amber else GlowPalette.TextMuted,
+                        color = when {
+                            lit && alike != null -> GlowPalette.Amber
+                            waiting -> PremiumTint
+                            else -> GlowPalette.TextMuted
+                        },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

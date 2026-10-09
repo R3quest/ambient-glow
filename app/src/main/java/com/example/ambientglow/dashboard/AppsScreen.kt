@@ -111,6 +111,8 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
     // As messages glow now: one's own colours only with premium, and look-alikes kept apart.
     val apps = remember(stored, own) { settled(stored, own) }
     val choices = remember(storedChoices, own) { if (own) storedChoices else storedChoices.copy(colors = emptyMap()) }
+    // After the trial, the colours the user picked wait for premium: each such row says so.
+    val saved = if (own) emptyMap() else storedChoices.colors
     // The heard apps' order, set as the screen opens and kept while it is up, so a row never
     // jumps from under a finger as it is switched (and not lost when its card scrolls away).
     val order = remember { appOrder(apps) }
@@ -139,6 +141,7 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
             colorReady = colorReady,
             new = new,
             alike = alike[app.pkg],
+            saved = saved[app.pkg],
             premium = premium,
             open = open == app.pkg,
             onOpen = { open = if (open == app.pkg) null else app.pkg },
