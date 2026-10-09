@@ -7,6 +7,13 @@ plugins {
 // for our own phones and testers. Never for Play: `make bundle` refuses it.
 val premiumUnlocked = providers.gradleProperty("premium").map(String::toBoolean).getOrElse(false)
 
+// `-Ptrial=over` (make TRIAL=over): the trial at that stage whatever the clock says, to see each
+// stage on a phone: `untried`, `over`, or the days left (1 to 7). Never for Play either.
+val trialStage = providers.gradleProperty("trial").getOrElse("")
+require(trialStage in setOf("", "untried", "over") || trialStage.toIntOrNull() in 1..7) {
+    "trial must be untried, over, or the days left (1 to 7), not \"$trialStage\""
+}
+
 android {
     namespace = "com.example.ambientglow"
     // AndroidX core 1.19 requires compiling against API 37; runtime behaviour is pinned by targetSdk.
@@ -19,7 +26,9 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         buildConfigField("boolean", "PREMIUM", premiumUnlocked.toString())
+        buildConfigField("String", "TRIAL", "\"$trialStage\"")
         if (premiumUnlocked) versionNameSuffix = "-premium"
+        if (trialStage.isNotEmpty()) versionNameSuffix = "-trial-$trialStage"
     }
 
     androidResources {
@@ -47,8 +56,8 @@ android {
 
     buildFeatures {
         compose = true
-        // Constants only: DEBUG (GlowLog compiles away in release, and so does the class) and
-        // PREMIUM (premium unlocked at build time, see above).
+        // Constants only: DEBUG (GlowLog compiles away in release, and so does the class), and
+        // PREMIUM and TRIAL (premium unlocked, or its trial staged, at build time: see above).
         buildConfig = true
     }
 

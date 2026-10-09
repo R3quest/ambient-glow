@@ -46,6 +46,17 @@ internal fun premiumState(owned: Boolean, trialStart: Long, now: Long): PremiumS
 }
 
 /**
+ * The stage a build was given ([BuildConfig.TRIAL], `make install TRIAL=over`), whatever the
+ * clock says, or null: `untried`, `over`, or the days left.
+ */
+internal fun trialStage(value: String): PremiumState? = when (value) {
+    "" -> null
+    "untried" -> PremiumState.Untried
+    "over" -> PremiumState.Over
+    else -> value.toIntOrNull()?.takeIf { it in 1..TRIAL_DAYS }?.let { PremiumState.Trial(it) }
+}
+
+/**
  * The look as it plays on the phone: once the trial is over, a premium element arrives as Water,
  * the free one, while the choice itself stays saved for when premium is bought.
  */
@@ -68,6 +79,12 @@ object Premium {
     /** The dashboard has said the trial is over, so it says it once. */
     private const val KEY_OVER_SEEN = "over_seen"
 
+    /** A staged trial ([trialStage]) writes nothing: a normal build after it starts fresh. */
+    private val staged = trialStage(BuildConfig.TRIAL)
+
+    /** A staged trial's card, dismissed until the app is next started, so it can be seen again. */
+    private var stagedOverSeen = false
+
     fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -75,7 +92,7 @@ object Premium {
         if (BuildConfig.PREMIUM) {
             PremiumState.Owned
         } else {
-            premiumState(prefs.getBoolean(KEY_OWNED, false), prefs.getLong(KEY_TRIAL_START, 0L), now)
+            staged ?: premiumState(prefs.getBoolean(KEY_OWNED, false), prefs.getLong(KEY_TRIAL_START, 0L), now)
         }
 
     fun unlocked(context: Context): Boolean = state(prefs(context)).unlocked
@@ -83,14 +100,17 @@ object Premium {
     /** A message played premium at [now]: the trial starts with the first one. */
     fun played(context: Context, now: Long = System.currentTimeMillis()) {
         val prefs = prefs(context)
-        if (state(prefs, now) == PremiumState.Untried) prefs.edit { putLong(KEY_TRIAL_START, now) }
+        if (staged == null && state(prefs, now) == PremiumState.Untried) prefs.edit { putLong(KEY_TRIAL_START, now) }
     }
 
     fun setOwned(prefs: SharedPreferences, owned: Boolean) {
         if (prefs.getBoolean(KEY_OWNED, false) != owned) prefs.edit { putBoolean(KEY_OWNED, owned) }
     }
 
-    fun overSeen(prefs: SharedPreferences): Boolean = prefs.getBoolean(KEY_OVER_SEEN, false)
+    fun overSeen(prefs: SharedPreferences): Boolean =
+        if (staged != null) stagedOverSeen else prefs.getBoolean(KEY_OVER_SEEN, false)
 
-    fun markOverSeen(prefs: SharedPreferences) = prefs.edit { putBoolean(KEY_OVER_SEEN, true) }
+    fun markOverSeen(prefs: SharedPreferences) {
+        if (staged != null) stagedOverSeen = true else prefs.edit { putBoolean(KEY_OVER_SEEN, true) }
+    }
 }

@@ -59,4 +59,15 @@ class PremiumTest {
         assertFalse(GlowSettings(element = SpawnElement.AIR, spawn = false).playsPremium)
         assertFalse(GlowSettings(element = SpawnElement.AIR, arrival = ArrivalMode.LED_ONLY).playsPremium)
     }
+
+    @Test
+    fun aBuildCanStageEachStepOfTheTrial() {
+        assertEquals(null, trialStage(""))
+        assertEquals(PremiumState.Untried, trialStage("untried"))
+        assertEquals(PremiumState.Trial(3), trialStage("3"))
+        assertEquals(PremiumState.Trial(1), trialStage("1"))
+        assertEquals(PremiumState.Over, trialStage("over"))
+        assertEquals(null, trialStage("0"))
+        assertEquals(null, trialStage("8"))
+    }
 }

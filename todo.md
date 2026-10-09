@@ -14,8 +14,8 @@
 ## Premium trial on the device
 - [ ] **Trial start**: with Fire, Air or Earth selected, tap the padlock and lock the phone. After the effect plays:
   `adb shell run-as com.example.ambientglow cat shared_prefs/ambient_glow_premium.xml` should show `trial_start`.
-- [ ] **Trial end**: check the "Your premium trial is over" card, the dimmed colour swatches, and that a premium element arrives as Water. (No shortcut yet: either wait out the week, or add a debug-only way to move `trial_start` back.)
-- [ ] **Clash fix**: two apps with look-alike icon colours (e.g. WhatsApp and Spotify). The later one shows "Kept apart from …" and the LED blinks two different colours.
+- [x] **Trial end**: `make install-trial-over` (or `make install TRIAL=untried|1..7|over` for any stage). Checked on the S23 on 2026-10-09: the over card, "TRIAL OVER" on the element card, locked swatches. Still to see: a message arriving as Water with that build (padlock test). Run `make install` afterwards to go back to the real clock.
+- [ ] **Clash fix**: seen on the S23's real apps: ECOVACS HOME shows "Kept apart from Telegram" and glows cyan. Still to see: the LED blinking two different colours with both waiting.
 - [ ] **Own phone**: `make install-premium`, so its trial never runs out.
 
 ## Every release

@@ -8,7 +8,11 @@ export ANDROID_HOME
 PREMIUM ?= 0
 PREMIUM_FLAG := $(if $(filter 1 true yes,$(PREMIUM)),true,false)
 
-GRADLE  := ./gradlew --console=plain -Ppremium=$(PREMIUM_FLAG)
+# TRIAL=over shows premium's trial at that stage whatever the clock says: untried, over, or the
+# days left (1 to 7). To see each stage on a phone (make install TRIAL=over); `make bundle` refuses it.
+TRIAL ?=
+
+GRADLE  := ./gradlew --console=plain -Ppremium=$(PREMIUM_FLAG) -Ptrial=$(TRIAL)
 ADB     ?= $(ANDROID_HOME)/platform-tools/adb
 SDKMGR  := $(ANDROID_HOME)/cmdline-tools/latest/bin/sdkmanager
 PACKAGE := com.example.ambientglow
@@ -23,7 +27,7 @@ SDK_PACKAGES := "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 
 .DEFAULT_GOAL := help
 .PHONY: help debug release bundle lint test check permissions install install-release \
-        install-premium release-premium launch uninstall devices apks clean stop sdk
+        install-premium release-premium install-trial-over launch uninstall devices apks clean stop sdk
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -37,6 +41,9 @@ release: ## Build the R8-minified release APK (debug-signed)
 bundle: ## Build a release App Bundle (.aab) for Play
 ifeq ($(PREMIUM_FLAG),true)
 	$(error PREMIUM=1 unlocks premium for everyone: never build it for Play)
+endif
+ifneq ($(TRIAL),)
+	$(error TRIAL=$(TRIAL) fixes the trial for everyone: never build it for Play)
 endif
 	$(GRADLE) bundleRelease
 
@@ -62,6 +69,9 @@ install-release: release ## Build and install the release APK on the connected d
 
 install-premium: ## Build and install the debug APK with premium unlocked
 	$(MAKE) install PREMIUM=1
+
+install-trial-over: ## Build and install the debug APK with the trial over (TRIAL=… for other stages)
+	$(MAKE) install TRIAL=over
 
 release-premium: ## Build a release APK with premium unlocked, for testers (never for Play)
 	$(MAKE) release PREMIUM=1
