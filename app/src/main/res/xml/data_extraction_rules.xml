@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ambient Glow keeps nothing worth restoring: opt out of cloud backup and device transfer. -->
+<!-- Lumement keeps nothing worth restoring: opt out of cloud backup and device transfer. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />

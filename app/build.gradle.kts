@@ -15,12 +15,12 @@ require(trialStage in setOf("", "untried", "over") || trialStage.toIntOrNull() i
 }
 
 android {
-    namespace = "com.example.ambientglow"
+    namespace = "app.lumement"
     // AndroidX core 1.19 requires compiling against API 37; runtime behaviour is pinned by targetSdk.
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.ambientglow"
+        applicationId = "app.lumement"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

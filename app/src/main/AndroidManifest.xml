@@ -28,7 +28,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AmbientGlow"
+        android:theme="@style/Theme.Lumement"
         tools:targetApi="36">
 
         <!-- Portrait: LED positions, spots and the camera fit are saved as fractions of the
@@ -57,7 +57,7 @@
             android:exported="false"
             android:launchMode="singleInstance"
             android:taskAffinity=""
-            android:theme="@style/Theme.AmbientGlow.Wake" />
+            android:theme="@style/Theme.Lumement.Wake" />
         <!-- showWhenLocked / turnScreenOn are switched at runtime: see WakeScreenActivity. -->
 
         <service

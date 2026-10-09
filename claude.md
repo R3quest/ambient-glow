@@ -1,9 +1,9 @@
-# Claude Code Engineering Guidelines: Ambient Glow
+# Claude Code Engineering Guidelines: Lumement
 
-This file serves as the permanent system configuration and architectural authority for the "Ambient Glow" codebase. Every file creation, modification, and optimization step must strictly adhere to these parameters.
+This file serves as the permanent system configuration and architectural authority for the "Lumement" codebase. Every file creation, modification, and optimization step must strictly adhere to these parameters.
 
 ## 🔋 1. Core Philosophy: Zero-Idle Battery Profile
-- **Headless & Reactive:** Ambient Glow must consume exactly 0% CPU cycles when the device is idle.
+- **Headless & Reactive:** Lumement must consume exactly 0% CPU cycles when the device is idle.
 - **No Background Loops:** No long-running coroutines, infinite `while` loops, or persistent background threads while the panel is dark. The only loops are frame-driven animations (the LED breath, the arrival effect) that run while the glow screen is lit, and they end with it.
 - **Event-Driven Only:** The app only wakes up when the system calls it: `onNotificationPosted`/`onNotificationRemoved`, screen on/off, unlock, display changes. Timers are short, bounded one-shots on a `Handler`.
 - **Hardware Release:** Every wake lock is acquired with a timeout (or released when the LED leaves the front). Once all waiting messages are read, the glow screen finishes and the CPU falls back to deep sleep.

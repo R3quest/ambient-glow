@@ -25,5 +25,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AmbientGlow"
+rootProject.name = "Lumement"
 include(":app")

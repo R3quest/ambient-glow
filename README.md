@@ -1,6 +1,6 @@
-# Ambient Glow
+# Lumement
 
-Ambient Glow is an ultra-lightweight, high-performance, and privacy-first Android notification utility specifically engineered to complement modern AMOLED displays (such as Samsung devices using "Detailed" notification popup styles).
+Lumement is an ultra-lightweight, high-performance, and privacy-first Android notification utility specifically engineered to complement modern AMOLED displays (such as Samsung devices using "Detailed" notification popup styles).
 
 ## 🌟 Key Architectural Achievements
 - **Zero Background Idle Drain:** Operates entirely headlessly. It uses zero background CPU cycles while waiting for messages.

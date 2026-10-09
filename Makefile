@@ -1,4 +1,4 @@
-# Ambient Glow — build shortcuts.  Run `make` (or `make help`) to list targets.
+# Lumement — build shortcuts.  Run `make` (or `make help`) to list targets.
 
 ANDROID_HOME ?= $(HOME)/Android/Sdk
 export ANDROID_HOME
@@ -15,11 +15,11 @@ TRIAL ?=
 GRADLE  := ./gradlew --console=plain -Ppremium=$(PREMIUM_FLAG) -Ptrial=$(TRIAL)
 ADB     ?= $(ANDROID_HOME)/platform-tools/adb
 SDKMGR  := $(ANDROID_HOME)/cmdline-tools/latest/bin/sdkmanager
-PACKAGE := com.example.ambientglow
+PACKAGE := app.lumement
 
 DEBUG_APK   := app/build/outputs/apk/debug/app-debug.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release.apk
-PREMIUM_APK := app/build/outputs/apk/release/ambient-glow-premium.apk
+PREMIUM_APK := app/build/outputs/apk/release/lumement-premium.apk
 AAPT2       := $(ANDROID_HOME)/build-tools/37.0.0/aapt2
 LINT_REPORT := app/build/reports/lint-results-debug.txt
 

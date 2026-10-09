@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Ambient Glow</string>
-    <string name="listener_label">Ambient Glow message reader</string>
-    <string name="shield_label">Ambient Glow effects</string>
+    <string name="app_name">Lumement</string>
+    <string name="listener_label">Lumement message reader</string>
+    <string name="shield_label">Lumement effects</string>
     <string name="shield_summary">Plays the new-message effect over the lock screen and hides the system bars while the LED turns the screen on.</string>
     <string name="shield_description">When a new message lights the lock screen, this service draws your chosen glow effect over it for two seconds; the lock screen stays visible and usable underneath. When the LED lights the screen, it also covers the battery icon and navigation handle with black for half a second. It reads no screen content and receives no accessibility events.</string>
 
@@ -52,10 +52,10 @@
     <string name="premium_colours_title">Your own colour for any app</string>
     <string name="premium_colours_body">Pick the colour each app glows in, on the effect and on the LED.</string>
     <string name="premium_once_title">Paid once</string>
-    <string name="premium_once_body">No subscription. Google Play takes the payment, so Ambient Glow itself still never goes online.</string>
+    <string name="premium_once_body">No subscription. Google Play takes the payment, so Lumement itself still never goes online.</string>
     <string name="premium_free">Always free: the LED, every screen choice, LED Beacon and Edge Frame, Water, and which apps light up, with look-alikes kept apart.</string>
     <string name="premium_unavailable">Google Play can\'t sell premium right now. Check that the Play Store is installed and signed in, then come back.</string>
-    <string name="premium_owned">Premium is yours. Thank you for supporting Ambient Glow.</string>
+    <string name="premium_owned">Premium is yours. Thank you for supporting Lumement.</string>
     <string name="premium_over_title">Your premium trial is over</string>
     <string name="premium_over_body">New messages arrive as Water again, and every app glows in its icon\'s colour. Your choices are kept: unlock premium once and they\'re back for good.</string>
     <string name="premium_over_buy">Unlock for %1$s</string>
@@ -153,7 +153,7 @@
     <string name="earth_debris_none">NONE</string>
     <string name="earth_debris_dust">SMOKE</string>
     <string name="earth_debris_rubble">RUBBLE</string>
-    <string name="arrival_needs_shield">Turn on Ambient Glow effects to play the effect over the lock screen. Without it the lock screen only lights up.</string>
+    <string name="arrival_needs_shield">Turn on Lumement effects to play the effect over the lock screen. Without it the lock screen only lights up.</string>
     <string name="section_effect">EFFECT</string>
     <string name="effect_preview_label">Preview of a new message: the effect, then the LED. Tap to replay.</string>
     <string name="preview_step_effect">EFFECT</string>
@@ -206,15 +206,15 @@
     <string name="setup_step_optional">STEP %1$d OF %2$d · OPTIONAL</string>
     <string name="setup_skip">Not now</string>
     <string name="setup_shield_title">Effects on the lock screen</string>
-    <string name="setup_shield_body">Plays your effect over the lock screen when a message arrives; without it the lock screen only lights up. Android files this under accessibility and warns about full control: Ambient Glow reads nothing on screen.</string>
-    <string name="setup_shield_where">In Settings, open Installed apps (or Downloaded apps), tap Ambient Glow effects and turn it on.</string>
+    <string name="setup_shield_body">Plays your effect over the lock screen when a message arrives; without it the lock screen only lights up. Android files this under accessibility and warns about full control: Lumement reads nothing on screen.</string>
+    <string name="setup_shield_where">In Settings, open Installed apps (or Downloaded apps), tap Lumement effects and turn it on.</string>
     <string name="access_done_title">You\'re all set</string>
-    <string name="access_done_body">Ambient Glow now lights up for new messages. Next, choose what that looks like, then tap the padlock at the top to try it on the locked phone.</string>
-    <string name="access_done_body_no_shield">Ambient Glow now lights up for new messages. You can turn on lock-screen effects any time from the Screen tab.</string>
+    <string name="access_done_body">Lumement now lights up for new messages. Next, choose what that looks like, then tap the padlock at the top to try it on the locked phone.</string>
+    <string name="access_done_body_no_shield">Lumement now lights up for new messages. You can turn on lock-screen effects any time from the Screen tab.</string>
     <string name="access_done_action">Choose the look</string>
 
     <string name="access_listener_title">Notification access</string>
-    <string name="access_listener_body">Lets Ambient Glow notice new messages and pick each app\'s colour. Android will warn that it could read your notifications: it never reads, stores or sends what they say.</string>
+    <string name="access_listener_body">Lets Lumement notice new messages and pick each app\'s colour. Android will warn that it could read your notifications: it never reads, stores or sends what they say.</string>
     <string name="access_listener_grant">Grant permission</string>
 
     <string name="access_post_title">Wake alerts</string>
@@ -222,7 +222,7 @@
     <string name="access_post_grant">Allow alerts</string>
 
     <string name="access_fsi_title">Full-screen wake</string>
-    <string name="access_fsi_body">Android 14+ asks you to confirm that Ambient Glow may turn the display on.</string>
+    <string name="access_fsi_body">Android 14+ asks you to confirm that Lumement may turn the display on.</string>
     <string name="access_fsi_grant">Allow wake</string>
 
     <string name="access_shield_grant">Turn on</string>
@@ -453,7 +453,7 @@
     <string name="test_locked">Test on the locked phone</string>
     <string name="test_locked_countdown">Lock now: %1$d</string>
     <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
-    <string name="test_locked_blocked">Alerts are off for Ambient Glow. Allow them, then try again.</string>
+    <string name="test_locked_blocked">Alerts are off for Lumement. Allow them, then try again.</string>
 
     <string name="message_channel_name">New message pop-up</string>
     <string name="message_channel_description">Shows the new message again as a pop-up when the black screen comes on. Silent; removed after a few seconds.</string>

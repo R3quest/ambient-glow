@@ -2,7 +2,7 @@
 <resources>
 
     <!-- Dashboard window: true black from the very first frame (no light flash before Compose draws). -->
-    <style name="Theme.AmbientGlow" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Lumement" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/glow_void</item>
         <item name="android:colorBackground">@color/glow_void</item>
         <item name="android:colorAccent">@color/glow_cyan</item>
@@ -15,7 +15,7 @@
     <!-- Glow window: translucent so it can be fully see-through while the system lock screen
          shows over it; it turns itself opaque (Activity.setTranslucent) while the LED covers
          the lock screen. No title, no window animations, no starting window. -->
-    <style name="Base.Theme.AmbientGlow.Wake" parent="android:Theme.Translucent.NoTitleBar">
+    <style name="Base.Theme.Lumement.Wake" parent="android:Theme.Translucent.NoTitleBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
@@ -27,5 +27,5 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
-    <style name="Theme.AmbientGlow.Wake" parent="Base.Theme.AmbientGlow.Wake" />
+    <style name="Theme.Lumement.Wake" parent="Base.Theme.Lumement.Wake" />
 </resources>
