@@ -316,7 +316,7 @@
     <string name="apps_color">COLOUR</string>
     <string name="apps_color_auto_body">Glows in the colour of its icon.</string>
     <string name="apps_color_own_body">Glows in the colour you picked. The first swatch goes back to its icon\'s.</string>
-    <string name="apps_apart">Kept apart from %1$s</string>
+    <string name="apps_apart">Apart from %1$s</string>
     <string name="apps_color_saved">Your colour · Premium</string>
     <string name="apps_color_apart_body">Its icon glows like %1$s\'s, so it takes the nearest colour that doesn\'t, and the LED tells them apart.</string>
     <string name="apps_color_locked_body">Your own colours are premium. Until you unlock it, every app glows in its icon\'s colour, kept apart from look-alikes.</string>
