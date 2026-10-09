@@ -280,10 +280,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /**
      * The earliest sign of a power press while the LED is in front: going to sleep changes the
-     * display 40-75 ms after the press, as the ~340 ms screen-off fade starts, and the phone is
-     * no longer interactive by then. Opening the lock screen and waking right here cancels the
-     * sleep, so the panel never goes dark. onPause only comes once the panel is off, which costs
-     * the whole fade plus a panel off/on cycle (~0.5 s). Event-driven: nothing runs in between.
+     * display as the screen-off fade starts, and the phone is no longer interactive by then. The
+     * lock screen is opened right here, hidden under the fade, so it is in front by the time the
+     * display reports the panel off, and is lit then ([revealAfterPower]). onPause only comes
+     * once the panel is off. Event-driven: nothing runs in between.
      *
      * Only on the change from interactive to not: we also put the LED up while the panel is
      * already dark (a black arrival, or the lock screen timing out), and the display changes
@@ -317,6 +317,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (wasInteractive && ledTurnedOff()) {
                 GlowLog.d { "act display changed: going to sleep with the LED in front" }
                 revealAfterPower()
+            } else if (revealingAfterPower && !interactiveSeen && panelOff()) {
+                wakeRevealed()
             }
         }
     }
@@ -653,7 +655,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             afterCall.arm() // proximity during a call: stay dark, and light the LED once it is over
             return
         }
-        if (revealingAfterPower) return // onPause already switched to the lock screen and woke it
+        if (revealingAfterPower) {
+            // The lock screen is already in front; light it, if the display's own report was missed.
+            wakeRevealed()
+            return
+        }
         if (ledArmedForSleep) {
             // Already the LED, and One UI knows it is covered: just light the panel.
             ledArmedForSleep = false
@@ -857,26 +863,36 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun ledTurnedOff(): Boolean =
         face.value == Face.LED && !ending.value && !power.isInteractive && !audio.inCall && !ledArmedForSleep && !stowed
 
-    /** Set from the power press until the panel is back on, so that sleep's SCREEN_OFF is ignored. */
+    /** Set from the power press until the panel is back on: the lock screen is in front, waiting to be lit. */
     private var revealingAfterPower = false
 
+    /**
+     * Uncover now, light the panel once it is off. The screen-off fade is drawn over everything,
+     * so the uncover never shows. Lit from off, Android holds the panel dark until the lock screen
+     * has drawn and gives it the system brightness from the start. Lit during the fade instead
+     * (cancelling the sleep), the panel stays on: the half-built lock screen showed as it built
+     * up, bare wallpaper first, at the LED's full brightness until auto-brightness caught up.
+     */
     private fun revealAfterPower() {
         GlowLog.d { "act revealAfterPower" }
         revealingAfterPower = true
         DarkHold.acquire(this)
-        // Uncover, then wake. One UI starts its sleep transition ~7 ms after the press, before
-        // any signal reaches us, so the lock screen always comes in through its ~0.3 s wake
-        // transition, never the quicker uncover a tap gets. Waking first and uncovering once
-        // One UI is back to "covered" was measured slower (0.5-0.65 s).
         showLockScreen()
-        // Wake now, not through the queue: during the screen-off fade the main thread can be held
-        // up by a frame for ~0.2 s, long enough for the panel to go dark first.
+        // From onPause or SCREEN_OFF the panel is already off: no display change will come.
+        if (panelOff()) wakeRevealed()
+    }
+
+    /** [revealAfterPower]'s panel is off: light the lock screen. */
+    private fun wakeRevealed() {
+        GlowLog.d { "act panel off: lighting the lock screen" }
         timers.removeCallbacks(wakeNow)
         wakeNow.run()
-        // showLockScreen ran while still asleep, so it couldn't start this; a quick second press
-        // on the lock screen should go back to the LED like any other.
+        // showLockScreen ran while asleep, so it couldn't start this; a quick second press on the
+        // lock screen should go back to the LED like any other.
         watchForSleep()
     }
+
+    private fun panelOff(): Boolean = currentDisplay()?.state.let { it != null && it != Display.STATE_ON }
 
     /** Cover the lock screen with the LED; [arrival] first plays the effect on the black panel. */
     private fun showLed(arrival: Boolean = false) {
