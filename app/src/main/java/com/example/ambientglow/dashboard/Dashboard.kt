@@ -178,6 +178,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
 
     // The Apps screen, over the tabs; it keeps its own state (AppsModel).
     val appsModel = rememberAppsModel()
+    val premium = rememberPremiumModel()
     val lockedTest = rememberLockedTest()
     var appsOpen by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = appsOpen && !inSetup) { appsOpen = false }
@@ -347,6 +348,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                         if (open) {
                             AppsScreen(
                                 model = appsModel,
+                                premium = premium,
                                 onBack = { appsOpen = false },
                                 onTryColor = { glow ->
                                     ledColor = Color(glow)
@@ -363,6 +365,9 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 }
                             }
                             TestHint(lockedTest, Modifier.padding(horizontal = PageGutter))
+                            Disclosure(visible = premium.overUnseen) {
+                                PremiumOverCard(premium, Modifier.padding(start = PageGutter, end = PageGutter, bottom = 14.dp))
+                            }
                             Box(Modifier.padding(horizontal = PageGutter)) {
                                 GlowTabBar(
                                     pager = pager,
@@ -391,6 +396,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
+                                            premium = premium,
                                             edit = edit,
                                             onSample = { index ->
                                                 sample = index
@@ -506,6 +512,7 @@ private fun EffectPage(
     sample: Int,
     previewHeld: PreviewPhase?,
     loop: Boolean,
+    premium: PremiumModel,
     edit: SettingsEdit,
     onSample: (Int) -> Unit,
     onShowcase: () -> Unit,
@@ -533,7 +540,7 @@ private fun EffectPage(
                     )
                     // Edge Frame's options carry their own gap, so nothing jumps as they come and go.
                     Column {
-                        ElementCard(settings, SAMPLE_COLORS[sample].color, onEffect)
+                        ElementCard(settings, SAMPLE_COLORS[sample].color, premium, onEffect)
                         Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
                             Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
                         }

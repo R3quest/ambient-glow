@@ -70,6 +70,7 @@ import com.example.ambientglow.appOrder
 import com.example.ambientglow.inOrder
 import com.example.ambientglow.isNewSince
 import com.example.ambientglow.lookAlikesAmong
+import com.example.ambientglow.settled
 import com.example.ambientglow.matching
 import com.example.ambientglow.otherApps
 import com.example.ambientglow.toGlowApp
@@ -97,14 +98,19 @@ import kotlinx.coroutines.withContext
  * back does the same), then two lists: the apps that have sent a message, and folded under them
  * the phone's other apps, A to Z with a search. Both list the same rows, and one app's colours
  * are open at a time across them. A lazy list, so only the rows on screen are built and load
- * their icons. A picked colour shows on the real LED ([onTryColor]).
+ * their icons. A picked colour shows on the real LED ([onTryColor]). Colours of one's own are
+ * [premium]'s; every app is kept apart from look-alikes either way ([settled]).
  *
  * Leaving the screen, or the dashboard while on it, marks what was new as seen.
  */
 @Composable
-internal fun AppsScreen(model: AppsModel, onBack: () -> Unit, onTryColor: (Int) -> Unit) {
+internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> Unit, onTryColor: (Int) -> Unit) {
     val context = LocalContext.current
-    val (apps, choices) = model.current
+    val own = premium.state.unlocked
+    val (stored, storedChoices) = model.current
+    // As messages glow now: one's own colours only with premium, and look-alikes kept apart.
+    val apps = remember(stored, own) { settled(stored, own) }
+    val choices = remember(storedChoices, own) { if (own) storedChoices else storedChoices.copy(colors = emptyMap()) }
     // The heard apps' order, set as the screen opens and kept while it is up, so a row never
     // jumps from under a finger as it is switched (and not lost when its card scrolls away).
     val order = remember { appOrder(apps) }
@@ -133,11 +139,12 @@ internal fun AppsScreen(model: AppsModel, onBack: () -> Unit, onTryColor: (Int) 
             colorReady = colorReady,
             new = new,
             alike = alike[app.pkg],
+            premium = premium,
             open = open == app.pkg,
             onOpen = { open = if (open == app.pkg) null else app.pkg },
             onMute = { muted ->
                 if (muted && open == app.pkg) open = null
-                model.mute(app.pkg, muted)
+                model.mute(app.pkg, muted, own)
             },
             onColor = { color -> onTryColor(model.recolor(app, color)) },
         )

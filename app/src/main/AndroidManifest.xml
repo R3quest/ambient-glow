@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The only background-launch path Android allows without SYSTEM_ALERT_WINDOW. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- No INTERNET, ever: purchases go through the Play Store app (com.android.vending.BILLING,
+         from Play Billing). `make permissions` fails if a library brings INTERNET in. -->
 
     <!-- Lets the listener load sender app icons and names for colour + card (Android 11+
          package visibility). Launcher apps only; no QUERY_ALL_PACKAGES. -->

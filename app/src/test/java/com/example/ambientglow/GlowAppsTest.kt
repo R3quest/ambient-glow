@@ -213,4 +213,55 @@ class GlowAppsTest {
         assertEquals("whatsapp", alike["spotify"]?.pkg)
         assertNull(alike["phone"])
     }
+
+    @Test
+    fun aLookAlikeHeardLaterIsKeptApartInTheNearestFreeSwatch() {
+        val apps = listOf(app("whatsapp", whatsApp, firstSeen = 1L), app("spotify", spotify, firstSeen = 2L))
+        val settled = settled(apps, own = false).associateBy { it.pkg }
+        assertNull(settled.getValue("whatsapp").apart)
+        val apart = settled.getValue("spotify").apart!!
+        assertEquals("whatsapp", apart.from)
+        assertTrue(APP_COLORS.any { it.color == apart.color })
+        assertTrue(lookAlikes(settled.values.toList()).isEmpty())
+    }
+
+    @Test
+    fun theEarlierAppKeepsItsColourWhicheverIsListedFirst() {
+        val apps = listOf(app("spotify", spotify, firstSeen = 2L), app("whatsapp", whatsApp, firstSeen = 1L))
+        val settled = settled(apps, own = false).associateBy { it.pkg }
+        assertEquals(whatsApp, settled.getValue("whatsapp").glow)
+        assertTrue(settled.getValue("spotify").apart != null)
+    }
+
+    @Test
+    fun aMutedAppTakesNoColour() {
+        val apps = listOf(app("whatsapp", whatsApp, firstSeen = 1L, muted = true), app("spotify", spotify, firstSeen = 2L))
+        assertTrue(settled(apps, own = false).all { it.apart == null })
+    }
+
+    @Test
+    fun ownColoursCountOnlyWithPremiumAndAreNeverMoved() {
+        val chosen = app("signal", telegram, firstSeen = 2L).copy(color = whatsApp)
+        val apps = listOf(app("whatsapp", whatsApp, firstSeen = 1L), chosen)
+        val withPremium = settled(apps, own = true).associateBy { it.pkg }
+        assertEquals(whatsApp, withPremium.getValue("signal").glow)
+        assertNull(withPremium.getValue("signal").apart)
+        // A clash the user made is shown, not fixed for them.
+        assertEquals(setOf("whatsapp", "signal"), lookAlikes(withPremium.values.toList()).keys)
+        val without = settled(apps, own = false).associateBy { it.pkg }
+        assertEquals(telegram, without.getValue("signal").glow)
+    }
+
+    @Test
+    fun theListenerGetsTheSettledColour() {
+        val prefs = FakePrefs()
+        GlowApps.noticed(prefs, "whatsapp", at = 1L, autoColor = whatsApp) { "WhatsApp" }
+        GlowApps.noticed(prefs, "spotify", at = 2L, autoColor = spotify) { "Spotify" }
+        assertEquals(whatsApp, GlowApps.glowOf(prefs, "whatsapp", whatsApp, own = false))
+        val apart = GlowApps.glowOf(prefs, "spotify", spotify, own = false)
+        assertTrue(oklabDistance(Color(apart), Color(whatsApp)) >= LOOK_ALIKE_DISTANCE)
+        GlowApps.setColor(prefs, "spotify", telegram)
+        assertEquals(telegram, GlowApps.glowOf(prefs, "spotify", spotify, own = true))
+        assertEquals(apart, GlowApps.glowOf(prefs, "spotify", spotify, own = false))
+    }
 }

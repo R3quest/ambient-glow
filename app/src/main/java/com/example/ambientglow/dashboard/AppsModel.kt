@@ -17,6 +17,7 @@ import com.example.ambientglow.GlowApps
 import com.example.ambientglow.GlowPending
 import com.example.ambientglow.GlowSession
 import com.example.ambientglow.isNewSince
+import com.example.ambientglow.settled
 
 /**
  * The Apps screen's state and what it does, kept apart from the dashboard: the apps the listener
@@ -60,21 +61,31 @@ internal class AppsModel(
         viewedAt = now
     }
 
-    /** Muting also takes the app's waiting messages off the LED at once, as if they were read. */
-    fun mute(pkg: String, muted: Boolean) {
+    /**
+     * Muting also takes the app's waiting messages off the LED at once, as if they were read. An
+     * app kept apart from it may glow in its icon's colour again ([own]: premium's colours count).
+     */
+    fun mute(pkg: String, muted: Boolean, own: Boolean) {
         GlowApps.setMuted(prefs, pkg, muted)
         if (muted && GlowPending.removeApp(pkg)) GlowSession.host?.onPendingChanged()
+        resettle(own)
     }
 
     /**
-     * Gives [app] [color] (null: its icon's again). Its waiting messages blink in it from the next
-     * breath. Returns the colour it now glows in.
+     * Gives [app] [color] (null: its icon's again), a premium choice. Its waiting messages blink in
+     * it from the next breath, as do those of an app that now glows apart from it. Returns the
+     * colour it now glows in.
      */
     fun recolor(app: GlowApp, color: Int?): Int {
         GlowApps.setColor(prefs, app.pkg, color)
-        val glow = color ?: app.autoColor
-        GlowPending.recolor(app.pkg, glow)
-        return glow
+        return resettle(own = true)[app.pkg] ?: color ?: app.autoColor
+    }
+
+    /** Waiting messages take the colour their app glows in now ([settled]); returns every app's. */
+    private fun resettle(own: Boolean): Map<String, Int> {
+        val glows = settled(GlowApps.read(prefs).apps, own).associate { it.pkg to it.glow }
+        for ((pkg, glow) in glows) GlowPending.recolor(pkg, glow)
+        return glows
     }
 }
 

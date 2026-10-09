@@ -88,9 +88,12 @@ private const val SWATCHES_PER_ROW = 5
 /** How far a muted app's icon and name fade: still readable, clearly not lit. */
 private const val MUTED_ALPHA = 0.4f
 
+/** How far a colour fades that is premium's, after its trial. */
+private const val LOCKED_ALPHA = 0.35f
+
 /**
- * Icon, name and what sets it apart (muted, a look-alike, or a colour of the user's), the colour
- * itself, and its switch. The switch is the only way to mute, so a tap meant for the colours
+ * Icon, name and what sets it apart (muted, a look-alike, kept apart from one, or a colour of the
+ * user's), the colour itself, and its switch. The switch is the only way to mute, so a tap meant for the colours
  * never silences an app; muted, the row dims and has no colours to open. The colour shows once it
  * is known ([colorReady]), so it doesn't flash the default first.
  */
@@ -101,6 +104,7 @@ internal fun AppRow(
     colorReady: Boolean,
     new: Boolean,
     alike: GlowApp?,
+    premium: PremiumModel,
     open: Boolean,
     onOpen: () -> Unit,
     onMute: (Boolean) -> Unit,
@@ -157,6 +161,7 @@ internal fun AppRow(
                     !lit -> stringResource(R.string.apps_muted)
                     alike != null -> stringResource(R.string.apps_alike, alike.label)
                     app.color != null -> stringResource(R.string.apps_color_own)
+                    app.apart != null -> stringResource(R.string.apps_apart, app.apart.from)
                     else -> null
                 }
                 if (note != null) {
@@ -188,29 +193,36 @@ internal fun AppRow(
         }
         Disclosure(visible = open && lit) {
             Box(Modifier.padding(top = 8.dp, bottom = 14.dp)) {
-                ColorPicker(app, icon, alike, onColor)
+                ColorPicker(app, icon, alike, premium, onColor)
             }
         }
     }
 }
 
+/** What an app's colours say under them. */
+private enum class ColorNote { AUTO, APART, OWN, LOCKED }
+
 /**
- * Its icon's colour first (the icon on it, so it reads as "the icon's"), then [APP_COLORS]. What
- * the pick means is said under the swatches, and a look-alike is named with why it matters.
+ * Its icon's colour first (the icon on it, so it reads as "the icon's"; the colour it is kept
+ * apart in, if that is taken), then [APP_COLORS], which are [premium]'s: after its trial they
+ * dim and only the first can be picked. What the pick means is said under the swatches, and a
+ * look-alike is named with why it matters.
  */
 @Composable
-private fun ColorPicker(app: GlowApp, icon: ImageBitmap?, alike: GlowApp?, onColor: (Int?) -> Unit) {
+private fun ColorPicker(app: GlowApp, icon: ImageBitmap?, alike: GlowApp?, premium: PremiumModel, onColor: (Int?) -> Unit) {
     val choices = remember { listOf<AppColor?>(null) + APP_COLORS }
+    val unlocked = premium.state.unlocked
     OptionGroup(stringResource(R.string.apps_color)) {
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             choices.chunked(SWATCHES_PER_ROW).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     row.forEach { choice ->
                         Swatch(
-                            color = Color(choice?.color ?: app.autoColor),
+                            color = Color(choice?.color ?: app.apart?.color ?: app.autoColor),
                             icon = if (choice == null) icon else null,
                             name = stringResource(choice?.name ?: R.string.apps_color_auto),
                             selected = app.color == choice?.color,
+                            enabled = unlocked || choice == null,
                             onClick = { onColor(choice?.color) },
                             modifier = Modifier.weight(1f),
                         )
@@ -218,9 +230,21 @@ private fun ColorPicker(app: GlowApp, icon: ImageBitmap?, alike: GlowApp?, onCol
                 }
             }
         }
-        OptionBody(app.color == null) { auto ->
-            stringResource(if (auto) R.string.apps_color_auto_body else R.string.apps_color_own_body)
+        val note = when {
+            !unlocked -> ColorNote.LOCKED
+            app.color != null -> ColorNote.OWN
+            app.apart != null -> ColorNote.APART
+            else -> ColorNote.AUTO
         }
+        OptionBody(note) { shown ->
+            when (shown) {
+                ColorNote.AUTO -> stringResource(R.string.apps_color_auto_body)
+                ColorNote.APART -> stringResource(R.string.apps_color_apart_body, app.apart?.from.orEmpty())
+                ColorNote.OWN -> stringResource(R.string.apps_color_own_body)
+                ColorNote.LOCKED -> stringResource(R.string.apps_color_locked_body)
+            }
+        }
+        PremiumLine(premium)
         Disclosure(visible = alike != null) {
             // Kept while it folds away, so the note doesn't empty before it goes.
             val last = remember { mutableStateOf(alike) }
@@ -241,6 +265,7 @@ private fun Swatch(
     icon: ImageBitmap?,
     name: String,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -250,7 +275,8 @@ private fun Swatch(
         modifier = modifier
             .height(44.dp)
             .clip(GlowShapes.Pill)
-            .selectable(selected = selected, role = Role.RadioButton) {
+            .graphicsLayer { alpha = if (enabled) 1f else LOCKED_ALPHA }
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) {
                 if (!selected) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 onClick()
             }

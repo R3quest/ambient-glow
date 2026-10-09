@@ -146,7 +146,8 @@ class NotificationWakerService : NotificationListenerService() {
         val previous = GlowPending.entries.firstOrNull { it.key == sbn.key }
         val quietUpdate = isQuietUpdate(sbn.notification.flags, newestAt, previous?.newestAt)
 
-        val color = GlowApps.colorOf(apps, pkg) ?: auto
+        val unlocked = Premium.unlocked(this)
+        val color = if (pkg == packageName) auto else GlowApps.glowOf(apps, pkg, auto, own = unlocked)
         GlowPending.put(PendingGlow(key = sbn.key, pkg = pkg, color = color, newestAt = newestAt))
         val host = GlowSession.host
         GlowLog.d {
@@ -155,7 +156,10 @@ class NotificationWakerService : NotificationListenerService() {
         }
         if (quietUpdate) return
 
-        val arrival = arrivalFor(GlowPrefs.load(this).arrival, GlowSession.resting)
+        val settings = GlowPrefs.load(this)
+        val arrival = arrivalFor(settings.arrival, GlowSession.resting)
+        // Premium's trial starts with the first message it plays for: its element, or an app's own colour.
+        val premium = unlocked && (settings.playsPremium || GlowApps.colorOf(apps, pkg) != null)
         if (arrival == ArrivalMode.MESSAGE) {
             // The system pops a message up by itself for a channel that peeks; only otherwise does
             // the glow screen re-post it. One UI shows that heads-up even when the screen was off
@@ -166,6 +170,7 @@ class NotificationWakerService : NotificationListenerService() {
 
         // Glow screen on top of the lock screen: it lights the lock screen and plays the effect.
         if (host != null && !host.isAway) {
+            if (premium) Premium.played(this)
             host.onNewMessage()
             return
         }
@@ -175,7 +180,10 @@ class NotificationWakerService : NotificationListenerService() {
         if (SystemClock.elapsedRealtime() - lastWakeAt < WAKE_DEBOUNCE_MS) return
         // Put the glow screen on top of the lock screen (lighting the panel if it is off), or
         // with a black arrival and the screen off, straight into the black panel.
-        if (launch(wakeModeFor(arrival, power.isInteractive), color)) lastWakeAt = SystemClock.elapsedRealtime()
+        if (launch(wakeModeFor(arrival, power.isInteractive), color)) {
+            lastWakeAt = SystemClock.elapsedRealtime()
+            if (premium) Premium.played(this)
+        }
     }
 
     override fun onInterruptionFilterChanged(interruptionFilter: Int) {

@@ -12,6 +12,7 @@ import java.text.Normalizer
 /**
  * An app that has sent a message: its name, when it was first and last heard from, the colour
  * its icon gives ([autoColor]), and what the user chose: [muted], or a [color] of their own.
+ * [apart] is set by [settled] when its icon's colour is taken.
  */
 @Immutable
 data class GlowApp(
@@ -22,10 +23,15 @@ data class GlowApp(
     val autoColor: Int,
     val color: Int? = null,
     val muted: Boolean = false,
+    val apart: Apart? = null,
 ) {
-    /** What its messages glow in: the user's colour, else its icon's. */
-    val glow: Int get() = color ?: autoColor
+    /** What its messages glow in: the user's colour, else its icon's, unless that is taken. */
+    val glow: Int get() = color ?: apart?.color ?: autoColor
 }
+
+/** The colour an app glows in instead of its icon's, which glows like [from]'s (a label). */
+@Immutable
+data class Apart(val color: Int, val from: String)
 
 /**
  * What the user chose for every app, heard from or not, by package: one can be muted or given a
@@ -72,6 +78,16 @@ object GlowApps {
     /** The colour the user gave [pkg], or null to use its icon's. */
     fun colorOf(prefs: SharedPreferences, pkg: String): Int? =
         if (prefs.contains(COLOR + pkg)) prefs.getInt(COLOR + pkg, DEFAULT_GLOW_COLOR) else null
+
+    /**
+     * What [pkg]'s messages glow in, its icon giving [auto]: as [settled] works it out among every
+     * app heard from, the user's colours only with premium ([own]). Reads the whole file, so it
+     * is for a message the listener lets through, not for every notification.
+     */
+    fun glowOf(prefs: SharedPreferences, pkg: String, auto: Int, own: Boolean): Int {
+        val app = settled(read(prefs).apps, own).firstOrNull { it.pkg == pkg }
+        return app?.glow ?: colorOf(prefs, pkg)?.takeIf { own } ?: auto
+    }
 
     /**
      * A message from [pkg] at [at]: lists it the first time ([label] is only read then), and keeps
@@ -185,6 +201,41 @@ internal fun lookAlikes(apps: List<GlowApp>): Map<String, GlowApp> {
         if (closest >= 0) result[lit[i].pkg] = lit[closest]
     }
     return result
+}
+
+/**
+ * [apps] as their messages glow. The user's own colours count only with premium ([own]); without
+ * it each app has its icon's. An app whose icon colour can't be told from that of a lit app
+ * heard from before it ([LOOK_ALIKE_DISTANCE]) glows [Apart], in the nearest of [APP_COLORS] that
+ * can be: the swatch one would pick by hand, so the LED tells every app apart, premium or not.
+ * Earlier apps keep their colours, so a new app never changes how a known one glows. The user's
+ * colours are never moved: a clash they made is theirs to see ([lookAlikes]) and fix. Every
+ * colour is taken into OKLab once.
+ */
+internal fun settled(apps: List<GlowApp>, own: Boolean): List<GlowApp> {
+    val plain = if (own) apps else apps.map { if (it.color == null) it else it.copy(color = null) }
+    val lit = plain.filterNot { it.muted }.sortedWith(compareBy<GlowApp> { it.firstSeen }.thenBy { it.pkg })
+    val swatches = APP_COLORS.map { it.color to toOklab(Color(it.color)) }
+    val taken = ArrayList<Pair<GlowApp, FloatArray>>(lit.size)
+    val moved = HashMap<String, Apart>()
+    fun clash(lab: FloatArray) = taken.firstOrNull { oklabDistance(it.second, lab) < LOOK_ALIKE_DISTANCE }?.first
+    for (app in lit) {
+        val lab = toOklab(Color(app.glow))
+        val other = if (app.color == null) clash(lab) else null
+        if (other == null) {
+            taken += app to lab
+            continue
+        }
+        val free = swatches.sortedBy { oklabDistance(it.second, lab) }.firstOrNull { clash(it.second) == null }
+        if (free == null) {
+            taken += app to lab // nothing left to move it to: flagged as a look-alike instead
+            continue
+        }
+        moved[app.pkg] = Apart(free.first, other.label)
+        taken += app to free.second
+    }
+    if (moved.isEmpty()) return plain
+    return plain.map { app -> moved[app.pkg]?.let { app.copy(apart = it) } ?: app }
 }
 
 /**

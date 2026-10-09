@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// `-Ppremium=true` (make PREMIUM=1): premium unlocked for good, with no trial and no purchase,
+// for our own phones and testers. Never for Play: `make bundle` refuses it.
+val premiumUnlocked = providers.gradleProperty("premium").map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.example.ambientglow"
     // AndroidX core 1.19 requires compiling against API 37; runtime behaviour is pinned by targetSdk.
@@ -14,6 +18,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField("boolean", "PREMIUM", premiumUnlocked.toString())
+        if (premiumUnlocked) versionNameSuffix = "-premium"
     }
 
     androidResources {
@@ -41,7 +47,8 @@ android {
 
     buildFeatures {
         compose = true
-        // Only for BuildConfig.DEBUG, a constant: GlowLog compiles away in release, and so does the class.
+        // Constants only: DEBUG (GlowLog compiles away in release, and so does the class) and
+        // PREMIUM (premium unlocked at build time, see above).
         buildConfig = true
     }
 
@@ -67,6 +74,11 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.palette.ktx)
+    // Purchases go to the Play Store app over IPC. Its telemetry (datatransport) is left out: it
+    // would add INTERNET and background upload jobs, and billing skips logging without it.
+    implementation(libs.billing) {
+        exclude(group = "com.google.android.datatransport")
+    }
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

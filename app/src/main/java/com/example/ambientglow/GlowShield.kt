@@ -270,7 +270,7 @@ class GlowShield : AccessibilityService() {
 
     private fun addArrival(color: Int) {
         removeArrival() // a newer message restarts the effect in its colour
-        val settings = GlowPrefs.load(this)
+        val settings = GlowPrefs.loadPlaying(this)
         val owner = OverlayOwner()
         // A frame, so the blur views ([hazeTarget]) can sit beside the effect.
         // Owners on the window's root: Compose looks for them there.

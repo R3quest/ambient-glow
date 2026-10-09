@@ -11,3 +11,7 @@
     public static int v(...);
     public static int d(...);
 }
+
+# Play Billing's telemetry is excluded from the build (see app/build.gradle.kts); billing catches
+# its absence and skips logging.
+-dontwarn com.google.android.datatransport.**

@@ -117,8 +117,8 @@ enum class EdgeMaterial(@param:StringRes override val label: Int) : Labeled {
 /**
  * The element the spawn wave takes after; the wave always has one. Water is the glass wave, Fire
  * the ring of fire, Air a gust of wind, Earth a quake breaking the ground open; one with no look
- * of its own yet ([ready] is false) plays the bare wave until it has one. [premium] ones are
- * marked as such but free to try for now: nothing checks a purchase yet.
+ * of its own yet ([ready] is false) plays the bare wave until it has one. [premium] ones play
+ * while premium is unlocked ([Premium]); after its trial they arrive as Water ([playable]).
  */
 enum class SpawnElement(
     @param:StringRes override val label: Int,

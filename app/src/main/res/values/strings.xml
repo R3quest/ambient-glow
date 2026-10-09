@@ -29,8 +29,25 @@
     <string name="element_water_body">The wave rolls in like water over glass: a soft, shimmering crest of light with a gentle ripple behind it. Clear as glass, it always glows in the colour of the app that sent the message.</string>
     <string name="element_air_body">The camera lets out a gust that sweeps the screen in curling lines of wind, setting the glow alight as it passes.</string>
     <string name="element_earth_body">The camera strikes the ground: a shock runs out of it and the screen breaks open in light and stone, setting the glow alight as it passes.</string>
-    <string name="element_premium">PREMIUM · FREE TO TRY FOR NOW</string>
     <string name="element_premium_mark">Premium</string>
+    <string name="element_premium_over">Your premium trial is over: new messages arrive as Water until you unlock it.</string>
+
+    <plurals name="premium_untried">
+        <item quantity="one">PREMIUM · FREE FOR %1$d DAY</item>
+        <item quantity="other">PREMIUM · FREE FOR %1$d DAYS</item>
+    </plurals>
+    <plurals name="premium_days_left">
+        <item quantity="one">PREMIUM · LAST DAY</item>
+        <item quantity="other">PREMIUM · %1$d DAYS LEFT</item>
+    </plurals>
+    <string name="premium_over">PREMIUM · TRIAL OVER</string>
+    <string name="premium_untried_body">The days count from the first message it plays for. Previews here are always free.</string>
+    <string name="premium_unlock">UNLOCK · %1$s</string>
+    <string name="premium_unlock_action">Unlock premium, %1$s, paid once</string>
+    <string name="premium_over_title">Your premium trial is over</string>
+    <string name="premium_over_body">New messages arrive as Water again, and every app glows in its icon\'s colour. Your choices are kept: unlock premium once and they\'re back for good.</string>
+    <string name="premium_over_buy">Unlock for %1$s</string>
+    <string name="premium_over_dismiss">Not now</string>
     <string name="element_soon">Coming soon: it plays as the bare wave for now.</string>
     <string name="effects_off_title">Effects are off</string>
     <string name="effects_off_body">With Just the LED, new messages skip the effect and go straight to the dot. Pick a screen that plays an effect to style it here.</string>
@@ -299,6 +316,9 @@
     <string name="apps_color">COLOUR</string>
     <string name="apps_color_auto_body">Glows in the colour of its icon.</string>
     <string name="apps_color_own_body">Glows in the colour you picked. The first swatch goes back to its icon\'s.</string>
+    <string name="apps_apart">Kept apart from %1$s</string>
+    <string name="apps_color_apart_body">Its icon glows like %1$s\'s, so it takes the nearest colour that doesn\'t, and the LED tells them apart.</string>
+    <string name="apps_color_locked_body">Your own colours are premium. Until you unlock it, every app glows in its icon\'s colour, kept apart from look-alikes.</string>
     <string name="apps_alike_body">%1$s glows almost the same, and the LED would blink once for both. Give one of them its own colour.</string>
 
     <string name="group_screen_title">When a message arrives</string>

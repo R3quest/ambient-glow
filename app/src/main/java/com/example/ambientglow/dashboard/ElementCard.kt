@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.ambientglow.GlowSettings
+import com.example.ambientglow.PremiumState
 import com.example.ambientglow.R
 import com.example.ambientglow.SpawnElement
 import com.example.ambientglow.ui.components.CardDivider
@@ -60,18 +61,15 @@ private val SPARKLE_SIZE = 9.dp
 /** How far the elements fade while the spawn wave they play in is off. */
 private const val DIMMED = 0.45f
 
-/** Premium's mark: the brand magenta, kept apart from the amber the app warns in. */
-private val PremiumTint = GlowPalette.Magenta
-
 /**
  * The spawn wave and the element it takes after, under the preview that shows it. The wave's
  * switch heads the card since every element is a look of it; with it off the elements and their
  * options dim and can't be changed. Each element folds its own options under the picker, so
  * adding one adds a fold, not a wall of chips. [accent] is the preview colour, which Fire's, Air's
- * and Earth's colour chips show.
+ * and Earth's colour chips show. A premium element says where [premium] stands under it.
  */
 @Composable
-internal fun ElementCard(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
+internal fun ElementCard(settings: GlowSettings, accent: Color, premium: PremiumModel, onEffect: (GlowSettings) -> Unit) {
     val element = settings.element
     val presence = animateFloatAsState(if (settings.spawn) 1f else DIMMED, GlowMotion.stateChange(), label = "dim")
     // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
@@ -92,12 +90,17 @@ internal fun ElementCard(settings: GlowSettings, accent: Color, onEffect: (GlowS
                 onEffect(settings.copy(element = picked))
             }
             Spacer(Modifier.height(10.dp))
+            val over = premium.state == PremiumState.Over
             OptionBody(element) { shown ->
                 val body = stringResource(shown.body)
-                if (shown.ready) body else body + " " + stringResource(R.string.element_soon)
+                when {
+                    !shown.ready -> body + " " + stringResource(R.string.element_soon)
+                    shown.premium && over -> body + " " + stringResource(R.string.element_premium_over)
+                    else -> body
+                }
             }
-            Disclosure(visible = element.premium) {
-                Box(Modifier.padding(top = 10.dp)) { PremiumLine() }
+            Disclosure(visible = element.premium && premium.state != PremiumState.Owned) {
+                PremiumLine(premium, Modifier.padding(top = 10.dp))
             }
             // Each element with a look of its own folds its options here; the others get one as they get a look.
             Disclosure(visible = element == SpawnElement.WATER) {
@@ -193,20 +196,6 @@ private fun ElementPicker(selected: SpawnElement, enabled: Boolean, onSelect: (S
     }
 }
 
-/** Says a premium element is one, and that it is free to try for now. */
-@Composable
-private fun PremiumLine() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Sparkle(PremiumTint, Modifier.size(SPARKLE_SIZE))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = stringResource(R.string.element_premium),
-            style = MaterialTheme.typography.labelSmall,
-            color = PremiumTint,
-        )
-    }
-}
-
 /** The app's four-point sparkle on the glyphs' 24-unit grid; Fire's sparks are drawn as it too. */
 internal const val SPARKLE = "M12 1 C12.9 7.6 16.4 11.1 23 12 C16.4 12.9 12.9 16.4 12 23 C11.1 16.4 7.6 12.9 1 12 C7.6 11.1 11.1 7.6 12 1 Z"
 
@@ -214,7 +203,7 @@ private val SPARKLE_SHAPE = PathParser().parsePathString(SPARKLE).toPath()
 
 /** A four-point sparkle, filled, on the glyphs' 24-unit grid. */
 @Composable
-private fun Sparkle(color: Color, modifier: Modifier) {
+internal fun Sparkle(color: Color, modifier: Modifier) {
     Canvas(modifier) {
         scale(size.minDimension / 24f, pivot = Offset.Zero) { drawPath(SPARKLE_SHAPE, color) }
     }

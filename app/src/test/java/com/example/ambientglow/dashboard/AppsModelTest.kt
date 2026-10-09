@@ -63,11 +63,11 @@ class AppsModelTest {
     fun mutingTakesTheAppOffTheLedAndKeepsOthers() {
         GlowPending.put(PendingGlow(key = "1", pkg = "chat", color = green))
         GlowPending.put(PendingGlow(key = "2", pkg = "mail", color = blue))
-        model.mute("chat", true)
+        model.mute("chat", true, own = true)
         assertEquals(setOf("chat"), model.current.choices.muted)
         assertEquals(listOf("mail"), GlowPending.entries.map { it.pkg })
 
-        model.mute("chat", false)
+        model.mute("chat", false, own = true)
         assertTrue(model.current.choices.muted.isEmpty())
     }
 

@@ -57,9 +57,13 @@ object GlowPrefs {
 
     fun load(context: Context): GlowSettings = load(prefs(context))
 
+    /** The look as a message plays it: premium's only while it is unlocked ([playable]). */
+    fun loadPlaying(context: Context): GlowSettings = load(context).playable(Premium.unlocked(context))
+
     /** Starts reading the file in the background, so the first message's [load] doesn't wait on disk. */
     fun warm(context: Context) {
         prefs(context)
+        Premium.prefs(context)
     }
 
     fun shieldOffered(context: Context): Boolean = prefs(context).getBoolean(KEY_SHIELD_OFFERED, false)

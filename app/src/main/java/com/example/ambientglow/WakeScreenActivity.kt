@@ -469,7 +469,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         ending.value = false
         if (stowed) return // nobody to show it to: the LED has it once the phone is taken out
         timers.removeCallbacks(sleepAfterBreath)
-        settings.value = GlowPrefs.load(this) // the arrival choice may have changed since launch
+        settings.value = GlowPrefs.loadPlaying(this) // the arrival choice may have changed since launch
         val arrival = arrivalFor(settings.value.arrival, GlowSession.resting)
         when (arrival) {
             ArrivalMode.LOCK_SCREEN -> {
@@ -588,7 +588,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun start(intent: Intent?) {
         GlowLauncher.dismissBridge(this)
         timers.removeCallbacksAndMessages(null)
-        settings.value = GlowPrefs.load(this)
+        settings.value = GlowPrefs.loadPlaying(this)
         if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
             finishAndRemoveTask()
