@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.PathInterpolator
@@ -42,7 +43,10 @@ import kotlin.math.sqrt
  *   stays on top of the glow screen for 100-450 ms and shows its battery icon and nav handle at
  *   the system brightness. The glow screen raises the cover just before such a wake and drops it
  *   once its own window owns the (hidden) bars. When the LED takes over a lit lock screen, the
- *   cover fades in over it first ([dimIn]), so the takeover isn't a cut to black.
+ *   screen fades to black first ([dimIn]), so the takeover isn't a cut to black: under the
+ *   effect while it plays, so its last light still lands on the LED, then as the cover. The Edge
+ *   Frame's LED goes out on its first exhale in that cover, and the glow screen's own LED starts
+ *   once it has ([hideWhenDone]), so the light never cuts between the two windows.
  *
  * No app window can draw over a visible lock screen; an accessibility overlay can, because it
  * sits above the system bars and the keyguard. The service subscribes to no accessibility events
@@ -58,8 +62,22 @@ class GlowShield : AccessibilityService() {
     private var cover: View? = null
     private var coverParams: WindowManager.LayoutParams? = null
     private var dim: Dim? = null
+
+    /** The dim, while it plays under the effect in the effect's own window ([addDimCover]). */
+    private var backdrop: View? = null
     private var arrival: FrameLayout? = null
+    private var arrivalEffect: View? = null
     private var arrivalOwner: OverlayOwner? = null
+
+    /**
+     * The effect's last light (the Edge Frame's LED going out on its first exhale), still playing
+     * in the window it left as the cover ([keepAsCover]), and what keeps its composition alive.
+     */
+    private var tail: View? = null
+    private var tailOwner: OverlayOwner? = null
+
+    /** Asked for once the cover is gone, the tail played out first ([hideWhenDone]). */
+    private var onCoverGone: (() -> Unit)? = null
     private var arrivalParams: WindowManager.LayoutParams? = null
     private val geometry = mutableStateOf(ScreenGeometry.Unknown)
 
@@ -116,21 +134,84 @@ class GlowShield : AccessibilityService() {
     }
 
     /**
-     * The cover, faded in over [durationMs] above the arrival window. The effect's tail fades out
-     * under it and is removed once the screen is black.
+     * Black, faded in over [durationMs]. With the effect still up, under it in its own window: the
+     * lock screen goes dark while the effect's tail (its last light landing on the LED) plays on
+     * over the black. When the effect's window would go, it stays as the cover instead ([keepAsCover]).
      */
     private fun addDimCover(durationMs: Long) {
         timers.removeCallbacks(hideNow)
         timers.postDelayed(hideNow, MAX_COVER_MS)
-        if (cover != null) return
+        if (cover != null || backdrop != null) return
         val view = View(this).apply {
             setBackgroundColor(Color.BLACK)
             alpha = 0f
         }
-        coverParams = addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
-        cover = view
-        GlowLog.d { "shield dimming" }
+        val frame = arrival
+        if (frame != null) {
+            // Above the blur views, below the effect, which is the frame's last child.
+            frame.addView(view, frame.childCount - 1, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            backdrop = view
+        } else {
+            coverParams = addOverlay(view, PixelFormat.TRANSLUCENT, "AmbientGlow:shield") ?: return
+            cover = view
+        }
+        GlowLog.d { "shield dimming${if (frame != null) " under the effect" else ""}" }
         dim = Dim(view, durationMs).also { Choreographer.getInstance().postFrameCallback(it) }
+    }
+
+    /**
+     * The effect's window was to go while the screen dims under the effect: it stays, as the
+     * cover, its blur taken out and the dim going on in it. A new cover would draw nothing for its
+     * first frame, and the lit lock screen would show through it. An [effect] still playing plays
+     * out in it, over the black, as the [tail]; [owner] keeps it alive until then.
+     */
+    private fun keepAsCover(frame: FrameLayout, params: WindowManager.LayoutParams?, dimming: View, effect: View?, owner: OverlayOwner?) {
+        for (i in frame.childCount - 1 downTo 0) {
+            val child = frame.getChildAt(i)
+            if (child !== dimming && child !== effect) frame.removeViewAt(i)
+        }
+        if (effect != null) {
+            tail = effect
+            tailOwner = owner
+        } else {
+            owner?.destroy()
+        }
+        val blurred = params != null && params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0
+        if (blurred && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.blurBehindRadius = 0
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
+            runCatching { windowManager.updateViewLayout(frame, params) }
+        }
+        cover = frame
+        coverParams = params
+        GlowLog.d { "shield dim kept as the cover at ${dimming.alpha}${if (effect != null) ", its tail playing" else ""}" }
+    }
+
+    /** The effect has played out: its window goes, or, kept as the cover, its tail does. */
+    private fun effectDone(frame: View) {
+        if (arrival === frame) {
+            arrivalEffect = null // nothing left of it to play
+            removeArrival()
+        } else if (tail?.parent === frame) {
+            endTail()
+        }
+    }
+
+    private fun endTail() {
+        val view = tail ?: return
+        tail = null
+        (view.parent as? ViewGroup)?.removeView(view)
+        tailOwner?.destroy()
+        tailOwner = null
+        GlowLog.d { "shield tail done" }
+        // Asked to go once it had played out.
+        if (onCoverGone != null) removeCover()
+    }
+
+    /** Down now, or once the tail has played out; [onGone] either way, as the cover goes. */
+    private fun removeCoverWhenDone(onGone: () -> Unit) {
+        onCoverGone = onGone
+        if (tail == null) removeCover() else GlowLog.d { "shield down after the tail" }
     }
 
     /**
@@ -143,7 +224,7 @@ class GlowShield : AccessibilityService() {
         private var startNanos = -1L
 
         override fun doFrame(frameTimeNanos: Long) {
-            if (cover !== view) return
+            if (cover !== view && backdrop !== view) return
             if (startNanos < 0L) startNanos = frameTimeNanos
             val f = ((frameTimeNanos - startNanos) / 1_000_000f / durationMs).coerceIn(0f, 1f)
             view.alpha = DIM_EASE.getInterpolation(f)
@@ -158,14 +239,33 @@ class GlowShield : AccessibilityService() {
 
     private fun removeCover() {
         timers.removeCallbacks(hideNow)
-        val view = cover ?: return
-        cover = null
-        coverParams = null
         // A cancelled dim never reaches its end, so it can never remove a newer arrival.
         dim?.let { Choreographer.getInstance().removeFrameCallback(it) }
         dim = null
-        runCatching { windowManager.removeViewImmediate(view) }
-        GlowLog.d { "shield down" }
+        // Still dimming under the effect: the lit lock screen comes back from under it. (In the
+        // window the effect left, it goes with the cover.)
+        backdrop?.let { view ->
+            backdrop = null
+            if (cover == null) {
+                (view.parent as? ViewGroup)?.removeView(view)
+                GlowLog.d { "shield dim dropped" }
+            }
+        }
+        // A tail still playing is cut: it goes with the window it plays in.
+        tail = null
+        tailOwner?.destroy()
+        tailOwner = null
+        val view = cover
+        if (view != null) {
+            cover = null
+            coverParams = null
+            runCatching { windowManager.removeViewImmediate(view) }
+            GlowLog.d { "shield down" }
+        }
+        onCoverGone?.let {
+            onCoverGone = null
+            it()
+        }
     }
 
     private fun addArrival(color: Int) {
@@ -179,14 +279,13 @@ class GlowShield : AccessibilityService() {
             setViewTreeSavedStateRegistryOwner(owner)
         }
         val haze = hazeTarget(settings, view)
-        view.addView(
-            ComposeView(this).apply {
-                setContent {
-                    val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
-                    ArrivalEffect(settings.forScreen(lens), color, lens, onDone = { removeArrival() }, onBlurBehind = haze)
-                }
-            },
-        )
+        val effect = ComposeView(this).apply {
+            setContent {
+                val lens = geometry.value.fitted(settings, resources.displayMetrics.density)
+                ArrivalEffect(settings.forScreen(lens), color, lens, onDone = { effectDone(view) }, onBlurBehind = haze)
+            }
+        }
+        view.addView(effect)
         ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
             geometry.value = ScreenGeometry.from(insets)
             insets
@@ -197,6 +296,7 @@ class GlowShield : AccessibilityService() {
             return
         }
         arrival = view
+        arrivalEffect = effect
         arrivalOwner = owner
         arrivalParams = params
         timers.postDelayed(stopArrivalNow, MAX_ARRIVAL_MS)
@@ -207,8 +307,14 @@ class GlowShield : AccessibilityService() {
         timers.removeCallbacks(stopArrivalNow)
         val view = arrival ?: return
         arrival = null
-        runCatching { windowManager.removeViewImmediate(view) }
-        arrivalOwner?.destroy()
+        val dimming = backdrop
+        if (dimming != null) {
+            keepAsCover(view, arrivalParams, dimming, arrivalEffect, arrivalOwner)
+        } else {
+            runCatching { windowManager.removeViewImmediate(view) }
+            arrivalOwner?.destroy()
+        }
+        arrivalEffect = null
         arrivalOwner = null
         arrivalParams = null
         GlowLog.d { "arrival down" }
@@ -383,7 +489,7 @@ class GlowShield : AccessibilityService() {
         private const val MAX_BLACKOUT_MS = 20_000L
 
         /** Upper bound for the arrival overlay, in case the effect never reports done. */
-        private const val MAX_ARRIVAL_MS = 4_000L
+        private const val MAX_ARRIVAL_MS = 5_000L
 
         // Alpha eases out so the remaining light falls about evenly to the eye (perceived lightness
         // is roughly the cube root of luminance); a linear or accelerating alpha holds the screen
@@ -414,6 +520,16 @@ class GlowShield : AccessibilityService() {
 
         fun hide() {
             instance?.removeCover()
+        }
+
+        /**
+         * Takes the cover down once the effect's tail, if one plays in it, has played out (the
+         * Edge Frame's LED going out on its first exhale over the black), then [onGone]; at once
+         * when nothing plays, or when the service is off.
+         */
+        fun hideWhenDone(onGone: () -> Unit) {
+            val shield = instance
+            if (shield == null) onGone() else shield.removeCoverWhenDone(onGone)
         }
 
         /** Plays the chosen effect once over whatever is on screen. No-op when the service is off. */

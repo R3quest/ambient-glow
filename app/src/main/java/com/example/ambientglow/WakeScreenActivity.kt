@@ -1071,8 +1071,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private fun finishSettling() {
         timers.removeCallbacks(settleNow)
-        GlowShield.hide()
-        if (!settling.value) return
+        // The Edge Frame's LED may still be going out on its first exhale in the cover: the dot
+        // starts its round once it has, in the same spot, so the light never cuts.
+        GlowShield.hideWhenDone(::showSettled)
+    }
+
+    private fun showSettled() {
+        if (isDestroyed || !settling.value) return
         settling.value = false
         if (face.value == Face.LED) {
             GlowLog.d { "act settled: LED shows" }

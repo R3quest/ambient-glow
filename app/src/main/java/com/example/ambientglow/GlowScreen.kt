@@ -202,6 +202,8 @@ private fun LedLayer(
         onCamera = onCamera,
         geometry = geometry,
         ringGrowPx = if (onCamera) RING_SHIFTS[cycle % RING_SHIFTS.size] else 0f,
+        material = ledMaterial(settings, elementFramesSupported),
+        clock = { clock.value },
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {

@@ -11,10 +11,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.center
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
@@ -69,8 +66,8 @@ internal fun ledRadiusAt(size: DotSize, scale: Float): Dp = (size.radius * scale
 internal fun ledRingGapAt(scale: Float): Dp = (LED_RING_GAP * scale).coerceAtLeast(MIN_SCALED_RING_GAP)
 
 /**
- * A bright core, a hot white centre and a soft radial bloom. The brush is built once per
- * colour/size change in drawWithCache; each breath frame only changes the layer alpha.
+ * A bright core, a hot white centre and a soft radial bloom, or its element's material. Built
+ * once per colour/size change in drawWithCache; each breath frame changes the layer alpha.
  * The dashboard draws its real-size LED preview and the phone mock-up's LED with this too.
  *
  * The layer is only as big as the light: a breath frame then redraws that square, not the whole
@@ -80,6 +77,8 @@ internal fun ledRingGapAt(scale: Float): Dp = (LED_RING_GAP * scale).coerceAtLea
  * [onCamera]: the same light as a ring hugging the punch-hole, whose pixels cannot light;
  * [radius] then sets the ring's thickness and [ringGap] its clearance from the lens (the mock-up
  * scales it with its lens).
+ *
+ * [material]: what it is made of ([LedLook]); one that moves reads [clock], ms into the breath.
  */
 @Composable
 internal fun LedDot(
@@ -93,6 +92,8 @@ internal fun LedDot(
     geometry: ScreenGeometry = ScreenGeometry.Unknown,
     ringGrowPx: Float = 0f,
     ringGap: Dp = LED_RING_GAP,
+    material: LedMaterial = LedMaterial.NEON,
+    clock: () -> Float = { 0f },
 ) {
     val density = LocalDensity.current
     val light = remember(density, radius, onCamera, geometry, ringGrowPx, ringGap) {
@@ -121,41 +122,9 @@ internal fun LedDot(
                 }
             }
             .drawWithCache {
-                val center = size.center
-                val bloom = light.bloom
-                val hot = lerp(color, Color.White, 0.45f)
-                if (onCamera) {
-                    val ring = light.ring
-                    val halo = Brush.radialGradient(
-                        0f to Color.Transparent,
-                        light.lens / bloom to Color.Transparent,
-                        ring / bloom to color.copy(alpha = 0.65f),
-                        (ring + (bloom - ring) * 0.35f) / bloom to color.copy(alpha = 0.22f),
-                        1f to Color.Transparent,
-                        center = center,
-                        radius = bloom,
-                    )
-                    val coreStroke = Stroke(light.line)
-                    val hotStroke = Stroke(light.line * 0.4f)
-                    return@drawWithCache onDrawBehind {
-                        drawCircle(halo, radius = bloom, center = center)
-                        drawCircle(color, radius = ring, center = center, style = coreStroke)
-                        drawCircle(hot, radius = ring, center = center, style = hotStroke)
-                    }
-                }
-                val core = light.core
-                val halo = Brush.radialGradient(
-                    0f to color.copy(alpha = 0.65f),
-                    0.35f to color.copy(alpha = 0.22f),
-                    1f to Color.Transparent,
-                    center = center,
-                    radius = bloom,
-                )
-                onDrawBehind {
-                    drawCircle(halo, radius = bloom, center = center)
-                    drawCircle(color, radius = core, center = center)
-                    drawCircle(hot, radius = core * 0.5f, center = center)
-                }
+                val look = LedLook(material, color, light, onCamera)
+                // Neon changes only its layer's alpha; a material that moves redraws its square.
+                onDrawBehind { look.draw(this, size.center, 1f, if (look.moves) clock() else 0f) }
             },
     )
 }

@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 class HandOffTest {
 
@@ -16,29 +17,47 @@ class HandOffTest {
     }
 
     @Test
-    fun itLandsBeforeItGoesOutAndIsOutAsTheEffectEnds() {
+    fun itLandsAsTheLedsFirstBreathAndGoesOutOnItsExhale() {
         assertEquals(0f, handOffFlightAt(HANDOFF_FLY_FROM_MS))
-        assertEquals(1f, handOffFlightAt(HANDOFF_FLY_FROM_MS + HANDOFF_FLY_MS), 1e-4f)
-        // It has the LED's shape by the time it lands, and only then starts to go out.
-        assertEquals(1f, handOffMorphAt(HANDOFF_FLY_FROM_MS + HANDOFF_FLY_MS + 40f), 1e-4f)
-        assertTrue(HANDOFF_FLY_FROM_MS + HANDOFF_FLY_MS <= HANDOFF_FADE_FROM_MS)
-        assertEquals(1f, handOffFadeAt(HANDOFF_FADE_FROM_MS))
-        assertEquals(0f, handOffFadeAt(ARRIVAL_MS.toFloat()))
+        assertEquals(1f, handOffFlightAt(HANDOFF_LANDED_MS), 1e-4f)
+        // It has the LED's shape as it lands, at the peak of the LED's breath.
+        assertEquals(1f, handOffMorphAt(HANDOFF_LANDED_MS + 40f), 1e-4f)
+        assertEquals(1f, handOffFadeAt(HANDOFF_LANDED_MS))
+        assertEquals(LED_RISE_MS, handOffBreathMs(HANDOFF_LANDED_MS), 0f)
+        // The rest is the LED's own exhale, and the Edge Frame ends with it.
+        val mid = HANDOFF_LANDED_MS + 500f
+        assertEquals(ledBreathAt(LED_RISE_MS + 500f), handOffFadeAt(mid), 1e-6f)
+        assertEquals(0f, handOffFadeAt(HANDOFF_END_MS))
+        assertEquals(HANDOFF_END_MS.toInt(), arrivalMsFor(GlowSettings(style = GlowStyle.EDGE_FRAME)))
+        assertEquals(ARRIVAL_MS, arrivalMsFor(GlowSettings(style = GlowStyle.BEACON)))
     }
 
     @Test
     fun itGoesOutWithNoStepAtTheEnd() {
         // The panel steps its brightness on black: the last frames before the end must be near zero.
-        val end = ARRIVAL_MS.toFloat()
+        val end = HANDOFF_END_MS
         assertTrue(handOffFadeAt(end - 8f) < 0.01f)
         var last = 1f
-        var ms = HANDOFF_FADE_FROM_MS
+        var ms = HANDOFF_LANDED_MS
         while (ms <= end) {
             val level = handOffFadeAt(ms)
             assertTrue("rises at $ms", level <= last + 1e-6f)
             last = level
             ms += 4f
         }
+    }
+
+    @Test
+    fun theLandingSpringsAndSettlesAndItsFlashIsBrief() {
+        assertEquals(0f, handOffSpringAt(HANDOFF_LANDED_MS), 0f)
+        // Swells first, swings back once, and has settled well inside the exhale.
+        val peak = (1..120).maxOf { handOffSpringAt(HANDOFF_LANDED_MS + it) }
+        val dip = (120..260).minOf { handOffSpringAt(HANDOFF_LANDED_MS + it) }
+        assertTrue("peak $peak", peak in 0.5f..1f)
+        assertTrue("dip $dip", dip in -0.5f..-0.1f)
+        assertTrue(abs(handOffSpringAt(HANDOFF_LANDED_MS + 700f)) < 0.02f)
+        assertEquals(0f, handOffFlashAt(HANDOFF_LANDED_MS), 0f)
+        assertTrue(handOffFlashAt(HANDOFF_LANDED_MS + 500f) < 0.02f)
     }
 
     @Test

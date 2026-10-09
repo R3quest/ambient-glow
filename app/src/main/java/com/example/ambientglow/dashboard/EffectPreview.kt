@@ -56,11 +56,13 @@ import com.example.ambientglow.GlassHaze
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.LED_BREATH_MS
 import com.example.ambientglow.LedDot
+import com.example.ambientglow.elementFramesSupported
 import com.example.ambientglow.R
 import com.example.ambientglow.RealTimeMotion
 import com.example.ambientglow.forPreview
 import com.example.ambientglow.glassHaze
 import com.example.ambientglow.ledBreathAt
+import com.example.ambientglow.ledMaterial
 import com.example.ambientglow.ledRingGapAt
 import com.example.ambientglow.ui.components.Chevron
 import com.example.ambientglow.ui.theme.GlowPalette
@@ -263,6 +265,8 @@ internal fun EffectPreview(
                 onCamera = settings.ledOnCamera,
                 geometry = mockGeometry,
                 ringGap = ledRingGapAt(scale),
+                material = ledMaterial(settings, elementFramesSupported),
+                clock = { led.value },
                 modifier = Modifier.fillMaxSize(),
             )
         }

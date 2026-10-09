@@ -27,8 +27,10 @@ import com.example.ambientglow.LED_RISE_MS
 import com.example.ambientglow.LedDot
 import com.example.ambientglow.RealTimeMotion
 import com.example.ambientglow.ScreenGeometry
+import com.example.ambientglow.elementFramesSupported
 import com.example.ambientglow.hideBarsOnBlack
 import com.example.ambientglow.ledBreathAt
+import com.example.ambientglow.ledMaterial
 import com.example.ambientglow.showBars
 import com.example.ambientglow.solveRising
 import kotlinx.coroutines.coroutineScope
@@ -133,6 +135,8 @@ internal fun LedShowcase(
         radius = settings.dotSize.radius,
         onCamera = settings.ledOnCamera,
         geometry = geometry,
+        material = ledMaterial(settings, elementFramesSupported),
+        clock = { clock.value },
         modifier = Modifier.fillMaxSize(),
     )
 }

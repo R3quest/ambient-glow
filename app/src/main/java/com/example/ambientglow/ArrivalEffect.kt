@@ -55,8 +55,19 @@ import kotlinx.coroutines.withContext
 // reads one value and allocates nothing.
 // ---------------------------------------------------------------------------------------------
 
-/** Whole effect. Ends before the LED takes the lock screen back (2.5 s after the wake). */
+/**
+ * Whole effect, its last light gone before the LED takes the lock screen back (2.5 s after the
+ * wake). The Edge Frame's hand-off then runs on as the LED's first breath ([arrivalMsFor]).
+ */
 internal const val ARRIVAL_MS = 2_300
+
+/**
+ * How long [settings]' effect plays: the Edge Frame's lands on the LED and goes out on the LED's
+ * own exhale ([HANDOFF_END_MS]); on a lit lock screen that tail plays over the black the screen
+ * has dimmed to ([GlowShield.dimIn]).
+ */
+internal fun arrivalMsFor(settings: GlowSettings): Int =
+    if (settings.style == GlowStyle.EDGE_FRAME) HANDOFF_END_MS.toInt() else ARRIVAL_MS
 
 /** Light pools in the camera before the wave is released: the flash is the cause, the wave its effect. */
 internal const val SPAWN_GATHER_MS = 110f
@@ -358,7 +369,8 @@ fun ArrivalEffect(
                     // Debug builds only: in release no extra coroutine wakes on every frame.
                     val trace = if (BuildConfig.DEBUG) launch { traceFrames(settings, preview = scale < 1f) } else null
                     val haze = blur?.let { launch { followHaze(it, settings.hazeArea) { clock.value } } }
-                    clock.animateTo(ARRIVAL_MS.toFloat(), tween(ARRIVAL_MS, easing = LinearEasing))
+                    val length = arrivalMsFor(settings)
+                    clock.animateTo(length.toFloat(), tween(length, easing = LinearEasing))
                     trace?.cancel()
                     haze?.cancel()
                 }
