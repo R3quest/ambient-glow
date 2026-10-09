@@ -46,7 +46,7 @@
     <string name="premium_unlock_action">Unlock premium, %1$s, paid once</string>
     <string name="premium_open">Premium</string>
     <string name="premium_title">Premium</string>
-    <string name="premium_intro">Make every message yours. Paid once, yours for good.</string>
+    <string name="premium_intro">Make every message yours.</string>
     <string name="premium_elements_title">Fire, Air and Earth</string>
     <string name="premium_elements_body">Three more elements for the wave and the Edge Frame, each with options of its own. New elements are included as they come.</string>
     <string name="premium_colours_title">Your own colour for any app</string>

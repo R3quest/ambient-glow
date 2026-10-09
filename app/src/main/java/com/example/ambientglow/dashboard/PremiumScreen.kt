@@ -35,9 +35,10 @@ import com.example.ambientglow.ui.theme.GlowPalette
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Where the trial stands, what premium adds, then Play's price to unlock it, or why it can't be
- * bought right now (no Play Store, not signed in). What stays free is said under it, so buying
- * is never mistaken for needing to.
+ * Where the trial stands and what premium adds, in one card; under it the page's one action,
+ * Play's price to unlock it (or why it can't be bought right now: no Play Store, not signed
+ * in), apart from the list so it never reads as one more item. What stays free comes last, so
+ * buying is never mistaken for needing to.
  */
 @Composable
 internal fun PremiumScreen(premium: PremiumModel, onBack: () -> Unit) {
@@ -60,26 +61,30 @@ internal fun PremiumScreen(premium: PremiumModel, onBack: () -> Unit) {
             )
             Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (premium.state != PremiumState.Owned) PremiumStatus(premium.state)
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    for (element in listOf(SpawnElement.FIRE, SpawnElement.AIR, SpawnElement.EARTH)) {
-                        ElementGlyph(element, tint = { element.accent })
+                // The elements' glyphs head their item, so they read as its picture.
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        for (element in listOf(SpawnElement.FIRE, SpawnElement.AIR, SpawnElement.EARTH)) {
+                            ElementGlyph(element, tint = { element.accent })
+                        }
                     }
+                    PremiumItem(R.string.premium_elements_title, R.string.premium_elements_body)
                 }
-                PremiumItem(R.string.premium_elements_title, R.string.premium_elements_body)
                 CardDivider()
                 PremiumItem(R.string.premium_colours_title, R.string.premium_colours_body)
                 CardDivider()
                 PremiumItem(R.string.premium_once_title, R.string.premium_once_body)
-                Spacer(Modifier.height(2.dp))
-                when {
-                    premium.state == PremiumState.Owned -> OptionNote(stringResource(R.string.premium_owned))
-                    price != null && activity != null -> PrimaryButton(
-                        text = stringResource(R.string.premium_over_buy, price),
-                        onClick = { premium.unlock(activity) },
-                    )
-                    else -> OptionNote(stringResource(R.string.premium_unavailable))
-                }
             }
+            Spacer(Modifier.height(6.dp))
+            when {
+                premium.state == PremiumState.Owned -> OptionNote(stringResource(R.string.premium_owned))
+                price != null && activity != null -> PrimaryButton(
+                    text = stringResource(R.string.premium_over_buy, price),
+                    onClick = { premium.unlock(activity) },
+                )
+                else -> OptionNote(stringResource(R.string.premium_unavailable))
+            }
+            Spacer(Modifier.height(10.dp))
             OptionNote(stringResource(R.string.premium_free))
         }
     }
