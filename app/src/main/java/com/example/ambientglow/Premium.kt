@@ -10,6 +10,8 @@ const val TRIAL_DAYS = 7
 
 private const val DAY_MS = 24 * 60 * 60 * 1000L
 
+internal const val TRIAL_MS = TRIAL_DAYS * DAY_MS
+
 /**
  * Where premium stands: Fire, Air and Earth, and an app's own colour. It is bought once, and free
  * to try for [TRIAL_DAYS] from the first message it plays for, so the week counts only once it
@@ -40,7 +42,7 @@ sealed interface PremiumState {
 internal fun premiumState(owned: Boolean, trialStart: Long, now: Long): PremiumState {
     if (owned) return PremiumState.Owned
     if (trialStart <= 0L) return PremiumState.Untried
-    val left = trialStart + TRIAL_DAYS * DAY_MS - now.coerceAtLeast(trialStart)
+    val left = trialStart + TRIAL_MS - now.coerceAtLeast(trialStart)
     if (left <= 0L) return PremiumState.Over
     return PremiumState.Trial(daysLeft = ((left + DAY_MS - 1) / DAY_MS).toInt())
 }
@@ -96,6 +98,9 @@ object Premium {
         }
 
     fun unlocked(context: Context): Boolean = state(prefs(context)).unlocked
+
+    /** When the trial started, or 0: not yet, or a staged trial ([trialStage]), which has no clock. */
+    fun trialStart(prefs: SharedPreferences): Long = if (staged != null) 0L else prefs.getLong(KEY_TRIAL_START, 0L)
 
     /** A message played premium at [now]: the trial starts with the first one. */
     fun played(context: Context, now: Long = System.currentTimeMillis()) {

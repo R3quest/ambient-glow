@@ -181,12 +181,14 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val appsModel = rememberAppsModel()
     val premium = rememberPremiumModel()
     // One prompt per open at most, never in setup: the trial's end (PremiumOverCard), or else, once
-    // ever and a week in, Play's review card. Decided as the dashboard opens, so dismissing the
-    // trial's card doesn't bring the review on after it.
+    // ever and never in premium's way (reviewDue), Play's review card. Decided as the dashboard
+    // opens, so dismissing the trial's card doesn't bring the review on after it.
     val activity = LocalActivity.current
     LaunchedEffect(Unit) {
         if (inSetup || premium.overUnseen || activity == null) return@LaunchedEffect
-        if (!reviewDue(appsModel.current.apps, GlowPrefs.reviewAsked(context), System.currentTimeMillis())) return@LaunchedEffect
+        val asked = GlowPrefs.reviewAsked(context)
+        val due = reviewDue(appsModel.current.apps, asked, premium.state, premium.trialStart, System.currentTimeMillis())
+        if (!due) return@LaunchedEffect
         GlowPrefs.markReviewAsked(context)
         askForReview(activity)
     }

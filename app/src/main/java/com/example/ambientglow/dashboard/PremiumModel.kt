@@ -58,6 +58,13 @@ internal class PremiumModel(
             return Premium.state(prefs, clock())
         }
 
+    /** When the trial started, or 0 ([Premium.trialStart]). */
+    val trialStart: Long
+        get() {
+            version
+            return Premium.trialStart(prefs)
+        }
+
     /** The trial is over and the dashboard hasn't said so yet. */
     val overUnseen: Boolean get() = state == PremiumState.Over && !Premium.overSeen(prefs)
 
