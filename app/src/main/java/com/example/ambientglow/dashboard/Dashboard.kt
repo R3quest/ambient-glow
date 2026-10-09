@@ -183,9 +183,12 @@ internal fun Dashboard(reported: ScreenGeometry) {
     // One prompt per open at most, never in setup: the trial's end (PremiumOverCard), or else, once
     // ever and never in premium's way (reviewDue), Play's review card. Decided as the dashboard
     // opens, so dismissing the trial's card doesn't bring the review on after it.
+    // The trial's end is only news to someone it changes something for: on a premium element, or
+    // with a colour of their own. Someone who went back to Water isn't shown a paywall for nothing.
+    val overCard = premium.overUnseen && (settings.element.premium || appsModel.current.choices.colors.isNotEmpty())
     val activity = LocalActivity.current
     LaunchedEffect(Unit) {
-        if (inSetup || premium.overUnseen || activity == null) return@LaunchedEffect
+        if (inSetup || overCard || activity == null) return@LaunchedEffect
         val asked = GlowPrefs.reviewAsked(context)
         val due = reviewDue(appsModel.current.apps, asked, premium.state, premium.trialStart, System.currentTimeMillis())
         if (!due) return@LaunchedEffect
@@ -378,7 +381,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 }
                             }
                             TestHint(lockedTest, Modifier.padding(horizontal = PageGutter))
-                            Disclosure(visible = premium.overUnseen) {
+                            Disclosure(visible = overCard) {
                                 PremiumOverCard(premium, Modifier.padding(start = PageGutter, end = PageGutter, bottom = 14.dp))
                             }
                             Box(Modifier.padding(horizontal = PageGutter)) {
