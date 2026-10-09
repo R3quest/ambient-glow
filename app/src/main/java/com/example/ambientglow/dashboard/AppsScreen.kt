@@ -154,7 +154,7 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
     }
 
     Column(Modifier.fillMaxSize()) {
-        AppsHeader(onBack)
+        PageHeader(stringResource(R.string.group_apps_title), onBack)
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth().imePadding(),
             contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 20.dp, bottom = 24.dp),
@@ -225,9 +225,9 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
     }
 }
 
-/** Placed as the dashboard's header is, with a way back where its mark is. */
+/** A page's header (Apps, Premium), placed as the dashboard's is, with a way back where its mark is. */
 @Composable
-private fun AppsHeader(onBack: () -> Unit) {
+internal fun PageHeader(title: String, onBack: () -> Unit) {
     // The chevron points back, against the way the text reads.
     val turn = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -90f else 90f
     Row(
@@ -242,7 +242,7 @@ private fun AppsHeader(onBack: () -> Unit) {
         }
         Spacer(Modifier.width(14.dp))
         Text(
-            text = stringResource(R.string.group_apps_title),
+            text = title,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
         )

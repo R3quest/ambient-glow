@@ -254,7 +254,7 @@ private val GLYPHS: Map<SpawnElement, List<Path>> = mapOf(
 ).mapValues { (_, paths) -> paths.map { PathParser().parsePathString(it).toPath() } }
 
 @Composable
-private fun ElementGlyph(element: SpawnElement, tint: () -> Color) {
+internal fun ElementGlyph(element: SpawnElement, tint: () -> Color) {
     val paths = element.glyph
     Canvas(Modifier.size(GLYPH_SIZE)) {
         val unit = size.minDimension / 24f

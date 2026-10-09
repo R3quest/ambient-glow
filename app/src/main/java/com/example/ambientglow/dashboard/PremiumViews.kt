@@ -54,14 +54,7 @@ internal fun PremiumLine(premium: PremiumModel, modifier: Modifier = Modifier) {
     if (state == PremiumState.Owned) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Sparkle(PremiumTint, Modifier.size(SPARKLE_SIZE))
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = premiumLabel(state),
-                style = MaterialTheme.typography.labelSmall,
-                color = PremiumTint,
-                modifier = Modifier.weight(1f),
-            )
+            PremiumStatus(state, Modifier.weight(1f))
             val price = premium.price
             if (price != null) {
                 Spacer(Modifier.width(10.dp))
@@ -75,6 +68,16 @@ internal fun PremiumLine(premium: PremiumModel, modifier: Modifier = Modifier) {
                 color = GlowPalette.TextMuted,
             )
         }
+    }
+}
+
+/** Premium's sparkle and where its trial stands, in its tint. */
+@Composable
+internal fun PremiumStatus(state: PremiumState, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Sparkle(PremiumTint, Modifier.size(SPARKLE_SIZE))
+        Spacer(Modifier.width(8.dp))
+        Text(text = premiumLabel(state), style = MaterialTheme.typography.labelSmall, color = PremiumTint)
     }
 }
 

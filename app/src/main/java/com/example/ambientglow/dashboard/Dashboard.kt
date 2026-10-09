@@ -97,6 +97,7 @@ import com.example.ambientglow.GlowLauncher
 import com.example.ambientglow.GlowPrefs
 import com.example.ambientglow.GlowSettings
 import com.example.ambientglow.GlowStyle
+import com.example.ambientglow.PremiumState
 import com.example.ambientglow.R
 import com.example.ambientglow.ScreenGeometry
 import com.example.ambientglow.glassHaze
@@ -129,6 +130,9 @@ internal enum class DashboardTab(val label: Int) {
     EFFECT(R.string.tab_effect),
     LED(R.string.tab_led),
 }
+
+/** What the dashboard shows: the tabs, or a page over them from the header (Apps, Premium). */
+internal enum class DashboardPage { TABS, APPS, PREMIUM }
 
 /** Outer margins and the gap between sections: generous, so each block reads on its own. */
 internal val PageGutter = 24.dp
@@ -196,8 +200,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
         askForReview(activity)
     }
     val lockedTest = rememberLockedTest()
-    var appsOpen by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = appsOpen && !inSetup) { appsOpen = false }
+    var page by rememberSaveable { mutableStateOf(DashboardPage.TABS) }
+    BackHandler(enabled = page != DashboardPage.TABS && !inSetup) { page = DashboardPage.TABS }
 
     // The preview colour, and the real-size previews every change starts: the effect, or the
     // LED on a darkened screen. One at a time.
@@ -357,27 +361,36 @@ internal fun Dashboard(reported: ScreenGeometry) {
                         .windowInsetsPadding(DashboardInsets),
                 ) {
                     AnimatedContent(
-                        targetState = appsOpen,
-                        transitionSpec = { GlowMotion.page(forward = targetState) },
-                        label = "apps-screen",
-                    ) { open ->
-                        if (open) {
-                            AppsScreen(
-                                model = appsModel,
-                                premium = premium,
-                                onBack = { appsOpen = false },
-                                onTryColor = { glow ->
-                                    ledColor = Color(glow)
-                                    showLed(false)
-                                },
-                            )
-                            return@AnimatedContent
+                        targetState = page,
+                        transitionSpec = { GlowMotion.page(forward = targetState != DashboardPage.TABS) },
+                        label = "page",
+                    ) { shown ->
+                        when (shown) {
+                            DashboardPage.APPS -> {
+                                AppsScreen(
+                                    model = appsModel,
+                                    premium = premium,
+                                    onBack = { page = DashboardPage.TABS },
+                                    onTryColor = { glow ->
+                                        ledColor = Color(glow)
+                                        showLed(false)
+                                    },
+                                )
+                                return@AnimatedContent
+                            }
+                            DashboardPage.PREMIUM -> {
+                                PremiumScreen(premium, onBack = { page = DashboardPage.TABS })
+                                return@AnimatedContent
+                            }
+                            DashboardPage.TABS -> Unit
                         }
                         Column(Modifier.fillMaxSize()) {
                             BrandHeader(Modifier.padding(start = PageGutter, end = PageGutter, top = 14.dp, bottom = 18.dp)) {
+                                // Premium first, so the others stay put when it goes (owned).
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    if (premium.state != PremiumState.Owned) PremiumButton { page = DashboardPage.PREMIUM }
                                     TestButton(lockedTest)
-                                    AppsButton(marked = appsModel.hasNew, onClick = { appsOpen = true })
+                                    AppsButton(marked = appsModel.hasNew, onClick = { page = DashboardPage.APPS })
                                 }
                             }
                             TestHint(lockedTest, Modifier.padding(horizontal = PageGutter))
