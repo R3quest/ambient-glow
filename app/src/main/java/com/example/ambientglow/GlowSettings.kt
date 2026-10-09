@@ -41,9 +41,9 @@ enum class DotSize(val radius: Dp, @param:StringRes override val label: Int) : L
 }
 
 /**
- * How bright the LED dot's own light is, as its alpha over the black panel. Window brightness is
- * left alone (full on the LED screen, the system's in the dashboard preview), so this dims the
- * dot and nothing else.
+ * How bright the LED dot's own light is, as its alpha over the black panel, at the system
+ * brightness (on the LED screen and in the dashboard preview alike), so it follows the room's
+ * light like the rest of the phone and this dims the dot and nothing else.
  */
 enum class LedBrightness(val level: Float, @param:StringRes override val label: Int) : Labeled {
     SOFT(0.35f, R.string.led_brightness_soft),

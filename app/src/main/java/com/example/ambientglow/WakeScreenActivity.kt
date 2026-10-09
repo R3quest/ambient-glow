@@ -871,7 +871,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * so the uncover never shows. Lit from off, Android holds the panel dark until the lock screen
      * has drawn and gives it the system brightness from the start. Lit during the fade instead
      * (cancelling the sleep), the panel stays on: the half-built lock screen showed as it built
-     * up, bare wallpaper first, at the LED's full brightness until auto-brightness caught up.
+     * up, bare wallpaper first.
      */
     private fun revealAfterPower() {
         GlowLog.d { "act revealAfterPower" }
@@ -923,7 +923,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         window.clearFlags(UNTOUCHABLE)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Arranged while dark (or before focus): come up at the lowest brightness, dot hidden,
-        // until we own the bars. Already focused: go straight to full.
+        // until we own the bars. Already focused: straight to the system brightness.
         val focused = hasWindowFocus() && power.isInteractive
         settling.value = !focused
         // One UI's bars come up over us until the hand-over; cover them if the user allowed it.
@@ -1076,7 +1076,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (!settling.value) return
         settling.value = false
         if (face.value == Face.LED) {
-            GlowLog.d { "act settled: LED at full brightness" }
+            GlowLog.d { "act settled: LED at system brightness" }
             applyWindow(brightness = LED_WINDOW_BRIGHTNESS, lowRefresh = true)
         }
     }
@@ -1266,5 +1266,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 }
 
-/** Window brightness while the dot is lit: fixed, so [LedBrightness] dims only the dot's pixels. */
-private const val LED_WINDOW_BRIGHTNESS = 1f
+/**
+ * Window brightness while the dot is lit: the system's, the lock screen's own. Any override turns
+ * the light sensor off, and once the lock screen came over the LED (tap, power, takeover) it then
+ * showed at the override until auto-brightness had a fresh reading (~0.1 s, measured 500 → 176
+ * nits). So the dot follows the room's light like the rest of the phone, and [LedBrightness] only
+ * dims it from there.
+ */
+private const val LED_WINDOW_BRIGHTNESS = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
