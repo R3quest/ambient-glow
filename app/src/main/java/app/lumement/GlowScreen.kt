@@ -35,23 +35,11 @@ import kotlinx.coroutines.withContext
 // arrival, and nothing at all otherwise.
 // ---------------------------------------------------------------------------------------------
 
-/** Dark between breaths; with the breath it keeps a ~3.37 s period. */
-private const val LED_DARK_MS = 1_510L
-
-/** Dark between two apps' breaths within one round; the round ends with the full [LED_DARK_MS]. */
-private const val LED_GAP_MS = 700L
-
 /**
  * One 10 Hz relayout vsync plus SurfaceFlinger's switch at its next vsync, with margin; taken
  * from the dark gap, so the period is unchanged.
  */
 private const val LED_RATE_PREROLL_MS = 200L
-
-/** Burn-in guard: the glow steps through a 2 px square, one corner per breath. */
-private val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f), Offset(0f, 2f))
-
-/** The ring's burn-in guard: it breathes 1 px in and out instead, so it stays centred on the lens. */
-private val RING_SHIFTS = listOf(0f, 1f, 0f, -1f)
 
 @Composable
 internal fun GlowScreen(
@@ -187,8 +175,7 @@ private fun LedLayer(
                 clock.snapTo(0f)
                 clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
                 fade(false)
-                val last = palette.size <= 1 || cycle % palette.size == palette.size - 1
-                delay((if (last) LED_DARK_MS else LED_GAP_MS) - LED_RATE_PREROLL_MS)
+                delay(ledPauseAfter(cycle, palette.size) - LED_RATE_PREROLL_MS)
                 cycle++
                 blink()
             }

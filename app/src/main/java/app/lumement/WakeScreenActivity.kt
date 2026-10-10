@@ -57,6 +57,8 @@ internal enum class Face {
  * - With [GlowShield], the LED blinks ([blinks]): the phone sleeps between breaths, the lock
  *   screen in front, so power wakes it straight into the lock screen. The screen-offs above are
  *   then the blink's, and the lock screen going dark stays dark until the next breath.
+ * - Where the always-on display shows, the LED breathes on it instead ([startAodLed]): the phone
+ *   dozes, never woken for a breath, and power wakes it straight into the lock screen.
  * - A new message ([ArrivalMode.LOCK_SCREEN], default): light the system lock screen (all its
  *   notifications) and play the user's chosen effect over it ([GlowShield]). If nobody touched
  *   it, the LED dot covers it again just before the lock screen would dim and sleep (about 3 s
@@ -224,7 +226,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (!power.isInteractive && face.value != Face.AWAY) {
                 GlowLog.d { "act relight after the call face=${face.value}" }
                 when (face.value) {
-                    Face.LOCK_SCREEN -> relightLed(RELIGHT_DELAY_MS)
+                    Face.LOCK_SCREEN -> relightOrAod()
                     // The LED was in front when the call came: straight back into it.
                     else -> if (!ledResting && !GlowPending.isEmpty && takeRelightToken()) {
                         showLed()
@@ -338,6 +340,17 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 revealAfterPower()
             } else if (revealingAfterPower && !interactiveSeen && isOff(state)) {
                 wakeRevealed()
+            }
+            if (aodLit && (interactiveSeen || !dozing(state))) {
+                // Awake, or the always-on display has gone (its timeout, its schedule): the blink
+                // takes over, or without it the lit LED.
+                GlowLog.d { "act aod: interactive=$interactiveSeen state=$state" }
+                endAodLed()
+                if (!interactiveSeen && face.value == Face.LOCK_SCREEN) {
+                    if (blinks) startBlinkDark() else relightLed(RELIGHT_DELAY_MS)
+                }
+            } else if (!aodLit && !interactiveSeen && face.value == Face.LOCK_SCREEN && dozing(state)) {
+                startAodLed()
             }
         }
     }
@@ -487,6 +500,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowSession.detach(this)
         GlowShield.hide()
         GlowShield.hideBlink()
+        GlowShield.removeAodLed()
         GlowShield.stopArrival()
         GlowLauncher.dismissMessage(this)
         unregisterReceiver(screenSignals)
@@ -569,7 +583,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     override fun ensureLed() {
-        if (blinkDark) return
+        if (blinkDark || aodLit) return
         val missing = face.value != Face.AWAY && ledMissing(
             screenOn = power.isInteractive,
             waiting = !GlowPending.isEmpty,
@@ -585,7 +599,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d { "act LED missing face=${face.value}: relighting" }
         DarkHold.acquire(this)
         when (face.value) {
-            Face.LOCK_SCREEN -> relightLed(RELIGHT_DELAY_MS)
+            Face.LOCK_SCREEN -> relightOrAod()
             else -> if (takeRelightToken()) {
                 showLed()
                 wakeAfter(RELIGHT_DELAY_MS)
@@ -613,10 +627,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 }
             }
         } else if (face.value == Face.LOCK_SCREEN && !power.isInteractive && !GlowPending.isEmpty) {
-            // Do Not Disturb is over and messages are still unread: the LED lights again. Looking
-            // at the lock screen, the dot takes over when it sleeps, as ever.
+            // Do Not Disturb is over and messages are still unread: the LED lights again, on the
+            // always-on display if it shows. Looking at the lock screen, the dot takes over when
+            // it sleeps, as ever.
             DarkHold.acquire(this)
-            relightLed(RELIGHT_DELAY_MS)
+            relightOrAod()
         }
     }
 
@@ -660,6 +675,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (face.value == Face.LED) ledArmedForSleep = true
             wakeAfter(RELIGHT_DELAY_MS)
         }
+        prepareAod() // started with the screen on already: no SCREEN_ON will come
     }
 
     private fun onScreenOff() {
@@ -667,6 +683,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // power press, or our own wake cancelled the sleep), it is stale: acting on it would put
         // the LED over a lit lock screen.
         if (power.isInteractive) return
+        if (aodLit) return // the LED is on the always-on display
         DarkHold.acquire(this)
         if (blinkDark) {
             // Asleep between breaths, the next one due: the lock screen in front, if the display's
@@ -755,6 +772,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             }
             Face.AWAY -> Unit
         }
+        prepareAod()
     }
 
     /**
@@ -1110,6 +1128,54 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         timers.removeCallbacks(blinkRelight)
         timers.removeCallbacks(blinkSleepWatch)
         endBlinkBreath()
+        endAodLed()
+    }
+
+    /** The LED breathes on the always-on display ([AodBreath]): the phone dozes, the lock screen in front, no blink due. */
+    private var aodLit = false
+
+    /**
+     * While the screen is on, the window the LED breathes in over the always-on display goes up,
+     * invisible: One UI draws no window while dozing, and a window shows only once it has drawn.
+     */
+    private fun prepareAod() {
+        if (power.isInteractive && face.value != Face.AWAY && !GlowPending.isEmpty) GlowShield.prepareAodLed()
+    }
+
+    /**
+     * The phone dozes with the lock screen in front (its own sleep, a blink's, or the user's):
+     * the LED goes onto the always-on display, and no relight wakes the phone. Where it can't
+     * (no window drawn yet, below Android 10), the blink goes on.
+     */
+    private fun startAodLed() {
+        val allowed = ledOnAod(
+            waiting = !GlowPending.isEmpty,
+            resting = GlowSession.resting,
+            putAway = stowed,
+            inCall = audio.inCall,
+            ending = ending.value,
+        )
+        if (!allowed || !GlowShield.startAodLed(GlowPending::colors, blinkRound)) return
+        GlowLog.d { "act aod: LED on the always-on display" }
+        aodLit = true
+        blinkDark = false
+        timers.removeCallbacks(blinkRelight)
+    }
+
+    private fun endAodLed() {
+        if (!aodLit) return
+        GlowLog.d { "act aod: LED off" }
+        aodLit = false
+        GlowShield.stopAodLed()
+    }
+
+    /**
+     * The lock screen is dark and the LED should be back: on the always-on display if it shows,
+     * without a wake ([startAodLed]), else lit ([relightLed]).
+     */
+    private fun relightOrAod() {
+        if (!aodLit && dozing(currentDisplay()?.state)) startAodLed()
+        if (!aodLit) relightLed(RELIGHT_DELAY_MS)
     }
 
     /** Set from the power press until the panel is back on: the lock screen is in front, waiting to be lit. */
@@ -1299,7 +1365,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             power.isInteractive -> if (keyguard.isKeyguardLocked) showLed()
             else -> {
                 DarkHold.acquire(this)
-                relightLed(RELIGHT_DELAY_MS)
+                relightOrAod()
             }
         }
     }
@@ -1335,6 +1401,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         face.value = Face.AWAY
         coverSleep = false
         stopBlinking()
+        GlowShield.removeAodLed() // over the user's apps it has nothing to wait for
         unstow()
         listenForSleep(false)
         ledArmedForSleep = false

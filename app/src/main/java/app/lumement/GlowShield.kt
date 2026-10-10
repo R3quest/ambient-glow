@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
 import android.view.MotionEvent
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
@@ -53,6 +54,8 @@ import kotlin.math.sqrt
  *   it straight into the lock screen; over a lit LED a press is a sleep request, which One UI
  *   acts on only after waiting for more presses. Each breath plays in a blink window from the
  *   moment the panel is on ([showBlink]), so the wake hand-over isn't dark time.
+ * - The LED on the always-on display, where it shows: the phone dozes, and the LED breathes over
+ *   it in a window put up while the screen is on ([prepareAodLed], [AodBreath]).
  *
  * No app window can draw over a visible lock screen; an accessibility overlay can, because it
  * sits above the system bars and the keyguard. The service subscribes to no accessibility events
@@ -203,11 +206,69 @@ class GlowShield : AccessibilityService() {
         GlowLog.d { "blink down" }
     }
 
+    /**
+     * The LED over the always-on display ([AodBreath]): its window, put up while the screen is on
+     * ([addAodWindow]), since a window only shows once it has drawn and One UI draws none while
+     * dozing; [aodDrawn] once its first frame is on screen.
+     */
+    private var aodWindow: View? = null
+    private var aodBreath: AodBreath? = null
+    private var aodDrawn = false
+
+    /** Transparent and untouchable: the always-on display shows as ever around the light, and takes its taps. */
+    private fun addAodWindow() {
+        if (aodWindow != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val surface = SurfaceView(this).apply {
+            setZOrderOnTop(true)
+            holder.setFormat(PixelFormat.TRANSLUCENT)
+        }
+        val breath = AodBreath(this, surface)
+        surface.holder.addCallback(breath)
+        val view = FrameLayout(this)
+        view.addView(surface, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
+            geometry.value = ScreenGeometry.from(insets)
+            insets
+        }
+        aodDrawn = false
+        view.viewTreeObserver.registerFrameCommitCallback { if (aodWindow === view) aodDrawn = true }
+        if (addOverlay(view, PixelFormat.TRANSLUCENT, "Lumement:aod") == null) return
+        aodWindow = view
+        aodBreath = breath
+        GlowLog.d { "aod window up" }
+    }
+
+    /** The round over the always-on display, in [colors] from breath [round]; false when the window isn't ready. */
+    private fun startAodBreath(colors: () -> List<Int>, round: Int): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        val breath = aodBreath ?: return false
+        if (!aodDrawn || !breath.ready) return false
+        val settings = GlowPrefs.loadPlaying(this)
+        breath.start(settings.forScreen(geometry.value), geometry.value.fitted(settings, resources.displayMetrics.density), colors, round)
+        return breath.running
+    }
+
+    /** The light goes out; the window stays for the next doze. */
+    private fun stopAodBreath() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) aodBreath?.stop()
+    }
+
+    private fun removeAodWindow() {
+        stopAodBreath()
+        aodBreath = null
+        aodDrawn = false
+        val view = aodWindow ?: return
+        aodWindow = null
+        runCatching { windowManager.removeViewImmediate(view) }
+        GlowLog.d { "aod window down" }
+    }
+
     private fun release() {
         // Gone mid-breath (turned off, or unbound by the system): the glow screen takes its LED back.
         if (instance === this) instance = null
         blinkOut()
         removeBlink()
+        removeAodWindow()
         removeArrival()
         removeCover()
     }
@@ -549,7 +610,7 @@ class GlowShield : AccessibilityService() {
     }
 
     /** Full display, bars and cutout included; unless [touchable], taps reach whatever is underneath. */
-    private fun addOverlay(view: View, format: Int, name: String, touchable: Boolean = false): WindowManager.LayoutParams? {
+    private fun addOverlay(view: View, format: Int, name: String, touchable: Boolean = false, alpha: Float = 1f): WindowManager.LayoutParams? {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -568,6 +629,7 @@ class GlowShield : AccessibilityService() {
             }
             windowAnimations = 0
             title = name
+            this.alpha = alpha
         }
         return try {
             windowManager.addView(view, params)
@@ -661,6 +723,30 @@ class GlowShield : AccessibilityService() {
 
         fun hideBlink() {
             instance?.removeBlink()
+        }
+
+        /**
+         * Puts up the window the LED breathes in over the always-on display, invisible, while the
+         * screen is on (Android 10+). No-op when it is up already or the service is off.
+         */
+        fun prepareAodLed() {
+            instance?.addAodWindow()
+        }
+
+        /**
+         * The LED's round over the always-on display, in [colors] (read before each breath) from
+         * breath [round]. False, and nothing happens, when the service is off or its window isn't
+         * up and drawn yet ([prepareAodLed]).
+         */
+        fun startAodLed(colors: () -> List<Int>, round: Int): Boolean = instance?.startAodBreath(colors, round) ?: false
+
+        /** The light goes out; the window stays for the next doze. */
+        fun stopAodLed() {
+            instance?.stopAodBreath()
+        }
+
+        fun removeAodLed() {
+            instance?.removeAodWindow()
         }
 
         /**

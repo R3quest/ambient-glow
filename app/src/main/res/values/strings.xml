@@ -4,7 +4,7 @@
     <string name="listener_label">Lumement message reader</string>
     <string name="shield_label">Lumement effects</string>
     <string name="shield_summary">Plays the new-message effect over the lock screen, hides the system bars while the LED turns the screen on, and turns the screen off between the LED\'s blinks.</string>
-    <string name="shield_description">When a new message lights the lock screen, this service draws your chosen glow effect over it for two seconds; the lock screen stays visible and usable underneath. When the LED lights the screen, it also covers the battery icon and navigation handle with black for half a second. Between the LED\'s blinks it turns the screen off, as the power key would, so the power key opens the lock screen straight away. It reads no screen content and receives no accessibility events.</string>
+    <string name="shield_description">When a new message lights the lock screen, this service draws your chosen glow effect over it for two seconds; the lock screen stays visible and usable underneath. When the LED lights the screen, it also covers the battery icon and navigation handle with black for half a second. Between the LED\'s blinks it turns the screen off, as the power key would, so the power key opens the lock screen straight away; with the always-on display on, the LED breathes on it instead. It reads no screen content and receives no accessibility events.</string>
 
     <string name="channel_name">Wake alert</string>
     <string name="channel_description">Briefly used to light the screen when a message arrives. Dismissed automatically.</string>

@@ -32,6 +32,22 @@ internal const val LED_BREATH_MS = LED_RISE_MS + LED_FALL_MS // 1860
  */
 internal const val LED_FADE_HZ = 30f
 
+/** Dark between breaths; with the breath it keeps a ~3.37 s period. */
+internal const val LED_DARK_MS = 1_510L
+
+/** Dark between two apps' breaths within one round; the round ends with the full [LED_DARK_MS]. */
+internal const val LED_GAP_MS = 700L
+
+/** The dark after breath [cycle] of a round of [count] colours: the gap to the next app's, or the round's end. */
+internal fun ledPauseAfter(cycle: Int, count: Int): Long =
+    if (count <= 1 || cycle % count == count - 1) LED_DARK_MS else LED_GAP_MS
+
+/** Burn-in guard: the glow steps through a 2 px square, one corner per breath. */
+internal val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f), Offset(0f, 2f))
+
+/** The ring's burn-in guard: it breathes 1 px in and out instead, so it stays centred on the lens. */
+internal val RING_SHIFTS = listOf(0f, 1f, 0f, -1f)
+
 private val LedRise = CubicBezierEasing(0.45f, 0f, 0.3f, 1f)
 private val LedFall = CubicBezierEasing(0.45f, 0f, 0.35f, 1f)
 
@@ -112,11 +128,7 @@ internal fun LedDot(
             .layout { measurable, constraints ->
                 val width = if (constraints.hasBoundedWidth) constraints.maxWidth else constraints.minWidth
                 val height = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
-                val center = if (onCamera) {
-                    geometry.lens(width.toFloat(), this.density).center
-                } else {
-                    ledDotCenter(dotX, dotY, light.core, Size(width.toFloat(), height.toFloat()))
-                }
+                val center = ledCenter(onCamera, geometry, dotX, dotY, light, Size(width.toFloat(), height.toFloat()), this.density)
                 val side = light.side
                 val placeable = measurable.measure(Constraints.fixed(side, side))
                 layout(width, height) {
@@ -153,6 +165,10 @@ internal fun ledLight(core: Float, onCamera: Boolean, lens: Float, ringGrowPx: F
     val ring = lens + ringGap + line / 2f + ringGrowPx
     return LedLight(core, lens, line, ring, bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f))
 }
+
+/** The LED's centre on a canvas of [size]: the lens for the ring, else the dot's spot ([ledDotCenter]). */
+internal fun ledCenter(onCamera: Boolean, geometry: ScreenGeometry, dotX: Float, dotY: Float, light: LedLight, size: Size, density: Float): Offset =
+    if (onCamera) geometry.lens(size.width, density).center else ledDotCenter(dotX, dotY, light.core, size)
 
 /**
  * The dot LED's centre on a canvas of [size]: kept on screen by its halo, with the same margin as
