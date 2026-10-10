@@ -202,6 +202,9 @@ object GlowSession {
 
         /** The screen has been off a while with messages waiting: if the LED isn't up, and should be, light it. */
         fun ensureLed()
+
+        /** A post that wants the screen came or went: [screenTakers] changed. */
+        fun onScreenTakersChanged()
     }
 
     var host: Host? = null
@@ -213,6 +216,9 @@ object GlowSession {
      * LED lights again for whatever is still unread. Set by the listener, main thread only.
      */
     var resting = false
+
+    /** Keys of other apps' posts showing now that want the screen ([takesScreen]). Set by the listener, main thread only. */
+    val screenTakers = mutableSetOf<String>()
 
     fun attach(host: Host) {
         this.host = host

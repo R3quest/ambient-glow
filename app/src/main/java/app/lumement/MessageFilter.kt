@@ -31,6 +31,15 @@ internal fun isAlert(
 }
 
 /**
+ * A post that asks for the whole screen: a ringing call, an alarm, anything with a full-screen
+ * intent ([fullScreen]). On an awake phone, which the lit LED keeps it, the system shows it as a
+ * pop-up instead (One UI's incoming call: measured on the S23), and the LED's window, an
+ * accessibility overlay above every pop-up, would hide it; so the window makes way while it shows.
+ */
+internal fun takesScreen(category: String?, fullScreen: Boolean): Boolean =
+    fullScreen || category == Notification.CATEGORY_CALL || category == Notification.CATEGORY_ALARM
+
+/**
  * A silent update to a message the LED already waits on: refresh it, don't re-wake. WhatsApp (and
  * others) set ONLY_ALERT_ONCE on every chat notification and re-post the same key for each new
  * message in that chat, so a newer message ([newestAt] past [waitingNewestAt]) still counts as new.

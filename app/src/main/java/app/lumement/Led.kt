@@ -32,6 +32,13 @@ internal const val LED_BREATH_MS = LED_RISE_MS + LED_FALL_MS // 1860
  */
 internal const val LED_FADE_HZ = 30f
 
+/**
+ * The breath's rate is asked for this long before it lights: one 10 Hz relayout vsync plus
+ * SurfaceFlinger's switch at its next vsync, with margin; taken from the dark gap, so the period
+ * is unchanged.
+ */
+internal const val LED_RATE_PREROLL_MS = 200L
+
 /** Dark between breaths; with the breath it keeps a ~3.37 s period. */
 internal const val LED_DARK_MS = 1_510L
 

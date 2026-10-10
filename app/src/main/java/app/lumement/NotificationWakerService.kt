@@ -111,6 +111,8 @@ class NotificationWakerService : NotificationListenerService() {
         GlowPrefs.warm(this)
         GlowSession.resting = restsUnder(currentInterruptionFilter)
         brandColors.prepare()
+        GlowSession.screenTakers.clear()
+        activeNotifications?.forEach(::noteScreenTaker)
         learnApps()
         pruneStalePending()
         if (!screenReceiverRegistered) {
@@ -132,6 +134,7 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification, rankingMap: RankingMap?) {
+        noteScreenTaker(sbn)
         val ranked = rankingMap?.getRanking(sbn.key, ranking) == true
         if (!isRealMessage(sbn, if (ranked) ranking else null)) return
         // Every message keeps its app on the Apps screen, muted or not; a muted one stops here.
@@ -202,8 +205,18 @@ class NotificationWakerService : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap?, reason: Int) {
         // Dismissed, or cleared by its app after being read: the only way an LED entry ends.
         GlowLauncher.dismissMessage(this, sbn.key)
+        if (GlowSession.screenTakers.remove(sbn.key)) GlowSession.host?.onScreenTakersChanged()
         if (!GlowPending.remove(sbn.key)) return
         GlowSession.host?.onPendingChanged()
+    }
+
+    /** Keeps [GlowSession.screenTakers] in step with [sbn], a post or an update to one; tells the glow screen of a change. */
+    private fun noteScreenTaker(sbn: StatusBarNotification) {
+        val takes = sbn.packageName != packageName && takesScreen(sbn.notification.category, sbn.notification.fullScreenIntent != null)
+        val changed = if (takes) GlowSession.screenTakers.add(sbn.key) else GlowSession.screenTakers.remove(sbn.key)
+        if (!changed) return
+        GlowLog.d { "svc screen taker ${if (takes) "up" else "gone"} ${sbn.packageName} ${sbn.notification.category}" }
+        GlowSession.host?.onScreenTakersChanged()
     }
 
     private fun relightIfWaiting() {

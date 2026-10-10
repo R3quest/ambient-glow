@@ -36,12 +36,19 @@ internal fun ledOnAod(waiting: Boolean, resting: Boolean, putAway: Boolean, inCa
     waiting && !resting && !putAway && !inCall && !ending
 
 /**
- * The LED's round over the always-on display, in [surface]: a breath per waiting app, as the lit
- * LED breathes them ([ledPauseAfter]), each drawn while the light is out. A draw wake lock keeps
- * the panel taking frames through each breath.
+ * The LED's round in [surface]: a breath per waiting app, as the lit LED breathes them
+ * ([ledPauseAfter]), each drawn while the light is out. Over the always-on display ([dozing]), a
+ * draw wake lock keeps the panel taking frames through each breath. Over the lit panel, [onFade]
+ * asks for the breath's frame rate [LED_RATE_PREROLL_MS] before it lights and lets go once it is
+ * dark, as the glow screen's own LED does.
  */
 @RequiresApi(Build.VERSION_CODES.Q)
-internal class AodBreath(private val context: Context, val surface: LedSurface) {
+internal class LedRound(
+    private val context: Context,
+    val surface: LedSurface,
+    private val dozing: Boolean,
+    private val onFade: (fast: Boolean) -> Unit = {},
+) {
     private val timers = Handler(Looper.getMainLooper())
 
     // PowerManager.DRAW_WAKE_LOCK, hidden: keeps a dozing panel taking frames (DOZE, not DOZE_SUSPEND).
@@ -60,6 +67,7 @@ internal class AodBreath(private val context: Context, val surface: LedSurface) 
         private set
 
     private val nextBreath = Runnable { breathe() }
+    private val prerolled = Runnable { light() }
 
     /**
      * Starts the round with [settings] (as the screen shows it) and [geometry] (fitted), from
@@ -73,34 +81,53 @@ internal class AodBreath(private val context: Context, val surface: LedSurface) 
         this.colors = colors
         cycle = round
         running = true
-        breathe()
+        light()
     }
 
-    /** The light goes out at once and the round stops; the surface stays, for the next doze. */
+    /** The light goes out at once and the round stops; the surface stays, for the next. */
     fun stop() {
         running = false
         timers.removeCallbacks(nextBreath)
+        timers.removeCallbacks(prerolled)
         if (drawLock.isHeld) drawLock.release()
         surface.stop()
+        onFade(false)
+    }
+
+    /** The next breath's rate first, then the breath once it is in place (dozing: at once). */
+    private fun breathe() {
+        if (dozing) {
+            light()
+            return
+        }
+        onFade(true)
+        timers.postDelayed(prerolled, LED_RATE_PREROLL_MS)
     }
 
     /** This breath's colour, drawn while the light is out, then lit; at its end, the dark until the next. */
-    private fun breathe() {
+    private fun light() {
         val palette = colors()
         if (!running || palette.isEmpty() || !surface.ready) {
             stop()
             return
         }
         surface.show(settings, geometry, palette[cycle % palette.size], cycle)
-        // The panel takes frames for the breath; the CPU stays up to the next one (Handler time
-        // stops while it sleeps).
-        drawLock.acquire(LED_BREATH_MS.toLong() + LOCK_MARGIN_MS)
-        DarkHold.acquire(context, LED_BREATH_MS.toLong() + LED_DARK_MS + LOCK_MARGIN_MS)
+        if (dozing) {
+            // The panel takes frames for the breath; the CPU stays up to the next one (Handler
+            // time stops while it sleeps). Lit, the screen keeps both up.
+            drawLock.acquire(LED_BREATH_MS.toLong() + LOCK_MARGIN_MS)
+            DarkHold.acquire(context, LED_BREATH_MS.toLong() + LED_DARK_MS + LOCK_MARGIN_MS)
+        }
         surface.breathe {
             if (drawLock.isHeld) drawLock.release()
             val pause = ledPauseAfter(cycle, palette.size)
             cycle++
-            timers.postDelayed(nextBreath, pause)
+            if (dozing) {
+                timers.postDelayed(nextBreath, pause)
+            } else {
+                onFade(false)
+                timers.postDelayed(nextBreath, pause - LED_RATE_PREROLL_MS)
+            }
         }
     }
 

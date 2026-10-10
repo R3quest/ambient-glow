@@ -25,6 +25,15 @@ class MessageFilterTest {
     }
 
     @Test
+    fun callsAlarmsAndFullScreenPostsTakeTheScreen() {
+        assertTrue("call", takesScreen(Notification.CATEGORY_CALL, fullScreen = false))
+        assertTrue("alarm", takesScreen(Notification.CATEGORY_ALARM, fullScreen = false))
+        assertTrue("full-screen intent", takesScreen(null, fullScreen = true))
+        assertFalse("message", takesScreen(Notification.CATEGORY_MESSAGE, fullScreen = false))
+        assertFalse("plain", takesScreen(null, fullScreen = false))
+    }
+
+    @Test
     fun ongoingServicesAndSummariesNeverWake() {
         assertFalse("ongoing", isAlert(ongoing = true, flags = 0, category = null))
         assertFalse("foreground service", isAlert(ongoing = false, flags = Notification.FLAG_FOREGROUND_SERVICE, category = null))

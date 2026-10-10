@@ -38,12 +38,6 @@ import kotlinx.coroutines.withContext
 // arrival, and nothing at all otherwise.
 // ---------------------------------------------------------------------------------------------
 
-/**
- * One 10 Hz relayout vsync plus SurfaceFlinger's switch at its next vsync, with margin; taken
- * from the dark gap, so the period is unchanged.
- */
-private const val LED_RATE_PREROLL_MS = 200L
-
 @Composable
 internal fun GlowScreen(
     face: Face,
