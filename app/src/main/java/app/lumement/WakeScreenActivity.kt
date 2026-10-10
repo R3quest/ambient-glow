@@ -501,7 +501,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowSession.detach(this)
         GlowShield.hide()
         GlowShield.hideBlink()
-        GlowShield.removeAodLed()
+        GlowShield.removeLed()
         GlowShield.stopArrival()
         GlowLauncher.dismissMessage(this)
         unregisterReceiver(screenSignals)
@@ -677,7 +677,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             if (face.value == Face.LED) ledArmedForSleep = true
             wakeAfter(RELIGHT_DELAY_MS)
         }
-        prepareAod() // started with the screen on already: no SCREEN_ON will come
+        prepareLed() // started with the screen on already: no SCREEN_ON will come
     }
 
     private fun onScreenOff() {
@@ -774,7 +774,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             }
             Face.AWAY -> Unit
         }
-        prepareAod()
+        prepareLed()
     }
 
     /**
@@ -1210,11 +1210,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private var aodLit = false
 
     /**
-     * While the screen is on, the window the LED breathes in over the always-on display goes up,
-     * invisible: One UI draws no window while dozing, and a window shows only once it has drawn.
+     * While the screen is on, the windows the LED breathes in once the panel sleeps go up, hidden
+     * ([GlowShield.prepareLed]): One UI draws no window while dozing, and a window shows only once
+     * it has drawn.
      */
-    private fun prepareAod() {
-        if (power.isInteractive && face.value != Face.AWAY && !GlowPending.isEmpty) GlowShield.prepareAodLed()
+    private fun prepareLed() {
+        if (power.isInteractive && face.value != Face.AWAY && !GlowPending.isEmpty) GlowShield.prepareLed()
     }
 
     /**
@@ -1477,7 +1478,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         face.value = Face.AWAY
         coverSleep = false
         stopBlinking()
-        GlowShield.removeAodLed() // over the user's apps it has nothing to wait for
+        GlowShield.removeLed() // over the user's apps it has nothing to wait for
         unstow()
         listenForSleep(false)
         ledArmedForSleep = false

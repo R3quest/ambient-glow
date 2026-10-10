@@ -1,5 +1,7 @@
 package app.lumement
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -14,19 +16,20 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.roundToInt
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 // ---------------------------------------------------------------------------------------------
@@ -150,6 +153,76 @@ private fun LedLayer(
     onFade: (fast: Boolean) -> Unit,
     stopping: Boolean,
 ) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        SurfaceLedLayer(settings, colors, geometry, onBlink, onFade, stopping)
+    } else {
+        ComposeLedLayer(settings, colors, geometry, onBlink, onFade, stopping)
+    }
+}
+
+/**
+ * [LedLayer] in the LED's own surface ([LedSurface]): the same round, its light drawn and breathed
+ * without a window redraw, so a breath costs the app's threads next to nothing.
+ */
+@RequiresApi(Build.VERSION_CODES.Q)
+@Composable
+private fun SurfaceLedLayer(
+    settings: GlowSettings,
+    colors: List<Int>,
+    geometry: ScreenGeometry,
+    onBlink: () -> Unit,
+    onFade: (fast: Boolean) -> Unit,
+    stopping: Boolean,
+) {
+    val context = LocalContext.current
+    val surface = remember { LedSurface(context) }
+    val blink by rememberUpdatedState(onBlink)
+    val fade by rememberUpdatedState(onFade)
+    val stop by rememberUpdatedState(stopping)
+    val palette by rememberUpdatedState(colors)
+    val look by rememberUpdatedState(settings)
+    val lens by rememberUpdatedState(geometry)
+    DisposableEffect(Unit) {
+        onDispose {
+            surface.stop()
+            fade(false)
+        }
+    }
+    LaunchedEffect(Unit) {
+        suspendCancellableCoroutine { ready -> surface.whenReady { ready.resume(Unit) } }
+        var cycle = 0
+        while (true) {
+            if (stop) break
+            fade(true)
+            delay(LED_RATE_PREROLL_MS) // dark: the new rate is in place before the first lit frame
+            if (stop) {
+                fade(false)
+                break
+            }
+            surface.show(look, lens, palette[cycle % palette.size], cycle)
+            suspendCancellableCoroutine { out ->
+                surface.breathe { out.resume(Unit) }
+                out.invokeOnCancellation { surface.stop() }
+            }
+            fade(false)
+            delay(ledPauseAfter(cycle, palette.size) - LED_RATE_PREROLL_MS)
+            cycle++
+            blink()
+        }
+    }
+    AndroidView(factory = { surface.view }, modifier = Modifier.fillMaxSize())
+}
+
+/** [LedLayer] drawn by Compose, below Android 10 (no surface alpha there). */
+@Composable
+private fun ComposeLedLayer(
+    settings: GlowSettings,
+    colors: List<Int>,
+    geometry: ScreenGeometry,
+    onBlink: () -> Unit,
+    onFade: (fast: Boolean) -> Unit,
+    stopping: Boolean,
+) {
     val clock = remember { Animatable(0f) }
     val blink by rememberUpdatedState(onBlink)
     val fade by rememberUpdatedState(onFade)
@@ -183,37 +256,6 @@ private fun LedLayer(
     }
     RoundDot(settings, shown, cycle, geometry) { clock.value }
 }
-
-/**
- * One breath in [GlowShield]'s blink window, once [running] (the panel is on), at the LED's own
- * pace and look; [round] is its place in the burn-in guard. [onDone] once it is dark again.
- *
- * Its light moves on the LED's own [LED_FADE_HZ] grid. One UI holds the panel at its top rate
- * after every wake, where the window can't ask for less (measured: 120 Hz on the S23), and a
- * light redrawn on every one of those frames costs the app and the compositor four times the work
- * for no smoother a light than the lit LED's. A frame with nothing new draws nothing.
- */
-@Composable
-internal fun BlinkBreath(settings: GlowSettings, color: Int, round: Int, geometry: ScreenGeometry, running: Boolean, onDone: () -> Unit) {
-    var ms by remember { mutableFloatStateOf(0f) }
-    val done by rememberUpdatedState(onDone)
-    LaunchedEffect(running) {
-        if (!running) return@LaunchedEffect
-        val start = withFrameNanos { it }
-        do {
-            val at = (withFrameNanos { it } - start) / 1_000_000f
-            // Nearest step, not the one below: on a panel running at the grid's own rate, float error
-            // would otherwise skip one now and then.
-            ms = minOf((at / LED_FRAME_MS).roundToInt() * LED_FRAME_MS, LED_BREATH_MS)
-        } while (at < LED_BREATH_MS)
-        ms = LED_BREATH_MS
-        done()
-    }
-    RoundDot(settings, color, round, geometry) { ms }
-}
-
-/** One frame of the LED's breath, in ms. */
-private const val LED_FRAME_MS = 1_000f / LED_FADE_HZ
 
 /** The round's dot in [color], [clock] ms into its breath, stepped through the burn-in guard by [cycle]. */
 @Composable
