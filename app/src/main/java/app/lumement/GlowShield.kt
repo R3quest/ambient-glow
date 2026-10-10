@@ -53,7 +53,8 @@ import kotlin.math.sqrt
  * - The LED's blinks: between two breaths the phone sleeps ([sleepNow]), so the power key wakes
  *   it straight into the lock screen; over a lit LED a press is a sleep request, which One UI
  *   acts on only after waiting for more presses. Each breath plays in a blink window from the
- *   moment the panel is on ([showBlink]), so the wake hand-over isn't dark time.
+ *   moment the panel is on ([showBlink]), so the wake hand-over isn't dark time. A finger on it
+ *   puts the lock screen in front under it, so the fingerprint can unlock the phone.
  * - The LED on the always-on display, where it shows: the phone dozes, and the LED breathes over
  *   it in a window put up while the screen is on ([prepareAodLed], [AodBreath]).
  *
@@ -114,28 +115,36 @@ class GlowShield : AccessibilityService() {
     private var blink: View? = null
     private var blinkOwner: OverlayOwner? = null
     private val blinkRunning = mutableStateOf(false)
+    private var blinkTouch: (() -> Unit)? = null
     private var blinkTap: (() -> Unit)? = null
     private var blinkDone: (() -> Unit)? = null
     private var blinkDowns = 0
+
+    /** A finger is on the blink window. */
+    private var blinkHeld = false
+
+    /** The breath went out under a finger: its tap waits for the finger to lift. */
+    private var blinkOutHeld = false
     private val blinkTapNow = Runnable { tapBlink() }
-    private val blinkTimeout = Runnable {
-        blinkOut()
-        removeBlink()
-    }
+    private val blinkTimeout = Runnable { finishBlink() }
 
     /**
      * Black over everything, bars included, with one LED breath in [color] that starts once the
      * panel is on ([blinkRunning]). It stands in for the glow screen while the phone wakes for a
-     * breath, so taps land here: as on the LED, a tap opens the lock screen ([onTap]), at the
-     * second press of a double tap or once the double-tap time is up, and neither press reaches
-     * the lock screen. [onDone] once the breath is out.
+     * breath, so touches land here. The first finger down calls [onTouch] at once: it may be on
+     * the fingerprint sensor, to unlock. As on the LED, a tap opens the lock screen ([onTap]), at
+     * the second press of a double tap, or once the finger has lifted and the double-tap time is
+     * up; a finger held down is no tap, so an unlock doesn't show the lock screen first. Neither
+     * press reaches the lock screen. [onDone] once the breath is out, untouched.
      */
-    private fun addBlink(color: Int, round: Int, onTap: () -> Unit, onDone: () -> Unit): Boolean {
+    private fun addBlink(color: Int, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onDone: () -> Unit): Boolean {
         removeBlink()
         val settings = GlowPrefs.loadPlaying(this)
         val owner = OverlayOwner()
         blinkRunning.value = false
         blinkDowns = 0
+        blinkHeld = false
+        blinkOutHeld = false
         val view = FrameLayout(this).apply {
             setViewTreeLifecycleOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -155,10 +164,25 @@ class GlowShield : AccessibilityService() {
         }
         @SuppressLint("ClickableViewAccessibility")
         view.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                blinkDowns++
-                timers.removeCallbacks(blinkTapNow)
-                if (blinkDowns >= 2) tapBlink() else timers.postDelayed(blinkTapNow, ViewConfiguration.getDoubleTapTimeout().toLong())
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    blinkHeld = true
+                    blinkDowns++
+                    timers.removeCallbacks(blinkTapNow)
+                    if (blinkDowns >= 2) {
+                        tapBlink()
+                    } else {
+                        blinkTouch?.let {
+                            blinkTouch = null
+                            it()
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    blinkHeld = false
+                    // Its breath out already, the tap is now; else once no second press is due.
+                    if (blinkOutHeld) tapBlink() else timers.postDelayed(blinkTapNow, ViewConfiguration.getDoubleTapTimeout().toLong())
+                }
             }
             true
         }
@@ -168,6 +192,7 @@ class GlowShield : AccessibilityService() {
         }
         blink = view
         blinkOwner = owner
+        blinkTouch = onTouch
         blinkTap = onTap
         blinkDone = onDone
         // Never left up by accident: a breath that never ends still ends, and the window goes.
@@ -185,17 +210,33 @@ class GlowShield : AccessibilityService() {
         tap()
     }
 
-    /** The breath is out: a tap still waiting for its second press opens the lock screen now; else done. */
+    /**
+     * The breath is out. Touched, a tap still waiting for its second press opens the lock screen
+     * now, or once the finger on the window lifts; else done.
+     */
     private fun blinkOut() {
-        timers.removeCallbacks(blinkTimeout)
         val done = blinkDone ?: return
-        blinkDone = null
-        if (blinkDowns > 0) tapBlink() else done()
+        when {
+            blinkDowns == 0 -> {
+                timers.removeCallbacks(blinkTimeout)
+                blinkDone = null
+                done()
+            }
+            blinkHeld -> blinkOutHeld = true
+            else -> tapBlink()
+        }
+    }
+
+    /** The blink window goes now: touched, as a tap ends it; untouched, as its breath does. */
+    private fun finishBlink() {
+        if (blinkDowns > 0) tapBlink() else blinkOut()
+        removeBlink()
     }
 
     private fun removeBlink() {
         timers.removeCallbacks(blinkTimeout)
         timers.removeCallbacks(blinkTapNow)
+        blinkTouch = null
         blinkTap = null
         blinkDone = null
         val view = blink ?: return
@@ -266,8 +307,7 @@ class GlowShield : AccessibilityService() {
     private fun release() {
         // Gone mid-breath (turned off, or unbound by the system): the glow screen takes its LED back.
         if (instance === this) instance = null
-        blinkOut()
-        removeBlink()
+        finishBlink()
         removeAodWindow()
         removeArrival()
         removeCover()
@@ -710,11 +750,12 @@ class GlowShield : AccessibilityService() {
 
         /**
          * The blink window, up in the dark before a wake for one breath: black over everything,
-         * the breath waiting for [startBlink]. [round] steps the LED's burn-in guard. A tap opens
-         * the lock screen ([onTap]); [onDone] once the breath is out. False when the service is off.
+         * the breath waiting for [startBlink]. [round] steps the LED's burn-in guard. [onTouch] as
+         * the first finger comes down, a tap opens the lock screen ([onTap]); [onDone] once the
+         * breath is out, untouched. False when the service is off.
          */
-        fun showBlink(color: Int, round: Int, onTap: () -> Unit, onDone: () -> Unit): Boolean =
-            instance?.addBlink(color, round, onTap, onDone) ?: false
+        fun showBlink(color: Int, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onDone: () -> Unit): Boolean =
+            instance?.addBlink(color, round, onTouch, onTap, onDone) ?: false
 
         /** The panel is on: the blink's breath starts. */
         fun startBlink() {
