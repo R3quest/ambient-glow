@@ -14,15 +14,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
@@ -197,20 +200,33 @@ private fun LedLayer(
 /**
  * One breath in [GlowShield]'s blink window, once [running] (the panel is on), at the LED's own
  * pace and look; [round] is its place in the burn-in guard. [onDone] once it is dark again.
+ *
+ * Its light moves on the LED's own [LED_FADE_HZ] grid. One UI holds the panel at its top rate
+ * after every wake, where the window can't ask for less (measured: 120 Hz on the S23), and a
+ * light redrawn on every one of those frames costs the app and the compositor four times the work
+ * for no smoother a light than the lit LED's. A frame with nothing new draws nothing.
  */
 @Composable
 internal fun BlinkBreath(settings: GlowSettings, color: Int, round: Int, geometry: ScreenGeometry, running: Boolean, onDone: () -> Unit) {
-    val clock = remember { Animatable(0f) }
+    var ms by remember { mutableFloatStateOf(0f) }
     val done by rememberUpdatedState(onDone)
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
-        withContext(RealTimeMotion) {
-            clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
-        }
+        val start = withFrameNanos { it }
+        do {
+            val at = (withFrameNanos { it } - start) / 1_000_000f
+            // Nearest step, not the one below: on a panel running at the grid's own rate, float error
+            // would otherwise skip one now and then.
+            ms = minOf((at / LED_FRAME_MS).roundToInt() * LED_FRAME_MS, LED_BREATH_MS)
+        } while (at < LED_BREATH_MS)
+        ms = LED_BREATH_MS
         done()
     }
-    RoundDot(settings, color, round, geometry) { clock.value }
+    RoundDot(settings, color, round, geometry) { ms }
 }
+
+/** One frame of the LED's breath, in ms. */
+private const val LED_FRAME_MS = 1_000f / LED_FADE_HZ
 
 /** The round's dot in [color], [clock] ms into its breath, stepped through the burn-in guard by [cycle]. */
 @Composable

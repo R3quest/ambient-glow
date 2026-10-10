@@ -26,6 +26,12 @@ internal const val LED_RISE_MS = 560f
 internal const val LED_FALL_MS = 1_300f
 internal const val LED_BREATH_MS = LED_RISE_MS + LED_FALL_MS // 1860
 
+/**
+ * The rate the LED breathes at. The S23's panel offers 10/24/30/48/60/96/120 Hz: 30 is three times
+ * smoother than the 10 Hz idle at half the cost of 60.
+ */
+internal const val LED_FADE_HZ = 30f
+
 private val LedRise = CubicBezierEasing(0.45f, 0f, 0.3f, 1f)
 private val LedFall = CubicBezierEasing(0.45f, 0f, 0.35f, 1f)
 

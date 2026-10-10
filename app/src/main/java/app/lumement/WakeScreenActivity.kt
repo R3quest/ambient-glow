@@ -108,11 +108,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     private val timers = Handler(Looper.getMainLooper())
     private val wakeNow = Runnable {
-        // Woken by the user between the blink putting the LED up and this wake: they want the lock screen.
+        // Woken by the user between the blink putting the LED up and this wake, if no display
+        // change said so first: they want the lock screen.
         if (blinkWaking && power.isInteractive && face.value == Face.LED) {
-            blinkWaking = false
             GlowLog.d { "act blink: woken by the user before its breath" }
-            showLockScreen()
+            revealWoken()
             return@Runnable
         }
         blinkWaking = false
@@ -319,6 +319,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 // listener heard it (a phone may only have one that can't wake the CPU). Still face
                 // down, the watch puts it away again a moment later.
                 if (!dark && interactiveSeen && stowed && face.value == Face.LED) takenOut()
+            }
+            if (blinkWaking && interactiveSeen && face.value == Face.LED) {
+                // Awake before our own wake (which clears blinkWaking first): the user, or a call.
+                GlowLog.d { "act blink: woken by the user before its breath" }
+                revealWoken()
             }
             if (blinkBreathing && interactiveSeen && state == Display.STATE_ON) startBlinkBreath()
             if (interactiveSeen) {
@@ -727,9 +732,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun onScreenOn() {
         // Woken by the user while put away: they have it in hand; the lock screen as ever.
         if (stowed) unstow()
-        // Woken between breaths, by the user: the lock screen, even if the LED's uncover was missed.
-        // The blink starts over when the screen goes off again.
-        if (blinkDark && face.value == Face.LED) showLockScreen()
+        // Woken between breaths, by the user: the lock screen, even if the LED is still in front
+        // (its uncover missed, or its breath not begun). The blink starts over at the next screen-off.
+        if ((blinkDark || blinkWaking) && face.value == Face.LED) revealWoken()
         blinkDark = false
         timers.removeCallbacks(blinkRelight)
         if (blinkBreathing) startBlinkBreath()
@@ -968,13 +973,19 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             afterCall.arm() // the LED once the call is over, as after a screen-off in one
             return@Runnable
         }
+        // The blink window first: it covers the LED's wake hand-over, so that needs no cover of its own.
+        val colors = GlowPending.colors()
+        if (colors.isNotEmpty()) {
+            blinkBreathing = GlowShield.showBlink(colors[blinkRound % colors.size], blinkRound, ::onUserDismiss, ::onBlinkBreathDone)
+        }
         relightLed(RELIGHT_DELAY_MS)
         // Not relit (Do Not Disturb, all read, the rate limit, woken meanwhile): each has its way back.
-        if (face.value != Face.LED || power.isInteractive) return@Runnable
+        if (face.value != Face.LED || power.isInteractive) {
+            endBlinkBreath()
+            return@Runnable
+        }
         GlowLog.d { "act blink: relight" }
         blinkWaking = true
-        val colors = GlowPending.colors()
-        blinkBreathing = GlowShield.showBlink(colors[blinkRound % colors.size], blinkRound, ::onUserDismiss, ::onBlinkBreathDone)
     }
 
     /**
@@ -991,18 +1002,22 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /**
      * A breath is out with the LED in front: sleep until the next one. False, with nothing done,
-     * where the LED stays lit as ever: without [GlowShield]; with something the sleep would cut
-     * short or hide (an arrival, a finger on the dot, the last message read, a call, another
-     * window in front such as an alarm); or put away, or covered, where the proximity lock already
-     * has the panel off and [COVERED_MS] puts it away.
+     * where the LED stays lit as ever ([sleepsBetweenBreaths]). Covered, the proximity lock already
+     * has the panel off, and [COVERED_MS] puts it away.
      */
     private fun sleepUntilNextBreath(): Boolean {
-        if (!blinks || face.value != Face.LED || !power.isInteractive || arriving.value || touching || ending.value ||
-            stowed || covered.value || audio.inCall || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-        ) {
-            return false
-        }
-        if (!GlowShield.sleepNow()) return false
+        val sleeps = sleepsBetweenBreaths(
+            canSleep = blinks,
+            ledInFront = face.value == Face.LED && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            screenOn = power.isInteractive,
+            arriving = arriving.value,
+            touched = touching,
+            ending = ending.value,
+            putAway = stowed,
+            covered = covered.value,
+            inCall = audio.inCall,
+        )
+        if (!sleeps || !GlowShield.sleepNow()) return false
         GlowLog.d { "act blink: breath out, sleeping" }
         startBlinkDark()
         blinkSlept = !power.isInteractive
@@ -1049,6 +1064,18 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLog.d { "act blink: woken before the uncover" }
         blinkDark = false
         timers.removeCallbacks(blinkRelight)
+        revealWoken()
+    }
+
+    /**
+     * The user woke the phone with the LED still in front, just before a blink's breath or around
+     * its sleep: the lock screen, uncovered as it is. One UI builds it up over ~50 ms here (bars,
+     * notifications, then clock and wallpaper); black held until [onStop] didn't hide that, since
+     * we stop before it has drawn (measured on the S23).
+     */
+    private fun revealWoken() {
+        blinkWaking = false
+        timers.removeCallbacks(wakeNow)
         showLockScreen()
     }
 
@@ -1173,7 +1200,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         val focused = hasWindowFocus() && power.isInteractive
         settling.value = !focused
         // One UI's bars come up over us until the hand-over; cover them if the user allowed it.
-        if (!focused) GlowShield.show()
+        // A blink's own window covers them already.
+        if (!focused && !blinkBreathing) GlowShield.show()
         // Already lit, so no SCREEN_ON will come to end the settling; if focus doesn't change
         // either, the dot would stay hidden on a black panel.
         if (!focused && power.isInteractive) timers.postDelayed(settleNow, SETTLE_FALLBACK_MS)
@@ -1220,10 +1248,14 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      * Let the panel sleep soon, not at the screen timeout (10 min on some phones): hand the lock
      * screen back, whose own short timeout then runs, and hold the display black meanwhile with
      * [GlowShield] (without it the lock screen shows until then). [onScreenOff] takes it from there.
+     * With [GlowShield] and nothing else in use (the LED has focus: no shade, no pop-up over it),
+     * the phone sleeps at once instead of lit black until that timeout.
      */
     private fun sleepUnderCover() {
+        val unused = hasWindowFocus()
         GlowShield.blackout()
         showLockScreen(underCover = true)
+        if (unused && GlowShield.sleepNow()) GlowLog.d { "act asleep at once, under the cover" }
     }
 
     /** Put away while the LED is lit: let the panel and the CPU sleep until it is taken out. */
@@ -1504,12 +1536,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
         /** Lock screen dims to black over this long before [TAKEOVER_MS], so the takeover isn't a cut. */
         const val TAKEOVER_DIM_MS = 300L
-
-        /**
-         * The rate the LED asks for while it breathes. The S23's panel offers 10/24/30/48/60/96/120
-         * Hz: 30 is three times smoother than the 10 Hz idle at half the cost of 60.
-         */
-        const val LED_FADE_HZ = 30f
 
         /** If focus never arrives after a wake into the LED, show it anyway. */
         const val SETTLE_FALLBACK_MS = 600L

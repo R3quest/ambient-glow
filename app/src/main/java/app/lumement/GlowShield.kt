@@ -204,10 +204,12 @@ class GlowShield : AccessibilityService() {
     }
 
     private fun release() {
+        // Gone mid-breath (turned off, or unbound by the system): the glow screen takes its LED back.
+        if (instance === this) instance = null
+        blinkOut()
         removeBlink()
         removeArrival()
         removeCover()
-        if (instance === this) instance = null
     }
 
     /**

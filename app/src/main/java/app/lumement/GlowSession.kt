@@ -145,6 +145,25 @@ internal fun ledMissing(screenOn: Boolean, waiting: Boolean, resting: Boolean, i
     !screenOn && waiting && !resting && !inCall && !putAway && !ending
 
 /**
+ * The blink's question once a breath is out: may the phone sleep until the next one? Only with
+ * [GlowShield] able to sleep it and the LED lit alone in front ([ledInFront]: no other window
+ * over it, an alarm or a call), and nothing the sleep would cut short (an arrival, a finger on the
+ * dot, the last message just read). Put away or covered, the LED's own stowing runs instead; in a
+ * call it stays lit.
+ */
+internal fun sleepsBetweenBreaths(
+    canSleep: Boolean,
+    ledInFront: Boolean,
+    screenOn: Boolean,
+    arriving: Boolean,
+    touched: Boolean,
+    ending: Boolean,
+    putAway: Boolean,
+    covered: Boolean,
+    inCall: Boolean,
+): Boolean = canSleep && ledInFront && screenOn && !arriving && !touched && !ending && !putAway && !covered && !inCall
+
+/**
  * Do Not Disturb, in any of its modes, rests the LED ([GlowSession.resting]); all alerts allowed,
  * or a filter not known yet, doesn't.
  */
