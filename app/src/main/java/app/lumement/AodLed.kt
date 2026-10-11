@@ -1,11 +1,13 @@
 package app.lumement
 
 import android.annotation.SuppressLint
+import android.content.ContentResolver
 import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import android.view.Display
 import androidx.annotation.RequiresApi
 
@@ -26,6 +28,45 @@ import androidx.annotation.RequiresApi
 
 /** The always-on display (or another doze screen) is showing: the phone is asleep, the panel lit low. */
 internal fun dozing(state: Int?): Boolean = state == Display.STATE_DOZE || state == Display.STATE_DOZE_SUSPEND
+
+/**
+ * Where a sleep went, read off the display once the phone is asleep: the always-on display
+ * (true) or off (false). Still lit for use, it is on its way (One UI keeps the panel on while it
+ * goes to the always-on display): null until the display's next change.
+ */
+internal fun sleepShowsAod(state: Int?): Boolean? = when (state) {
+    null, Display.STATE_UNKNOWN, Display.STATE_ON -> null
+    else -> dozing(state)
+}
+
+/**
+ * The system's own always-on display switch, where it can be read: One UI's `aod_mode`, else
+ * Android's `doze_always_on` (both hidden settings, read only); null where neither is.
+ */
+internal fun aodSetting(resolver: ContentResolver): Int? =
+    readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_MODE) } ?: readSetting { Settings.Secure.getInt(resolver, DOZE_ALWAYS_ON) }
+
+private inline fun readSetting(read: () -> Int): Int? = try {
+    read()
+} catch (_: Exception) {
+    null
+}
+
+private const val ONE_UI_AOD_MODE = "aod_mode"
+private const val DOZE_ALWAYS_ON = "doze_always_on"
+
+/**
+ * Will this sleep show the always-on display? As the last sleep did ([lastShowed]) while the
+ * system's switch ([aodSetting]) is as it was then ([settingThen]): that also covers modes where
+ * it is on but shows only on a tap, or on a schedule. Switched since (or no sleep seen yet), the
+ * switch says ([settingNow]): no display event tells a sleep that stays off from one about to
+ * doze, so the last sleep's answer would be wrong once, in either direction. Null: not known.
+ */
+internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?): Boolean? = when {
+    lastShowed != null && settingThen == settingNow -> lastShowed
+    settingNow != null -> settingNow != 0
+    else -> lastShowed
+}
 
 /**
  * The phone dozes with the lock screen in front: may the LED breathe on the always-on display?

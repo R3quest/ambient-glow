@@ -18,6 +18,31 @@ class AodLedTest {
         assertFalse(dozing(null))
     }
 
+    @Test
+    fun aSleepIsReadOnceTheDisplayHasSettled() {
+        assertEquals("the always-on display", true, sleepShowsAod(Display.STATE_DOZE))
+        assertEquals("the always-on display, held still", true, sleepShowsAod(Display.STATE_DOZE_SUSPEND))
+        assertEquals("off: no always-on display", false, sleepShowsAod(Display.STATE_OFF))
+        assertEquals("still lit, on its way: not known yet", null, sleepShowsAod(Display.STATE_ON))
+        assertEquals(null, sleepShowsAod(Display.STATE_UNKNOWN))
+        assertEquals(null, sleepShowsAod(null))
+    }
+
+    @Test
+    fun theLastSleepSaysWhileTheSwitchIsAsItWas() {
+        assertEquals("showed, switch unchanged", true, sleepWillDoze(lastShowed = true, settingThen = 1, settingNow = 1))
+        assertEquals("on but tap to show: went off, unchanged", false, sleepWillDoze(lastShowed = false, settingThen = 1, settingNow = 1))
+        assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null))
+    }
+
+    @Test
+    fun switchedSinceTheSwitchSays() {
+        assertEquals("turned on", true, sleepWillDoze(lastShowed = false, settingThen = 0, settingNow = 1))
+        assertEquals("turned off", false, sleepWillDoze(lastShowed = true, settingThen = 1, settingNow = 0))
+        assertEquals("no sleep seen yet, on", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = 1))
+        assertEquals("nothing known", null, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = null))
+    }
+
     private fun onAod(
         waiting: Boolean = true,
         resting: Boolean = false,

@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +16,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.view.Display
 import androidx.core.os.BundleCompat
 import app.lumement.dashboard.GrantReturn
 
@@ -32,6 +34,7 @@ class NotificationWakerService : NotificationListenerService() {
     private val power by lazy(LazyThreadSafetyMode.NONE) { getSystemService(PowerManager::class.java) }
     private val keyguard by lazy(LazyThreadSafetyMode.NONE) { getSystemService(KeyguardManager::class.java) }
     private val audio by lazy(LazyThreadSafetyMode.NONE) { getSystemService(AudioManager::class.java) }
+    private val displays by lazy(LazyThreadSafetyMode.NONE) { getSystemService(DisplayManager::class.java) }
 
     // Held only until the glow screen is up; acquire(timeout) guarantees release.
     private val wakeLock by lazy(LazyThreadSafetyMode.NONE) {
@@ -89,21 +92,99 @@ class NotificationWakerService : NotificationListenerService() {
             mainHandler.removeCallbacks(checkLed)
             mainHandler.removeCallbacks(relightOnceLocked)
             lockWait = LockWait.NONE
+            // A glow screen on top of the lock screen handles its own screen-off; with none, the
+            // listener relights. With nothing waiting there is no LED: let the CPU sleep at once.
+            // Nor while Do Not Disturb rests it.
+            val screenOff = intent.action == Intent.ACTION_SCREEN_OFF
+            val relights = screenOff && !GlowPending.isEmpty && !GlowSession.resting
+            // Unless this sleep is expected to go off ([GlowSession.expectsAod]), it may show the
+            // always-on display: the relight waits for it to doze, to put the LED on it with no
+            // wake ([noteSleepState]). If it never dozes, the check below lights the LED as ever.
+            val expectsAod = if (screenOff) GlowSession.expectsAod(context) else null
+            relightAtDoze = relights && GlowSession.host?.isAway != false && expectsAod != false
+            if (screenOff) {
+                GlowLog.d { "svc sleep expected: always-on display $expectsAod" }
+                watchSleep()
+            } else {
+                stopWatchingSleep()
+            }
             when (intent.action) {
-                // A glow screen on top of the lock screen handles its own screen-off; with none, the
-                // listener relights. With nothing waiting there is no LED: let the CPU sleep at once.
-                // Nor while Do Not Disturb rests it.
-                Intent.ACTION_SCREEN_OFF -> if (!GlowPending.isEmpty && !GlowSession.resting) {
+                Intent.ACTION_SCREEN_OFF -> if (relights) {
                     DarkHold.acquire(context, LED_CHECK_MS + 1_000L) // up until the relight and the check have run
-                    if (GlowSession.host?.isAway != false) mainHandler.postDelayed(relightLed, RELIGHT_DELAY_MS)
+                    if (GlowSession.host?.isAway != false && !relightAtDoze) mainHandler.postDelayed(relightLed, RELIGHT_DELAY_MS)
                     mainHandler.postDelayed(checkLed, LED_CHECK_MS)
                 }
                 // Don't cancel the wake bridge here: another app (or the bridge itself) may have
                 // lit the panel a moment after it was posted, before the system launched it. The
-                // glow screen removes it when it starts, and it times out on its own.
-                Intent.ACTION_SCREEN_ON -> Unit
+                // glow screen removes it when it starts, and it times out on its own. Messages
+                // waiting: the always-on display's window up while the screen is on.
+                Intent.ACTION_SCREEN_ON -> if (!GlowPending.isEmpty) GlowShield.prepareAod()
             }
         }
+    }
+
+    /**
+     * Where the phone's sleeps go: the always-on display, or off ([GlowSession.sleepDozes]), for
+     * the glow screen to choose between the LED on it and the lit LED. Watched from SCREEN_OFF
+     * until the phone is awake again, as each display change comes: going to sleep from an
+     * unlocked phone, One UI turns the panel off first and dozes it ~0.3 s later; from the lock
+     * screen it keeps the panel on on its way (measured on the S23). Once it has dozed, this sleep
+     * showed the always-on display, whatever follows (a pocket, its own timeout). Not a sleep
+     * cancelled at once (awake again by now), nor one put away (the proximity sensor keeps the
+     * always-on display off).
+     */
+    private fun watchSleep() {
+        if (power.isInteractive || GlowSession.host?.isPutAway == true) return
+        sleepDozed = false
+        DarkHold.acquire(this, SLEEP_SETTLE_HOLD_MS)
+        if (!sleepWatching) {
+            sleepWatching = true
+            displays.registerDisplayListener(sleepWatch, mainHandler)
+        }
+        noteSleepState()
+    }
+
+    /** This sleep has dozed: it showed the always-on display. */
+    private var sleepDozed = false
+
+    /** With no glow screen on top, the LED is relit once this sleep dozes: onto the always-on display. */
+    private var relightAtDoze = false
+
+    /** [sleepWatch] is registered: from SCREEN_OFF until awake again, or dozed. */
+    private var sleepWatching = false
+
+    private fun noteSleepState() {
+        if (sleepDozed) return
+        val shows = sleepShowsAod(displays.getDisplay(Display.DEFAULT_DISPLAY)?.state)
+        if (shows == true) {
+            sleepDozed = true
+            stopWatchingSleep()
+            if (relightAtDoze) {
+                relightAtDoze = false
+                mainHandler.removeCallbacks(relightLed)
+                mainHandler.post(relightLed)
+            }
+        }
+        if (GlowSession.sleepDozes != shows) {
+            GlowLog.d { "svc sleep: always-on display ${when (shows) { true -> "showed"; false -> "off"; null -> "not known yet" }}" }
+        }
+        GlowSession.sleepDozes = shows
+        GlowSession.sleepDozesSetting = aodSetting(contentResolver)
+    }
+
+    private val sleepWatch = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != Display.DEFAULT_DISPLAY) return
+            if (power.isInteractive) stopWatchingSleep() else noteSleepState()
+        }
+    }
+
+    private fun stopWatchingSleep() {
+        if (!sleepWatching) return
+        sleepWatching = false
+        displays.unregisterDisplayListener(sleepWatch)
     }
 
     override fun onListenerConnected() {
@@ -123,6 +204,7 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
+        stopWatchingSleep()
         releaseScreenReceiver()
         brandColors.release()
         requestRebind(ComponentName(this, NotificationWakerService::class.java))
@@ -152,6 +234,8 @@ class NotificationWakerService : NotificationListenerService() {
         val unlocked = Premium.unlocked(this)
         val color = if (pkg == packageName) auto else GlowApps.glowOf(apps, pkg, auto, own = unlocked)
         GlowPending.put(PendingGlow(key = sbn.key, pkg = pkg, color = color, newestAt = newestAt))
+        // In use as it arrives (no screen-on to come): the always-on display's window up now.
+        if (power.isInteractive) GlowShield.prepareAod()
         val host = GlowSession.host
         GlowLog.d {
             "svc posted quiet=$quietUpdate interactive=${power.isInteractive} " +
@@ -207,6 +291,8 @@ class NotificationWakerService : NotificationListenerService() {
         GlowLauncher.dismissMessage(this, sbn.key)
         if (GlowSession.screenTakers.remove(sbn.key)) GlowSession.host?.onScreenTakersChanged()
         if (!GlowPending.remove(sbn.key)) return
+        // Nothing waits any more, and no glow screen is up to take its windows down.
+        if (GlowPending.isEmpty && GlowSession.host == null) GlowShield.removeLed()
         GlowSession.host?.onPendingChanged()
     }
 
@@ -245,9 +331,11 @@ class NotificationWakerService : NotificationListenerService() {
         val newest = GlowPending.entries.firstOrNull() ?: return
         // Only reached when the glow screen was not on top (the phone had been unlocked). Through
         // the full-screen intent Android shows the lock screen for a moment before the LED covers
-        // it; started in the dark ([GlowLauncher.startInTheDark]) it doesn't.
-        GlowLog.d { "svc relight LED" }
-        launch(WakeMode.LED, newest.color)
+        // it; started in the dark ([GlowLauncher.startInTheDark]) it doesn't. Asleep on the
+        // always-on display, the LED goes onto it, with no wake.
+        val onAod = !power.isInteractive && dozing(displays.getDisplay(Display.DEFAULT_DISPLAY)?.state)
+        GlowLog.d { "svc relight LED${if (onAod) " on the always-on display" else ""}" }
+        launch(if (onAod) WakeMode.AOD else WakeMode.LED, newest.color)
     }
 
     /**
@@ -313,6 +401,8 @@ class NotificationWakerService : NotificationListenerService() {
 
     private fun launch(mode: WakeMode, color: Int): Boolean {
         wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
+        // The full-screen intent wakes the panel: the LED lit there, not on the always-on display.
+        val woken = if (mode == WakeMode.AOD) WakeMode.LED else mode
         // Into the black LED face from a dark screen: straight in, while still dark, so the lock
         // screen never shows first. If it didn't arrive, the full-screen intent as ever.
         if (mode != WakeMode.WAKE && !power.isInteractive && GlowLauncher.startInTheDark(this, mode)) {
@@ -320,12 +410,12 @@ class NotificationWakerService : NotificationListenerService() {
                 val host = GlowSession.host
                 if (host == null || host.isAway) {
                     GlowLog.d { "svc dark start didn't arrive: full-screen intent" }
-                    if (!GlowLauncher.launchFromBackground(this, mode, color)) wakeLock.release()
+                    if (!GlowLauncher.launchFromBackground(this, woken, color)) wakeLock.release()
                 }
             }, DARK_START_CHECK_MS)
             return true
         }
-        val launched = GlowLauncher.launchFromBackground(this, mode, color)
+        val launched = GlowLauncher.launchFromBackground(this, woken, color)
         if (!launched) wakeLock.release()
         return launched
     }
@@ -377,6 +467,9 @@ class NotificationWakerService : NotificationListenerService() {
 
         /** The watchdog looks this long after the screen went off: past every relight's own delay. */
         const val LED_CHECK_MS = 4_000L
+
+        /** Upper bound on the CPU held from SCREEN_OFF while the display settles, off or into the always-on display (~0.3 s). */
+        const val SLEEP_SETTLE_HOLD_MS = 2_000L
 
         /** Settings.Secure.LOCK_SCREEN_LOCK_AFTER_TIMEOUT (hidden), in ms. */
         const val LOCK_AFTER_TIMEOUT = "lock_screen_lock_after_timeout"

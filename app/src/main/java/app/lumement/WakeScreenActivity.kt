@@ -375,6 +375,9 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     override val isAway: Boolean
         get() = face.value == Face.AWAY
 
+    override val isPutAway: Boolean
+        get() = stowed
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // "Light" bar style = DARK icons and gesture handle. On our black panel they are invisible,
         // which matters because One UI re-shows the bars for ~150 ms on every wake before our
@@ -497,7 +500,8 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         timers.removeCallbacksAndMessages(null)
         GlowSession.detach(this)
         GlowShield.hide()
-        GlowShield.removeLed()
+        // Messages still waiting: the always-on display's window stays, for the LED at the next sleep.
+        if (GlowPending.isEmpty) GlowShield.removeLed() else GlowShield.removeLit()
         GlowShield.stopArrival()
         GlowLauncher.dismissMessage(this)
         unregisterReceiver(screenSignals)
@@ -678,6 +682,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             }
             WakeMode.LED -> showLed()
             WakeMode.ARRIVAL -> showLed(arrival = true)
+            WakeMode.AOD -> showLockScreen()
         }
         // The full-screen intent normally lights the panel; make sure, without relaunching.
         // Arrived while the screen is still dark: started in the dark ([GlowLauncher.startInTheDark]),
@@ -686,7 +691,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         // not a power press; and nobody else is lighting the panel, so it does, once its cover is
         // committed. Through the full-screen intent the system may still light it first: then
         // the wake finds it lit and does nothing.
-        if (!power.isInteractive) {
+        if (mode == WakeMode.AOD && !power.isInteractive) {
+            // Asleep on the always-on display: the LED on it, no wake. Its window is up already, drawn
+            // while the screen was on (no window draws while dozing); without it, lit as ever.
+            DarkHold.acquire(this)
+            relightOrAod()
+        } else if (!power.isInteractive) {
             if (face.value == Face.LED) ledArmedForSleep = true
             wakeAfter(RELIGHT_DELAY_MS)
         }
@@ -707,10 +717,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             return
         }
         sleepSettling = false
-        // Put away, the proximity sensor keeps the always-on display off: that says nothing of it.
-        // Still on after a power press (lit at once, so not waited for): not known where it was
-        // going, so the next sleep is let through to see.
-        if (!stowed) sleepDozes = if (state == Display.STATE_ON) null else dozing(state)
         if (aodLit) return // the LED is on the always-on display
         timers.removeCallbacks(takeOver)
         timers.removeCallbacks(dimForTakeover)
@@ -852,7 +858,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun sleepWatchMs(): Long = if (ledInWindow.value) READY_SLEEP_WATCH_MS else SLEEP_WATCH_MS
 
     private fun onGoingToSleep() {
-        GlowLog.d { "act going to sleep on the lock screen sleepDozes=$sleepDozes" }
+        GlowLog.d { "act going to sleep on the lock screen expectsAod=${GlowSession.expectsAod(this)}" }
         if (ledInWindow.value) {
             openUnderLed("sleep watch")
             return
@@ -1066,13 +1072,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private var aodLit = false
 
     /**
-     * Let the lock screen sleep rather than keep the phone awake for the lit LED: the last sleep
-     * showed the always-on display ([sleepDozes]), or none has been seen yet, so this one shows.
-     * There the LED breathes on it ([startAodLed]): power then wakes the phone at once, and no
-     * screen stays on. Where the display went off instead, the lit LED takes the lock screen over
-     * before it sleeps, and catches the sleep to relight ([onGoingToSleep]).
+     * Let the lock screen sleep rather than keep the phone awake for the lit LED: this sleep is
+     * expected to show the always-on display ([GlowSession.expectsAod]), or it is not known. There
+     * the LED breathes on it ([startAodLed]): power then wakes the phone at once, and no screen
+     * stays on. Where the display goes off instead, the lit LED takes the lock screen over before
+     * it sleeps, and catches the sleep to relight ([onGoingToSleep]).
      */
-    private val letsSleep: Boolean get() = sleepDozes != false
+    private val letsSleep: Boolean get() = GlowSession.expectsAod(this) != false
 
     /** SCREEN_OFF came with the panel still on, on its way to the always-on display or off: [onScreenOff] once it has gone. */
     private var sleepSettling = false
@@ -1323,7 +1329,10 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         face.value = Face.AWAY
         coverSleep = false
         clearLed()
-        GlowShield.removeLed() // over the user's apps it has nothing to wait for
+        // Over the user's apps the lit LED has nothing to wait for. The always-on display's window
+        // stays, see-through and skipped by the compositor: drawn while the screen is on, it lets
+        // the LED onto the always-on display at the next sleep without a wake.
+        GlowShield.removeLit()
         unstow()
         listenForSleep(false)
         ledArmedForSleep = false
@@ -1500,12 +1509,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     private companion object {
-        /**
-         * The display dozed (the always-on display showed) at the phone's last finished sleep,
-         * read at SCREEN_OFF; null until one is seen. Kept for the process, across glow screens.
-         */
-        var sleepDozes: Boolean? = null
-
         const val UNTOUCHABLE = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 
         const val SLEEP_WATCH_MS = 50L

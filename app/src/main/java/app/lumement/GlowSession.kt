@@ -1,5 +1,6 @@
 package app.lumement
 
+import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.compose.runtime.Immutable
@@ -74,8 +75,10 @@ object GlowPending {
  * - LED: cover the lock screen with the black panel and the blinking LED.
  * - ARRIVAL: like LED, but first play the effect or show the message on the black panel
  *   ([ArrivalMode.onBlack]).
+ * - AOD: asleep, the always-on display showing: get on top in the dark, the lock screen in front
+ *   and the LED on the always-on display, with no wake.
  */
-enum class WakeMode { WAKE, LED, ARRIVAL }
+enum class WakeMode { WAKE, LED, ARRIVAL, AOD }
 
 /**
  * How a new message opens the glow screen when none is on top: on the lock screen without
@@ -198,6 +201,9 @@ object GlowSession {
         /** The glow screen is alive but behind other apps (the phone was unlocked). */
         val isAway: Boolean
 
+        /** The phone is put away (a pocket, face down): its sleeps say nothing of the always-on display. */
+        val isPutAway: Boolean
+
         /** A new message arrived while the glow screen is on top of the lock screen. */
         fun onNewMessage()
 
@@ -223,6 +229,21 @@ object GlowSession {
      * LED lights again for whatever is still unread. Set by the listener, main thread only.
      */
     var resting = false
+
+    /**
+     * The always-on display showed at the phone's last sleep ([sleepShowsAod]); null until one is
+     * seen, or while it is not known. The listener watches every sleep, with a glow screen up or
+     * not: the always-on display is turned on or off in Settings, unlocked, mostly with no glow
+     * screen left to see the next sleep, and a stale answer would stick, since the lit LED lets
+     * no lock-screen sleep finish. Main thread only.
+     */
+    var sleepDozes: Boolean? = null
+
+    /** The system's always-on display switch ([aodSetting]) when [sleepDozes] was seen. */
+    var sleepDozesSetting: Int? = null
+
+    /** Will the next sleep show the always-on display ([sleepWillDoze])? Null: not known. */
+    fun expectsAod(context: Context): Boolean? = sleepWillDoze(sleepDozes, sleepDozesSetting, aodSetting(context.contentResolver))
 
     /** Keys of other apps' posts showing now that want the screen ([takesScreen]). Set by the listener, main thread only. */
     val screenTakers = mutableSetOf<String>()

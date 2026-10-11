@@ -295,10 +295,16 @@ class GlowShield : AccessibilityService() {
      * dozing; [aodDrawn] once its first frame is on screen.
      */
     private var aodWindow: View? = null
+    private var aodParams: WindowManager.LayoutParams? = null
     private var aodBreath: LedRound? = null
     private var aodDrawn = false
 
-    /** Transparent and untouchable: the always-on display shows as ever around the light, and takes its taps. */
+    /**
+     * Transparent and untouchable: the always-on display shows as ever around the light, and takes
+     * its taps. Kept while messages wait, the phone unlocked too, so the LED can go onto the
+     * always-on display at the next sleep without a wake; at window alpha 0 while no breath plays,
+     * so the compositor skips it over the user's apps ([setAodShown]).
+     */
     private fun addAodWindow() {
         if (aodWindow != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val breath = LedRound(this, LedSurface(this), dozing = true)
@@ -310,7 +316,8 @@ class GlowShield : AccessibilityService() {
         }
         aodDrawn = false
         view.viewTreeObserver.registerFrameCommitCallback { if (aodWindow === view) aodDrawn = true }
-        if (addOverlay(view, PixelFormat.TRANSLUCENT, "Lumement:aod") == null) return
+        val params = addOverlay(view, PixelFormat.TRANSLUCENT, "Lumement:aod", alpha = 0f) ?: return
+        aodParams = params
         aodWindow = view
         aodBreath = breath
         GlowLog.d { "aod window up" }
@@ -323,18 +330,34 @@ class GlowShield : AccessibilityService() {
         if (!aodDrawn || !breath.surface.ready) return false
         val settings = GlowPrefs.loadPlaying(this)
         breath.start(settings.forScreen(geometry.value), geometry.value.fitted(settings, resources.displayMetrics.density), colors, round)
+        setAodShown(breath.running)
         return breath.running
     }
 
-    /** The light goes out; the window stays for the next doze. */
+    /** The light goes out; the window stays for the next doze, skipped by the compositor. */
     private fun stopAodBreath() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) aodBreath?.stop()
+        setAodShown(false)
+    }
+
+    /**
+     * The window's alpha: 1 while the round plays (its light is the surface's alpha), 0 otherwise.
+     * A WindowManager attribute, so it applies while dozing, with no draw.
+     */
+    private fun setAodShown(shown: Boolean) {
+        val view = aodWindow ?: return
+        val params = aodParams ?: return
+        val alpha = if (shown) 1f else 0f
+        if (params.alpha == alpha) return
+        params.alpha = alpha
+        runCatching { windowManager.updateViewLayout(view, params) }
     }
 
     private fun removeAodWindow() {
         stopAodBreath()
         aodBreath = null
         aodDrawn = false
+        aodParams = null
         val view = aodWindow ?: return
         aodWindow = null
         runCatching { windowManager.removeViewImmediate(view) }
@@ -812,7 +835,20 @@ class GlowShield : AccessibilityService() {
             instance?.stopAodBreath()
         }
 
-        /** Both LED windows down: nothing waits any more, or the phone is unlocked. */
+        /**
+         * The always-on display's window up, hidden, while the screen is on and messages wait (the
+         * phone unlocked too), so the LED can go onto it at the next sleep ([prepareLed]).
+         */
+        fun prepareAod() {
+            instance?.addAodWindow()
+        }
+
+        /** The lit LED's window down: the phone is unlocked. The always-on display's stays while messages wait. */
+        fun removeLit() {
+            instance?.removeLedWindow()
+        }
+
+        /** Both LED windows down: nothing waits any more. */
         fun removeLed() {
             instance?.run {
                 removeLedWindow()
