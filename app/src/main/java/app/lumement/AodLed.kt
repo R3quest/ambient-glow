@@ -11,8 +11,8 @@ import androidx.annotation.RequiresApi
 
 // ---------------------------------------------------------------------------------------------
 // The LED on the always-on display, where the phone has one and it shows: the phone dozes, so
-// power wakes it on key down straight into the lock screen, and no breath costs a wake and a
-// sleep (the blink's). Anywhere else, the blink. Measured on the S23 (One UI 8.5):
+// power wakes it on key down straight into the lock screen, and no screen stays lit for it.
+// Anywhere else, the lit LED in its own window. Measured on the S23 (One UI 8.5):
 // - One UI skips every app window's redraw while dozing ("performDraw() was skipped by
 //   AOD_SHOW_STATE"), and a window only shows once it has drawn. So [GlowShield]'s window goes up
 //   while the screen is on, transparent and untouchable, holding the LED's own surface

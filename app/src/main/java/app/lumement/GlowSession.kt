@@ -145,23 +145,30 @@ internal fun ledMissing(screenOn: Boolean, waiting: Boolean, resting: Boolean, i
     !screenOn && waiting && !resting && !inCall && !putAway && !ending
 
 /**
- * The blink's question once a breath is out: may the phone sleep until the next one? Only with
- * [GlowShield] able to sleep it and the LED lit alone in front ([ledInFront]: no other window
- * over it, an alarm or a call), and nothing the sleep would cut short (an arrival, a finger on the
- * dot, the last message just read). Put away or covered, the LED's own stowing runs instead; in a
- * call it stays lit.
+ * May the lit LED go into its window, the lock screen readied under it? Once the LED face is in
+ * front alone ([ledInFront]: resumed, no alarm or call over it), lit and [settled], and nothing
+ * else holds the screen: no arrival playing, the last message not just read, not covered or put
+ * away (the LED's stowing runs on its own face), no call, and no post that wants the screen
+ * ([screenTaken]: a ringing call shows as a pop-up, which the window would hide).
  */
-internal fun sleepsBetweenBreaths(
-    canSleep: Boolean,
+internal fun ledWindowWanted(
     ledInFront: Boolean,
     screenOn: Boolean,
+    settled: Boolean,
     arriving: Boolean,
-    touched: Boolean,
     ending: Boolean,
-    putAway: Boolean,
     covered: Boolean,
+    putAway: Boolean,
     inCall: Boolean,
-): Boolean = canSleep && ledInFront && screenOn && !arriving && !touched && !ending && !putAway && !covered && !inCall
+    screenTaken: Boolean,
+): Boolean = ledInFront && screenOn && settled && !arriving && !ending && !covered && !putAway && !inCall && !screenTaken
+
+/**
+ * With the lock screen ready under the LED's window, must the window make way? For a post that
+ * wants the screen ([screenTaken]), a call, or the last message just read. Covered or put away,
+ * the LED's own face takes the lock screen over again instead; a power press opens it.
+ */
+internal fun ledWindowEnds(screenTaken: Boolean, inCall: Boolean, ending: Boolean): Boolean = screenTaken || inCall || ending
 
 /**
  * Do Not Disturb, in any of its modes, rests the LED ([GlowSession.resting]); all alerts allowed,
