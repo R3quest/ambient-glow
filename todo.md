@@ -44,10 +44,7 @@
 - [ ] **CI**: add a GitHub Actions workflow that runs `make check` (lint, tests, both builds, the INTERNET guard) on every push. Added in `.github/workflows/check.yml`; check its first run after the push.
 - [ ] **Decide: the 16 ms sleep check under the lit LED** (~3.5% of a core): no power-key event can replace it. Tested 2026-10-12 on the S23 with physical presses: accessibility key filtering gets volume keys but never the power key. Left to choose: 16 ms (1 in 8 presses glitch) or 50 ms (2 in 5).
 - [ ] **Measure the AOD LED's CPU hold**: `DarkHold` is re-taken every breath, so the CPU never sleeps while the LED is on the AOD. Measure one night with `dumpsys power` and batterystats, and check it against Play's current limit for excessive partial wake locks.
-- [ ] **Extract `LockFlow` from `WakeScreenActivity`**: one state object plus `onEvent(event) → effects`, with the activity only carrying out the effects. Steps:
-  - write scenario tests that pin today's behaviour first, one per bug in the notes (timeout trap, `takenOut` ordering, AOD learning, alarm under the window)
-  - move the flags into one state object
-  - move the handlers over one at a time
+- [x] **Extract `LockFlow` from `WakeScreenActivity`**: the lock flow is plain Kotlin over a `LockPort`, tested on `FakePhone` (`LockFlowTest`: 17 scenarios, each old bug reintroduced fails one). Next: a scenario for every lock-flow bug as it is found.
 - [x] **Wake-lock audit test**: a test that reads the source and fails if any `acquire(` has no timeout, apart from `Lumement:led` and `Lumement:pocket`.
 - [ ] **`make scenario`**: posts a test message over adb, locks the phone, reads the message, then checks `dumpsys power` that no `Lumement:*` lock is still held.
 - [ ] **`make soak MODE=lit|aod`**: scripts the 10-minute charge-counter measurement and logs the result for each release.
