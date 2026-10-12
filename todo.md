@@ -58,4 +58,5 @@
   - on the charger, the LED stays lit
   - with Battery Saver on, no lit LED
   - on battery, one written-down limit on how long it stays lit with nobody touching the phone
+- [ ] **The always-on display going away at night**: measured 2026-10-12 on the S23 ("Show always"), One UI switched the AOD off by itself after ~10 min in low light, as burn-in protection (`REASON_PREVENT_BURN_IN_EXECUTED`, `display_time_low_light`, DOZE_AOD → DOZE, screen state OFF). Our flow reads "the AOD went away" as "light the LED instead" (`onDisplayChanged`: `aodLit` and not dozing → `relightLed`) and woke the phone into the lit LED 190 ms later. So an AOD user in a dark room gets the lit LED all night too, overriding One UI's own choice. Part of the overnight decision.
 - [ ] **Build the overnight rule**: once decided, as a pure function with unit tests, the same pattern as `ledWindowWanted`.
