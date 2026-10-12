@@ -634,6 +634,24 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         updateLedWindow()
     }
 
+    /**
+     * [GlowShield] went with the LED in one of its windows. Ready under the LED, the lock screen
+     * would be left lit, held on by the LED's locks with no LED over it, and the next power press
+     * cancelled: the LED's own face covers it again, as without [GlowShield]. On the always-on
+     * display, the LED is lit instead, as where it can't go there.
+     */
+    override fun onShieldGone() {
+        GlowLog.d { "act shield gone face=${face.value} inWindow=${ledInWindow.value} aod=$aodLit" }
+        if (aodLit) {
+            aodLit = false
+            if (!power.isInteractive && face.value == Face.LOCK_SCREEN) {
+                DarkHold.acquire(this)
+                relightLed(RELIGHT_DELAY_MS)
+            }
+        }
+        coverWithLed("shield gone")
+    }
+
     override fun ensureLed() {
         if (aodLit) return
         val missing = face.value != Face.AWAY && ledMissing(

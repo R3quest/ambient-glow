@@ -1,6 +1,7 @@
 package app.lumement
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.compose.runtime.Immutable
@@ -8,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
+import java.util.Base64
 
 /**
  * One unread message the LED is waiting on, the app it came from, and the colour it blinks in.
@@ -26,8 +29,12 @@ class PendingMessage(val sbn: StatusBarNotification, val systemPopsUp: Boolean)
 
 /**
  * Unread messages the LED is waiting on: the single source of truth shared by the listener
- * (writes) and the glow screen (observes). Memory only, main thread only, never persisted.
- * An entry leaves only when its notification is dismissed or cleared by the app (read).
+ * (writes) and the glow screen (observes). Main thread only. An entry leaves only when its
+ * notification is dismissed or cleared by the app (read).
+ *
+ * Kept in a file too ([keepIn]), so the LED outlives its process: an app update or the system
+ * killing it would otherwise forget every waiting message, and the LED would stay dark for them
+ * with no sign. The listener brings the list back when it connects again ([restore]).
  */
 object GlowPending {
     /** Newest first. Snapshot state, so the glow screen recomposes when it changes. */
@@ -41,32 +48,112 @@ object GlowPending {
     /** The newest message, for [ArrivalMode.MESSAGE] only; dropped once it is read or dismissed. */
     var message: PendingMessage? by mutableStateOf(null)
 
+    /** Where the list is kept across a restart of the process; set by the listener ([keepIn]). */
+    private var store: SharedPreferences? = null
+
     fun put(entry: PendingGlow) {
+        val was = entries.firstOrNull()
         entries.removeAll { it.key == entry.key }
         entries.add(0, entry)
+        // A chat updating the newest message, in the same colour: the LED shows nothing new, so the
+        // file isn't written for it (a busy group posts every few seconds). Its kept [newestAt] is
+        // then older: after a restart, at most one update plays as a new message.
+        if (was?.key != entry.key || was.color != entry.color) save()
     }
 
     fun remove(key: String): Boolean {
         if (message?.sbn?.key == key) message = null
-        return entries.removeAll { it.key == key }
+        return entries.removeAll { it.key == key }.also { if (it) save() }
     }
 
     /** [pkg] was muted: its waiting messages leave the LED at once. True if any did. */
     fun removeApp(pkg: String): Boolean {
         if (message?.sbn?.packageName == pkg) message = null
-        return entries.removeAll { it.pkg == pkg }
+        return entries.removeAll { it.pkg == pkg }.also { if (it) save() }
     }
 
     /** [pkg] was given a new colour: its waiting messages blink in it from the next breath. */
     fun recolor(pkg: String, color: Int) {
+        var changed = false
         for (i in entries.indices) {
-            if (entries[i].pkg == pkg && entries[i].color != color) entries[i] = entries[i].copy(color = color)
+            if (entries[i].pkg == pkg && entries[i].color != color) {
+                entries[i] = entries[i].copy(color = color)
+                changed = true
+            }
         }
+        if (changed) save()
+    }
+
+    /** Drops every entry whose notification is no longer [active] (a removal missed, e.g. during a rebind). */
+    fun keepOnly(active: Set<String>) {
+        if (entries.removeAll { it.key !in active }) save()
     }
 
     /** Distinct colours in arrival order (newest first): one breath each in the LED's round. */
     fun colors(): List<Int> = entries.map { it.color }.distinct()
+
+    /** From now on every change is written to [prefs] (applied in the background). */
+    fun keepIn(prefs: SharedPreferences) {
+        store = prefs
+    }
+
+    /**
+     * After a restart of the process, the list as it was kept, less what [stillShowing] no longer
+     * finds in the shade (read or dismissed meanwhile): it is given the kept keys, and answers
+     * which still show, or null if it can't tell (then nothing is brought back, and the file is
+     * left for the next try). Only into an empty list: a list already here is newer. True if any
+     * came back.
+     */
+    fun restore(stillShowing: (List<String>) -> Set<String>?): Boolean {
+        val prefs = store ?: return false
+        if (!isEmpty) {
+            save()
+            return false
+        }
+        val kept = decodePending(prefs.getString(KEY_PENDING, null))
+        if (kept.isEmpty()) return false
+        val showing = stillShowing(kept.map { it.key }) ?: return false
+        entries.addAll(kept.filter { it.key in showing })
+        save()
+        return !isEmpty
+    }
+
+    private fun save() {
+        val prefs = store ?: return
+        prefs.edit { if (isEmpty) remove(KEY_PENDING) else putString(KEY_PENDING, encodePending(entries)) }
+    }
+
+    private const val KEY_PENDING = "pending"
 }
+
+/**
+ * [entries] as one line each, their fields comma-separated: the key and package in Base64 (a key
+ * may hold any character, its tag is the posting app's), the colour and time as numbers.
+ */
+internal fun encodePending(entries: List<PendingGlow>): String = entries.joinToString("\n") {
+    listOf(base64(it.key), base64(it.pkg), it.color.toString(), it.newestAt.toString()).joinToString(",")
+}
+
+/** What [encodePending] wrote; a line that doesn't read is skipped, and nothing gives an empty list. */
+internal fun decodePending(text: String?): List<PendingGlow> {
+    if (text.isNullOrEmpty()) return emptyList()
+    return text.lineSequence().mapNotNull { line ->
+        val fields = line.split(',')
+        if (fields.size != 4) return@mapNotNull null
+        runCatching {
+            PendingGlow(
+                key = unbase64(fields[0]),
+                pkg = unbase64(fields[1]),
+                color = fields[2].toInt(),
+                newestAt = fields[3].toLong(),
+            )
+        }.getOrNull()
+    }.distinctBy { it.key }.toList()
+}
+
+private fun base64(text: String): String = Base64.getUrlEncoder().withoutPadding().encodeToString(text.toByteArray(Charsets.UTF_8))
+
+private fun unbase64(text: String): String = String(Base64.getUrlDecoder().decode(text), Charsets.UTF_8)
 
 /**
  * How the glow screen opens.
@@ -224,6 +311,9 @@ object GlowSession {
 
         /** A post that wants the screen came or went: [screenTakers] changed. */
         fun onScreenTakersChanged()
+
+        /** [GlowShield] went (turned off, or unbound by the system), and its windows with it. */
+        fun onShieldGone()
     }
 
     var host: Host? = null
