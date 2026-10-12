@@ -26,11 +26,12 @@ class MessageFilterTest {
 
     @Test
     fun callsAlarmsAndFullScreenPostsTakeTheScreen() {
-        assertTrue("call", takesScreen(Notification.CATEGORY_CALL, fullScreen = false))
-        assertTrue("alarm", takesScreen(Notification.CATEGORY_ALARM, fullScreen = false))
-        assertTrue("full-screen intent", takesScreen(null, fullScreen = true))
-        assertFalse("message", takesScreen(Notification.CATEGORY_MESSAGE, fullScreen = false))
-        assertFalse("plain", takesScreen(null, fullScreen = false))
+        assertTrue("call", takesScreen(Notification.CATEGORY_CALL, fullScreen = false, ongoing = false))
+        assertTrue("ringing alarm", takesScreen(Notification.CATEGORY_ALARM, fullScreen = false, ongoing = true))
+        assertFalse("upcoming alarm", takesScreen(Notification.CATEGORY_ALARM, fullScreen = false, ongoing = false))
+        assertTrue("full-screen intent", takesScreen(null, fullScreen = true, ongoing = false))
+        assertFalse("message", takesScreen(Notification.CATEGORY_MESSAGE, fullScreen = false, ongoing = false))
+        assertFalse("plain", takesScreen(null, fullScreen = false, ongoing = false))
     }
 
     @Test

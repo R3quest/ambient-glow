@@ -51,4 +51,12 @@ class LedWindowTest {
         assertTrue("in a call", ledWindowEnds(screenTaken = false, inCall = true, ending = false))
         assertTrue("the last message read", ledWindowEnds(screenTaken = false, inCall = false, ending = true))
     }
+
+    @Test
+    fun anAlarmRangOnlyWhenTheOneNamedIsDue() {
+        assertTrue("due now", alarmRang(dueAt = 1_000L, now = 1_000L))
+        assertTrue("due a moment ago", alarmRang(dueAt = 1_000L, now = 1_012L))
+        assertFalse("moved or cancelled, still ahead", alarmRang(dueAt = 5_000L, now = 1_000L))
+        assertFalse("none was set", alarmRang(dueAt = null, now = 1_000L))
+    }
 }

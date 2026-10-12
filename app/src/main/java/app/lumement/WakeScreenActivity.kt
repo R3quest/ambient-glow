@@ -1,6 +1,7 @@
 package app.lumement
 
 import android.annotation.SuppressLint
+import android.app.AlarmManager
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -86,6 +87,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private val power by lazy(LazyThreadSafetyMode.NONE) { getSystemService(PowerManager::class.java) }
     private val keyguard by lazy(LazyThreadSafetyMode.NONE) { getSystemService(KeyguardManager::class.java) }
     private val audio by lazy(LazyThreadSafetyMode.NONE) { getSystemService(AudioManager::class.java) }
+    private val alarms by lazy(LazyThreadSafetyMode.NONE) { getSystemService(AlarmManager::class.java) }
     private val displays by lazy(LazyThreadSafetyMode.NONE) { getSystemService(DisplayManager::class.java) }
 
     // Some builds stop honouring FLAG_KEEP_SCREEN_ON once this window has taken over a showing
@@ -372,6 +374,22 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         }
     }
 
+    /** When the system's next alarm clock is due, as last seen ([alarmSignal]); null with none set. */
+    private var alarmDueAt: Long? = null
+
+    /**
+     * The system's next alarm clock changed: set, snoozed, cancelled, or the one it named rang
+     * ([alarmRang]). Sent as an alarm clock fires (measured on the S23: 12 ms after, ~0.19 s before
+     * Samsung Clock's ringing screen is up).
+     */
+    private val alarmSignal = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val rang = alarmRang(alarmDueAt, System.currentTimeMillis())
+            alarmDueAt = alarms.nextAlarmClock?.triggerTime
+            if (rang) alarmRings()
+        }
+    }
+
     override val isAway: Boolean
         get() = face.value == Face.AWAY
 
@@ -402,6 +420,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
             unlockSignal,
             IntentFilter(Intent.ACTION_USER_PRESENT),
             ContextCompat.RECEIVER_EXPORTED,
+        )
+        alarmDueAt = alarms.nextAlarmClock?.triggerTime
+        ContextCompat.registerReceiver(
+            this,
+            alarmSignal,
+            IntentFilter(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         listenForSleep(true)
         GlowSession.attach(this)
@@ -506,6 +531,7 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         GlowLauncher.dismissMessage(this)
         unregisterReceiver(screenSignals)
         unregisterReceiver(unlockSignal)
+        unregisterReceiver(alarmSignal)
         listenForSleep(false)
         super.onDestroy()
     }
@@ -551,7 +577,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
                 val dark = !power.isInteractive
                 if (dark) DarkHold.acquire(this)
                 showLed(arrival = effect)
-                endLedWindow() // the LED's face is black in front first, so the lift shows no lock screen
                 // Arranged while dark: give the cover a moment to commit, then light straight into it.
                 if (dark) wakeAfter(RELIGHT_DELAY_MS)
             }
@@ -1030,7 +1055,6 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         if (!ledInWindow.value) return
         GlowLog.d { "act $why under the LED: its face covers the lock screen again" }
         showLed()
-        endLedWindow()
     }
 
     /** Nothing more to show over the ready lock screen (read elsewhere, Do Not Disturb): black over it, and asleep at once. */
@@ -1059,6 +1083,20 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
 
     /** A tap on the LED: the lock screen under it, as a tap on the LED's face opens it. */
     private fun onLedWindowTap() {
+        if (!leaveIfUnlocked()) endLedWindow()
+    }
+
+    /**
+     * An alarm clock rang with the lock screen ready under the LED. Any other app shows its ringing
+     * screen through a full-screen notification, and the window makes way for that post
+     * ([takesScreen]); Samsung Clock, a system app, opens its screen itself, under the window (above
+     * every app window), and posts only ~3 s later (measured on the S23). So the window lifts now:
+     * the lock screen in front, as a stock phone has it when an alarm rings while it shows, and the
+     * alarm's screen over it. Once that is gone, the lock screen's own timeout runs.
+     */
+    private fun alarmRings() {
+        if (!ledInWindow.value) return
+        GlowLog.d { "act alarm rang under the LED: window lifted" }
         if (!leaveIfUnlocked()) endLedWindow()
     }
 
@@ -1198,6 +1236,11 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
         window.hideBarsOnBlack()
         face.value = Face.LED
         setLockScreenCover(cover = true)
+        // The LED's face covers the lock screen now: a lock screen ready under the LED's window is
+        // no longer in front, so the window goes too, the face black in front first so the lift
+        // shows no lock screen. Left up, a power press would only wake into the face again, the
+        // window back over it, and the fingerprint wouldn't listen (the lock screen covered).
+        endLedWindow()
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) acquireKeepOn()
     }
 
@@ -1274,13 +1317,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     private fun takenOut() {
         if (!stowed) return
         GlowLog.d { "act taken out face=${face.value} interactive=${power.isInteractive}" }
+        // As it was put away: unstowing may already ready the lock screen under the LED's window.
+        val ledInFront = face.value == Face.LED
         unstow()
         if (GlowPending.isEmpty || GlowSession.resting) return
         when {
-            // Uncovered with the LED still in front: hold the panel on again.
-            face.value == Face.LED && power.isInteractive -> showLed()
+            // Uncovered with the LED still in front: hold the panel on again, unless the LED's
+            // window has it already, holding it on, with the lock screen ready under it.
+            ledInFront && power.isInteractive -> if (!ledInWindow.value) showLed()
             // Asleep with the LED in front: wake straight into it.
-            face.value == Face.LED -> {
+            ledInFront -> {
                 DarkHold.acquire(this)
                 if (takeRelightToken()) {
                     showLed()
@@ -1459,7 +1505,12 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     }
 
     private fun releaseKeepOn() {
-        if (keepPanelOn.isHeld) keepPanelOn.release()
+        if (keepPanelOn.isHeld) {
+            // What is in front next (the lock screen, mostly) runs its own timeout from here: let go
+            // bare, the phone would sleep at once, cutting a message's lock screen and its effect.
+            if (power.isInteractive) PanelWaker.restartTimeout(this)
+            keepPanelOn.release()
+        }
         // Still covered (read elsewhere while in a pocket): the panel stays off until it isn't,
         // rather than lighting up in the pocket.
         pocketDark?.let { if (it.isHeld) it.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY) }

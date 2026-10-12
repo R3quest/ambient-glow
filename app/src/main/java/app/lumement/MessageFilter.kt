@@ -31,13 +31,17 @@ internal fun isAlert(
 }
 
 /**
- * A post that asks for the whole screen: a ringing call, an alarm, anything with a full-screen
- * intent ([fullScreen]). On an awake phone, which the lit LED keeps it, the system shows it as a
- * pop-up instead (One UI's incoming call: measured on the S23), and the LED's window, an
+ * A post that asks for the whole screen: a ringing call, a ringing alarm, anything with a
+ * full-screen intent ([fullScreen]). On an awake phone, which the lit LED keeps it, the system shows
+ * it as a pop-up instead (One UI's incoming call: measured on the S23), and the LED's window, an
  * accessibility overlay above every pop-up, would hide it; so the window makes way while it shows.
+ * An alarm only while [ongoing]: Samsung Clock's "upcoming alarm" notice (category alarm, not
+ * ongoing) stays up for the 30 minutes before every alarm, and the window made way for all of it,
+ * the LED's face covering the lock screen and the fingerprint off; its ringing alarm is an ongoing
+ * foreground-service post with no full-screen intent (measured on the S23).
  */
-internal fun takesScreen(category: String?, fullScreen: Boolean): Boolean =
-    fullScreen || category == Notification.CATEGORY_CALL || category == Notification.CATEGORY_ALARM
+internal fun takesScreen(category: String?, fullScreen: Boolean, ongoing: Boolean): Boolean =
+    fullScreen || category == Notification.CATEGORY_CALL || (category == Notification.CATEGORY_ALARM && ongoing)
 
 /**
  * A silent update to a message the LED already waits on: refresh it, don't re-wake. WhatsApp (and

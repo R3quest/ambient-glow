@@ -155,8 +155,10 @@ class NotificationWakerService : NotificationListenerService() {
 
     private fun noteSleepState() {
         if (sleepDozed) return
-        val shows = sleepShowsAod(displays.getDisplay(Display.DEFAULT_DISPLAY)?.state)
-        if (shows == true) {
+        // Still lit, on its way: the display's next change says. The last sleep's answer stands
+        // meanwhile, so a sleep cancelled before it settles (awake again) doesn't wipe it.
+        val shows = sleepShowsAod(displays.getDisplay(Display.DEFAULT_DISPLAY)?.state) ?: return
+        if (shows) {
             sleepDozed = true
             stopWatchingSleep()
             if (relightAtDoze) {
@@ -166,7 +168,7 @@ class NotificationWakerService : NotificationListenerService() {
             }
         }
         if (GlowSession.sleepDozes != shows) {
-            GlowLog.d { "svc sleep: always-on display ${when (shows) { true -> "showed"; false -> "off"; null -> "not known yet" }}" }
+            GlowLog.d { "svc sleep: always-on display ${if (shows) "showed" else "off"}" }
         }
         GlowSession.sleepDozes = shows
         GlowSession.sleepDozesSetting = aodSetting(contentResolver)
@@ -298,7 +300,7 @@ class NotificationWakerService : NotificationListenerService() {
 
     /** Keeps [GlowSession.screenTakers] in step with [sbn], a post or an update to one; tells the glow screen of a change. */
     private fun noteScreenTaker(sbn: StatusBarNotification) {
-        val takes = sbn.packageName != packageName && takesScreen(sbn.notification.category, sbn.notification.fullScreenIntent != null)
+        val takes = sbn.packageName != packageName && takesScreen(sbn.notification.category, sbn.notification.fullScreenIntent != null, sbn.isOngoing)
         val changed = if (takes) GlowSession.screenTakers.add(sbn.key) else GlowSession.screenTakers.remove(sbn.key)
         if (!changed) return
         GlowLog.d { "svc screen taker ${if (takes) "up" else "gone"} ${sbn.packageName} ${sbn.notification.category}" }

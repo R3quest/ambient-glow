@@ -174,6 +174,12 @@ internal fun ledWindowWanted(
 internal fun ledWindowEnds(screenTaken: Boolean, inCall: Boolean, ending: Boolean): Boolean = screenTaken || inCall || ending
 
 /**
+ * The system's next alarm clock changed: did the one it named, due at [dueAt], just ring? Due by
+ * [now] it rang; still ahead, it was moved or cancelled. Null: none was set.
+ */
+internal fun alarmRang(dueAt: Long?, now: Long): Boolean = dueAt != null && dueAt <= now
+
+/**
  * Do Not Disturb, in any of its modes, rests the LED ([GlowSession.resting]); all alerts allowed,
  * or a filter not known yet, doesn't.
  */

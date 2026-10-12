@@ -141,7 +141,10 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         alphaChange.setAlpha(control, to).apply()
     }
 
-    /** The LED at [alpha], [ms] into its breath; none of a material's one-off moments. */
+    /**
+     * The LED at [alpha], [ms] into its breath, a material's moments included (the coal's sparks,
+     * the bead's ripples, the gem's glint): a material that moves is painted every step anyway.
+     */
     private fun paint(alpha: Float, ms: Float) {
         val holder = view.holder
         if (!holder.surface.isValid) return
@@ -152,7 +155,7 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
             val size = Size(view.width.toFloat(), view.height.toFloat())
             val density = context.resources.displayMetrics.density
             CanvasDrawScope().draw(Density(density), LayoutDirection.Ltr, Canvas(canvas), size) {
-                drawn.draw(this, lightAt, alpha, ms, accents = false)
+                drawn.draw(this, lightAt, alpha, ms)
             }
         } finally {
             holder.unlockCanvasAndPost(canvas)

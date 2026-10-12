@@ -36,6 +36,25 @@ object PanelWaker {
             "Lumement:panel",
         ).apply { setReferenceCounted(false) }.acquire(HOLD_MS)
     }
+
+    /**
+     * Starts the screen's timeout over from now, as a touch would: a screen wake lock let go with
+     * ON_AFTER_RELEASE counts as user activity. For a lit screen about to lose the wake lock that
+     * held it: nothing has touched the phone meanwhile, so its timeout ran out long ago, and let go
+     * bare the phone sleeps that instant (measured on the S23: 1 ms after). Call it while that
+     * lock is still held.
+     */
+    @Suppress("DEPRECATION")
+    fun restartTimeout(context: Context) {
+        context.getSystemService(PowerManager::class.java).newWakeLock(
+            PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
+            "Lumement:timeout",
+        ).apply {
+            setReferenceCounted(false)
+            acquire(HOLD_MS)
+            release()
+        }
+    }
 }
 
 /**
