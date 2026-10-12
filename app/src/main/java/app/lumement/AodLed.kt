@@ -56,13 +56,27 @@ private const val ONE_UI_AOD_MODE = "aod_mode"
 private const val DOZE_ALWAYS_ON = "doze_always_on"
 
 /**
- * Will this sleep show the always-on display? As the last sleep did ([lastShowed]) while the
- * system's switch ([aodSetting]) is as it was then ([settingThen]): that also covers modes where
- * it is on but shows only on a tap, or on a schedule. Switched since (or no sleep seen yet), the
- * switch says ([settingNow]): no display event tells a sleep that stays off from one about to
- * doze, so the last sleep's answer would be wrong once, in either direction. Null: not known.
+ * One UI's always-on display set to "Show for new notifications" (a hidden setting, read only): it
+ * shows, in the panel's lowest-power mode, only while a new notification waits, and the display
+ * sleeps off otherwise. Measured on the S23: a new message, the phone asleep → the always-on
+ * display, held 5+ minutes with no wakes.
  */
-internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?): Boolean? = when {
+internal fun aodForNewNotifications(resolver: ContentResolver): Boolean =
+    readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_NEW_NOTIFICATIONS) } == 1
+
+private const val ONE_UI_AOD_NEW_NOTIFICATIONS = "aod_show_for_new_noti"
+
+/**
+ * Will this sleep, with messages waiting, show the always-on display? As the last sleep did
+ * ([lastShowed]) while the system's switch ([aodSetting]) is as it was then ([settingThen]): that
+ * also covers modes where it is on but shows only on a tap, or on a schedule. Switched since (or no
+ * sleep seen yet), the switch says ([settingNow]): no display event tells a sleep that stays off
+ * from one about to doze, so the last sleep's answer would be wrong once, in either direction.
+ * Shown only for new notifications ([newOnly], [aodForNewNotifications]), it shows now, whatever
+ * the last sleep (with nothing waiting, off) did. Null: not known.
+ */
+internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?, newOnly: Boolean = false): Boolean? = when {
+    newOnly && settingNow != null && settingNow != 0 -> true
     lastShowed != null && settingThen == settingNow -> lastShowed
     settingNow != null -> settingNow != 0
     else -> lastShowed

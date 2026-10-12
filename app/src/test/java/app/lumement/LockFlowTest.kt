@@ -224,6 +224,47 @@ class LockFlowTest {
         assertFalse(phone.covering)
     }
 
+    /**
+     * One UI's "Show for new notifications" (2026-10-12): the display goes off first and the
+     * always-on display comes ~0.1 s after SCREEN_OFF. The flow relit the lit LED at that
+     * SCREEN_OFF, and the always-on display, with the panel holding the LED for next to nothing,
+     * never got its turn.
+     */
+    @Test
+    fun shownForNewNotificationsTheLedWaitsForTheAlwaysOnDisplay() {
+        phone.expectsAod = true
+        phone.dozes = true
+        phone.dozesAfterOffMs = 100
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertFalse("no takeover: the lock screen sleeps", flow.ledInWindow.value)
+
+        phone.pressPower() // or its own timeout
+        phone.advance(2_000)
+
+        logged("system: going to sleep", "system: SCREEN_OFF", "system: always-on display", "aod LED on")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+    }
+
+    @Test
+    fun anAlwaysOnDisplayThatNeverComesLeavesItToTheListener() {
+        phone.expectsAod = true
+        phone.dozes = false
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        assertFalse("the glow screen waits for a doze that doesn't come", phone.interactive)
+
+        phone.host { ensureLed() } // the listener's check, 4 s after SCREEN_OFF
+        phone.advance(2_000)
+
+        logged("cover", "wake", "lit LED up")
+        assertTrue("the lit LED, in its window", flow.ledInWindow.value)
+        assertTrue(phone.interactive)
+    }
+
     @Test
     fun withoutTheShieldTheLedFaceCoversAndPowerOpensTheLockScreen() {
         phone.shieldOn = false
