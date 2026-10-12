@@ -25,3 +25,6 @@ keystore.properties
 .vscode/
 .claude/settings.local.json
 dist/
+
+# Raw soak dumps (batterystats, power): they list every app on the test phone. Kept locally only.
+/measurements/raw/
