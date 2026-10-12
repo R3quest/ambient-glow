@@ -139,6 +139,21 @@ bs_cpu=$(awk -v s="$secs" '
     ours && /Total cpu time: u=/ { split($0, p, /u=| s=/); printf "%.1f", (ms(p[2]) + ms(p[3])) / 10 / s; exit }
 ' "$stats" || true)
 
+# A sleeping run (aod, idle) that had the screen on measured something else as well: a message
+# arriving (lights the lock screen, by design), a hand on it, or One UI dropping the always-on
+# display in low light (burn-in protection) and the lit LED taking over. Flagged, for a look.
+if [ "$MODE" != lit ]; then
+    on=$(awk '/^  Screen on: / {print $3, $4, $5; exit}' "$stats")
+    on_ms=$(awk -v t="$on" 'BEGIN { n = split(t, tok, " "); v = 0
+        for (i = 1; i <= n; i++) { if (tok[i] ~ /ms$/) v += tok[i] + 0; else if (tok[i] ~ /h$/) v += tok[i] * 3600000
+            else if (tok[i] ~ /m$/) v += tok[i] * 60000; else if (tok[i] ~ /s$/) v += tok[i] * 1000 }
+        print v }')
+    if [ "${on_ms:-0}" -gt 5000 ]; then
+        NOTE="CHECK: the screen was on for $on${NOTE:+; $NOTE}"
+        echo "soak: CHECK: the screen was on for $on of the run: a message arriving, a hand, or the AOD dropped (see $stats)"
+    fi
+fi
+
 [ -f "$TSV" ] || printf 'date\tcommit\tmode\tminutes\tmA\tmA (batterystats)\tlumement %%\tlumement %% (batterystats)\tsurfaceflinger %%\tsystem_server %%\tsystemui %%\tbattery\tend state\twake locks\tnote\n' >"$TSV"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s→%s\t%s\t%s\t%s\n' \
     "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- app/src/main || echo +)" "$MODE" \

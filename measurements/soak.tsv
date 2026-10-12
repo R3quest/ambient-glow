@@ -2,3 +2,4 @@ date	commit	mode	minutes	mA	mA (batterystats)	lumement %	lumement % (batterystat
 2026-10-12 14:10	857a871	lit	15	-	175	-	5.5	-	-	-	100→99	Awake	Lumement:led: 15m 13s 467ms full (1 times);	script ended early (SIGPIPE): batterystats only
 2026-10-12 14:43	857a871	lit	15	189	189	5.8	5.8	9.4	5.2	0.6	98→97	Awake	Lumement:led: 15m 17s 341ms full (0 times);	baseline
 2026-10-12 15:03	047adf1+	lit	15	183	183	5.3	5.3	9.7	4.4	0.6	96→95	Awake	Lumement:led: 15m 46s 388ms full (0 times);	A/B: ready sleep watch 50 ms (was 16)
+2026-10-12 18:28	c655b1c	aod	61	130	130	8.4	26.4	8.2	3.9	0.7	85→82	Dozing	Lumement:dark: 53m 57s 146ms partial (0 times);Lumement:aod: 38m 34s 162ms draw (1244 times);Lumement:panel: 5s 43ms full (5 times);	baseline: LED on the always-on display (Show always), lit room; screen on 34.6 s (0.9 %): 4-5 real WhatsApp arrivals lit the lock screen (by design), ~1.8 mAh of 133; Lumement CPU: /proc and batterystats disagree (8.4 vs 26.4 %), to look into
