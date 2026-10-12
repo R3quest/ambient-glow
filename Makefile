@@ -20,6 +20,7 @@ PACKAGE := app.lumement
 DEBUG_APK   := app/build/outputs/apk/debug/app-debug.apk
 RELEASE_APK := app/build/outputs/apk/release/app-release.apk
 PREMIUM_APK := app/build/outputs/apk/release/lumement-premium.apk
+SOAK_APK    := app/build/outputs/apk/soak/app-soak.apk
 AAPT2       := $(ANDROID_HOME)/build-tools/37.0.0/aapt2
 LINT_REPORT := app/build/reports/lint-results-debug.txt
 
@@ -27,7 +28,8 @@ SDK_PACKAGES := "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 
 .DEFAULT_GOAL := help
 .PHONY: help debug release bundle lint test check permissions install install-release \
-        install-premium release-premium install-trial-over launch uninstall devices apks clean stop sdk
+        install-premium release-premium install-trial-over launch uninstall devices apks clean stop sdk \
+        soak wifi-adb
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -77,6 +79,21 @@ release-premium: ## Build a release APK with premium unlocked, for testers (neve
 	$(MAKE) release PREMIUM=1
 	cp $(RELEASE_APK) $(PREMIUM_APK)
 	@echo "Premium release: $(PREMIUM_APK)"
+
+# MODE=lit (the lit LED, always-on display off), aod (the LED on the always-on display) or idle
+# (nothing waiting, asleep); MINUTES long. See scripts/soak.sh.
+MODE    ?= lit
+MINUTES ?= 10
+
+soak: ## Battery run on the unplugged phone (adb over Wi-Fi): MODE=lit|aod|idle MINUTES=10
+	$(GRADLE) assembleSoak
+	$(ADB) install -r $(SOAK_APK)
+	ADB=$(ADB) scripts/soak.sh $(MODE) $(MINUTES)
+
+wifi-adb: ## Switch adb to Wi-Fi (phone on USB first), so it can be unplugged for make soak
+	$(ADB) tcpip 5555
+	@sleep 3
+	$(ADB) connect $$($(ADB) -d shell ip -f inet addr show wlan0 | awk '/inet / {sub("/.*", "", $$2); print $$2}'):5555
 
 launch: ## Open the dashboard on the connected device
 	$(ADB) shell am start -n $(PACKAGE)/.MainActivity

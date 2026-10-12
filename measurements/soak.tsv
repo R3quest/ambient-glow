@@ -1,0 +1,3 @@
+date	commit	mode	minutes	mA	mA (batterystats)	lumement %	lumement % (batterystats)	surfaceflinger %	system_server %	systemui %	battery	end state	wake locks
+2026-10-12 14:10	857a871	lit	15	-	175	-	5.5	-	-	-	100→99	Awake	Lumement:led: 15m 13s 467ms full (1 times);
+2026-10-12 14:43	857a871	lit	15	189	189	5.8	5.8	9.4	5.2	0.6	98→97	Awake	Lumement:led: 15m 17s 341ms full (0 times);
