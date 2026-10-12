@@ -1,15 +1,22 @@
 package app.lumement
 
 import android.annotation.SuppressLint
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Display
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 
 // ---------------------------------------------------------------------------------------------
 // The LED on the always-on display, where the phone has one and it shows: the phone dozes, so
@@ -56,13 +63,27 @@ private const val ONE_UI_AOD_MODE = "aod_mode"
 private const val DOZE_ALWAYS_ON = "doze_always_on"
 
 /**
- * Will this sleep show the always-on display? As the last sleep did ([lastShowed]) while the
- * system's switch ([aodSetting]) is as it was then ([settingThen]): that also covers modes where
- * it is on but shows only on a tap, or on a schedule. Switched since (or no sleep seen yet), the
- * switch says ([settingNow]): no display event tells a sleep that stays off from one about to
- * doze, so the last sleep's answer would be wrong once, in either direction. Null: not known.
+ * One UI's always-on display set to "Show for new notifications" (a hidden setting, read only): it
+ * shows, in the panel's lowest-power mode, only while a new notification waits, and the display
+ * sleeps off otherwise. Measured on the S23: a new message, the phone asleep → the always-on
+ * display, held 5+ minutes with no wakes.
  */
-internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?): Boolean? = when {
+internal fun aodForNewNotifications(resolver: ContentResolver): Boolean =
+    readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_NEW_NOTIFICATIONS) } == 1
+
+private const val ONE_UI_AOD_NEW_NOTIFICATIONS = "aod_show_for_new_noti"
+
+/**
+ * Will this sleep, with messages waiting, show the always-on display? As the last sleep did
+ * ([lastShowed]) while the system's switch ([aodSetting]) is as it was then ([settingThen]): that
+ * also covers modes where it is on but shows only on a tap, or on a schedule. Switched since (or no
+ * sleep seen yet), the switch says ([settingNow]): no display event tells a sleep that stays off
+ * from one about to doze, so the last sleep's answer would be wrong once, in either direction.
+ * Shown only for new notifications ([newOnly], [aodForNewNotifications]), it shows now, whatever
+ * the last sleep (with nothing waiting, off) did. Null: not known.
+ */
+internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?, newOnly: Boolean = false): Boolean? = when {
+    newOnly && settingNow != null && settingNow != 0 -> true
     lastShowed != null && settingThen == settingNow -> lastShowed
     settingNow != null -> settingNow != 0
     else -> lastShowed
@@ -77,11 +98,19 @@ internal fun ledOnAod(waiting: Boolean, resting: Boolean, putAway: Boolean, inCa
     waiting && !resting && !putAway && !inCall && !ending
 
 /**
- * The LED's round in [surface]: a breath per waiting app, as the lit LED breathes them
- * ([ledPauseAfter]), each drawn while the light is out. Over the always-on display ([dozing]), a
- * draw wake lock keeps the panel taking frames through each breath. Over the lit panel, [onFade]
- * asks for the breath's frame rate [LED_RATE_PREROLL_MS] before it lights and lets go once it is
- * dark, as the glow screen's own LED does.
+ * The LED's round in [surface].
+ *
+ * Over the lit panel it breathes, a breath per waiting app ([ledPauseAfter]), each drawn while the
+ * light is out; [onFade] asks for the breath's frame rate [LED_RATE_PREROLL_MS] before it lights
+ * and lets go once it is dark, as the glow screen's own LED does.
+ *
+ * Over the always-on display ([dozing]) it is lit and still, as a notification LED was: one rise
+ * into the light, then the panel holds that frame by itself (DOZE_SUSPEND), with nothing drawn and
+ * no CPU held, so the phone sleeps as it does with the always-on display alone. Breathing there cost
+ * the phone 42 mA more than the always-on display alone (measured on the S23: 130 against 88): a
+ * breath needs the CPU held to the next one and the panel taking frames. A draw wake lock lets the
+ * panel take the rise's frames. Every [STILL_STEP_MS] it rises again a step over (burn-in) in the
+ * next waiting app's colour, woken by an alarm that may fire while the phone idles.
  */
 @RequiresApi(Build.VERSION_CODES.Q)
 internal class LedRound(
@@ -110,6 +139,23 @@ internal class LedRound(
     private val nextBreath = Runnable { breathe() }
     private val prerolled = Runnable { light() }
 
+    /** The still LED's rise is on the panel: let it hold the frame. */
+    private val held = Runnable { if (drawLock.isHeld) drawLock.release() }
+
+    private val alarms by lazy(LazyThreadSafetyMode.NONE) { context.getSystemService(AlarmManager::class.java) }
+    private val stepAction = "${context.packageName}.LED_STEP"
+    private val stepIntent by lazy(LazyThreadSafetyMode.NONE) {
+        PendingIntent.getBroadcast(context, 0, Intent(stepAction).setPackage(context.packageName), PendingIntent.FLAG_IMMUTABLE)
+    }
+    private var stepping = false
+    private val stepped = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (!running) return
+            cycle++
+            light()
+        }
+    }
+
     /**
      * Starts the round with [settings] (as the screen shows it) and [geometry] (fitted), from
      * breath [round]; [colors] are read before each breath. Nothing while the surface isn't ready.
@@ -122,6 +168,7 @@ internal class LedRound(
         this.colors = colors
         cycle = round
         running = true
+        if (dozing) watchSteps(true)
         light()
     }
 
@@ -130,22 +177,20 @@ internal class LedRound(
         running = false
         timers.removeCallbacks(nextBreath)
         timers.removeCallbacks(prerolled)
+        timers.removeCallbacks(held)
+        watchSteps(false)
         if (drawLock.isHeld) drawLock.release()
         surface.stop()
         onFade(false)
     }
 
-    /** The next breath's rate first, then the breath once it is in place (dozing: at once). */
+    /** The next breath's rate first, then the breath once it is in place. */
     private fun breathe() {
-        if (dozing) {
-            light()
-            return
-        }
         onFade(true)
         timers.postDelayed(prerolled, LED_RATE_PREROLL_MS)
     }
 
-    /** This breath's colour, drawn while the light is out, then lit; at its end, the dark until the next. */
+    /** This breath's colour, drawn while the light is out, then lit: a breath, or the still LED's rise. */
     private fun light() {
         val palette = colors()
         if (!running || palette.isEmpty() || !surface.ready) {
@@ -154,26 +199,56 @@ internal class LedRound(
         }
         surface.show(settings, geometry, palette[cycle % palette.size], cycle)
         if (dozing) {
-            // The panel takes frames for the breath; the CPU stays up to the next one (Handler
-            // time stops while it sleeps). Lit, the screen keeps both up.
-            drawLock.acquire(LED_BREATH_MS.toLong() + LOCK_MARGIN_MS)
-            DarkHold.acquire(context, LED_BREATH_MS.toLong() + LED_DARK_MS + LOCK_MARGIN_MS)
-        }
-        surface.breathe {
-            if (drawLock.isHeld) drawLock.release()
-            val pause = ledPauseAfter(cycle, palette.size)
-            cycle++
-            if (dozing) {
-                timers.postDelayed(nextBreath, pause)
-            } else {
+            rise()
+        } else {
+            surface.breathe {
+                val pause = ledPauseAfter(cycle, palette.size)
+                cycle++
                 onFade(false)
                 timers.postDelayed(nextBreath, pause - LED_RATE_PREROLL_MS)
             }
         }
     }
 
+    /**
+     * Over the always-on display: the panel takes frames for the rise (and the CPU stays up for it),
+     * then holds the lit LED alone, a couple of frames after its peak is drawn.
+     */
+    private fun rise() {
+        timers.removeCallbacks(held)
+        drawLock.acquire(LED_RISE_MS.toLong() + LOCK_MARGIN_MS)
+        DarkHold.acquire(context, LED_RISE_MS.toLong() + LOCK_MARGIN_MS)
+        surface.glow { timers.postDelayed(held, HOLD_FRAMES * (1_000L / LED_FADE_HZ.toLong())) }
+        scheduleStep()
+    }
+
+    private fun watchSteps(on: Boolean) {
+        if (on == stepping) return
+        stepping = on
+        if (on) {
+            ContextCompat.registerReceiver(context, stepped, IntentFilter(stepAction), ContextCompat.RECEIVER_NOT_EXPORTED)
+        } else {
+            alarms.cancel(stepIntent)
+            context.unregisterReceiver(stepped)
+        }
+    }
+
+    /** The next step, [STILL_STEP_MS] from now; an alarm allowed while idle, so the LED moves on even then. */
+    private fun scheduleStep() {
+        alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + STILL_STEP_MS, stepIntent)
+    }
+
     private companion object {
         const val DRAW_WAKE_LOCK = 128
         const val LOCK_MARGIN_MS = 500L
+
+        /** Frames the panel takes after the peak is drawn, before it is let hold it. */
+        const val HOLD_FRAMES = 3L
+
+        /**
+         * The still LED moves a step (burn-in) and to the next app's colour this often. An alarm
+         * allowed while idle fires at most once in 9 minutes for an app.
+         */
+        const val STILL_STEP_MS = 10 * 60_000L
     }
 }

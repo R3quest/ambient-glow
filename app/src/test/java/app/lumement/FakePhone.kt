@@ -39,6 +39,12 @@ internal class FakePhone : LockPort, ShieldPort {
     /** Where a sleep goes: the always-on display, or off. */
     var dozes = false
 
+    /**
+     * One UI's "Show for new notifications": the display goes off first, and the always-on display
+     * comes this long after SCREEN_OFF (measured on the S23: ~0.1 s); null: it dozes at once.
+     */
+    var dozesAfterOffMs: Long? = null
+
     /** The glow screen covers the lock screen ([coverLockScreen]). */
     var covering = false
         private set
@@ -147,13 +153,22 @@ internal class FakePhone : LockPort, ShieldPort {
         displayChanged()
         later(SLEEP_FADE_MS) {
             if (!goingToSleep) return@later
-            displayState = if (dozes) Display.STATE_DOZE else Display.STATE_OFF
+            val lag = dozesAfterOffMs
+            displayState = if (dozes && lag == null) Display.STATE_DOZE else Display.STATE_OFF
             displayChanged()
             later(SCREEN_OFF_LAG_MS) {
                 if (!goingToSleep) return@later
                 goingToSleep = false
                 log += "system: SCREEN_OFF"
                 flow.onScreenOff()
+                if (dozes && lag != null) {
+                    later(lag) {
+                        if (interactive) return@later
+                        log += "system: always-on display"
+                        displayState = Display.STATE_DOZE
+                        displayChanged()
+                    }
+                }
             }
         }
     }

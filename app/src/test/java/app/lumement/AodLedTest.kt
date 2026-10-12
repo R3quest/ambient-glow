@@ -43,6 +43,15 @@ class AodLedTest {
         assertEquals("nothing known", null, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = null))
     }
 
+    /** One UI's "Show for new notifications": off with nothing waiting, on while a message waits. */
+    @Test
+    fun shownForNewNotificationsTheMessageBringsIt() {
+        assertEquals("the last sleep, nothing waiting, went off", true, sleepWillDoze(lastShowed = false, settingThen = 1, settingNow = 1, newOnly = true))
+        assertEquals("no sleep seen yet", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = 1, newOnly = true))
+        assertEquals("the always-on display off: the mode doesn't matter", false, sleepWillDoze(lastShowed = false, settingThen = 0, settingNow = 0, newOnly = true))
+        assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null, newOnly = true))
+    }
+
     private fun onAod(
         waiting: Boolean = true,
         resting: Boolean = false,

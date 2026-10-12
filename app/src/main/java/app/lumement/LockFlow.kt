@@ -769,6 +769,14 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
             sleepSettling = true
             return
         }
+        if (awaitsAod(state)) {
+            // The always-on display is expected and the panel is off on its way: shown only for new
+            // notifications, One UI turns it off first and dozes ~0.1 s after SCREEN_OFF (measured
+            // on the S23). The doze puts the LED on it ([onDisplayChanged]); if none comes, the
+            // listener's check lights the LED ([ensureLed]).
+            sleepSettling = true
+            return
+        }
         sleepSettling = false
         if (aodLit) return // the LED is on the always-on display
         port.cancel(LockTimer.TAKEOVER)
@@ -1214,6 +1222,14 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
         showLockScreen()
         if (asleep) wakeRevealed()
     }
+
+    /**
+     * This sleep is the lock screen's own, the LED is due on the always-on display ([letsSleep]),
+     * and the panel is off ([state]), not dozing yet.
+     */
+    private fun awaitsAod(state: Int?): Boolean =
+        face.value == Face.LOCK_SCREEN && letsSleep && state == Display.STATE_OFF && !aodLit &&
+            !revealingAfterPower && !ledArmedForSleep && !ending.value && !ledResting && !port.inCall && !GlowPending.isEmpty
 
     /** [revealAfterPower]'s phone is asleep: light the lock screen. */
     private fun wakeRevealed() {

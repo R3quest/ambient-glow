@@ -43,8 +43,10 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
     private var lightAt = Offset.Zero
     private var breathFrom = 0L
     private var onOut: (() -> Unit)? = null
+    private var onLit: (() -> Unit)? = null
     private var onReady: (() -> Unit)? = null
     private val step = Runnable { step() }
+    private val riseStep = Runnable { rise() }
 
     /** The surface exists, so it can be drawn. */
     var ready = false
@@ -85,15 +87,33 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
     /** One breath from now; [onOut] once it is dark again. */
     fun breathe(onOut: () -> Unit) {
         timers.removeCallbacks(step)
+        timers.removeCallbacks(riseStep)
+        onLit = null
         this.onOut = onOut
         breathFrom = SystemClock.uptimeMillis()
         step()
     }
 
-    /** The light goes out at once; a breath under way ends without its [breathe] callback. */
+    /**
+     * The breath's rise once, from now, and then the light stays: its last frame is the peak, which a
+     * panel that holds its image ([LedRound] on the always-on display) keeps showing with nothing
+     * drawn. [onLit] once it is there.
+     */
+    fun glow(onLit: () -> Unit) {
+        timers.removeCallbacks(step)
+        timers.removeCallbacks(riseStep)
+        onOut = null
+        this.onLit = onLit
+        breathFrom = SystemClock.uptimeMillis()
+        rise()
+    }
+
+    /** The light goes out at once; a breath or rise under way ends without its callback. */
     fun stop() {
         timers.removeCallbacks(step)
+        timers.removeCallbacks(riseStep)
         onOut = null
+        onLit = null
         setLevel(0f)
     }
 
@@ -130,6 +150,25 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         setLevel(0f)
         onOut?.let {
             onOut = null
+            it()
+        }
+    }
+
+    private fun rise() {
+        val at = (SystemClock.uptimeMillis() - breathFrom).toFloat()
+        val ms = minOf((at / FRAME_MS).roundToInt() * FRAME_MS, LED_RISE_MS)
+        if (look?.moves == true) {
+            setLevel(1f)
+            paint(ledBreathAt(ms), ms)
+        } else {
+            setLevel(ledBreathAt(ms))
+        }
+        if (ms < LED_RISE_MS) {
+            timers.postDelayed(riseStep, FRAME_MS.toLong())
+            return
+        }
+        onLit?.let {
+            onLit = null
             it()
         }
     }
