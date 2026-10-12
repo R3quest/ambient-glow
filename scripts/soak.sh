@@ -13,6 +13,7 @@ set -euo pipefail
 
 MODE=${1:-lit}
 MINUTES=${2:-10}
+NOTE=${NOTE:-}
 ADB=${ADB:-adb}
 PKG=app.lumement
 TSV=measurements/soak.tsv
@@ -138,10 +139,10 @@ bs_cpu=$(awk -v s="$secs" '
     ours && /Total cpu time: u=/ { split($0, p, /u=| s=/); printf "%.1f", (ms(p[2]) + ms(p[3])) / 10 / s; exit }
 ' "$stats" || true)
 
-[ -f "$TSV" ] || printf 'date\tcommit\tmode\tminutes\tmA\tmA (batterystats)\tlumement %%\tlumement %% (batterystats)\tsurfaceflinger %%\tsystem_server %%\tsystemui %%\tbattery\tend state\twake locks\n' >"$TSV"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s→%s\t%s\t%s\n' \
+[ -f "$TSV" ] || printf 'date\tcommit\tmode\tminutes\tmA\tmA (batterystats)\tlumement %%\tlumement %% (batterystats)\tsurfaceflinger %%\tsystem_server %%\tsystemui %%\tbattery\tend state\twake locks\tnote\n' >"$TSV"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s→%s\t%s\t%s\t%s\n' \
     "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- app/src/main || echo +)" "$MODE" \
-    "$((secs / 60))" "$mA" "${bs_mA:--}" "${cpu[0]}" "${bs_cpu:--}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" "$l0" "$l1" "$state" "$locks" >>"$TSV"
+    "$((secs / 60))" "$mA" "${bs_mA:--}" "${cpu[0]}" "${bs_cpu:--}" "${cpu[1]}" "${cpu[2]}" "${cpu[3]}" "$l0" "$l1" "$state" "$locks" "$NOTE" >>"$TSV"
 
 echo "soak: $MODE $((secs / 60)) min: $mA mA; CPU % of a core: lumement ${cpu[0]}, surfaceflinger ${cpu[1]}, system_server ${cpu[2]}, systemui ${cpu[3]}"
 echo "soak: wake locks: ${locks:-none}"

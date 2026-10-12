@@ -81,14 +81,14 @@ release-premium: ## Build a release APK with premium unlocked, for testers (neve
 	@echo "Premium release: $(PREMIUM_APK)"
 
 # MODE=lit (the lit LED, always-on display off), aod (the LED on the always-on display) or idle
-# (nothing waiting, asleep); MINUTES long. See scripts/soak.sh.
+# (nothing waiting, asleep); MINUTES long; NOTE labels the run in the log. See scripts/soak.sh.
 MODE    ?= lit
 MINUTES ?= 10
 
 soak: ## Battery run on the unplugged phone (adb over Wi-Fi): MODE=lit|aod|idle MINUTES=10
 	$(GRADLE) assembleSoak
 	$(ADB) install -r $(SOAK_APK)
-	ADB=$(ADB) scripts/soak.sh $(MODE) $(MINUTES)
+	ADB=$(ADB) NOTE="$(NOTE)" scripts/soak.sh $(MODE) $(MINUTES)
 
 wifi-adb: ## Switch adb to Wi-Fi (phone on USB first), so it can be unplugged for make soak
 	$(ADB) tcpip 5555
