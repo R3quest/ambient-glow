@@ -227,7 +227,16 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
      */
     private var stowed = false
     private val stowWatch by lazy(LazyThreadSafetyMode.NONE) {
-        StowWatch(this, covered = { covered.value }, onStow = ::stow, onTakenOut = ::takenOut)
+        StowWatch(this, covered = { covered.value }, onStow = ::stow, onTakenOut = ::takenOut, onPickedUp = ::pickedUp)
+    }
+
+    /**
+     * Picked up with the LED lit and the system's lift to wake on: the lock screen, as a power
+     * press opens it ([openUnderLed]). The system's own lift listens only while the phone sleeps.
+     */
+    private fun pickedUp() {
+        GlowLog.d { "act picked up face=${face.value} inWindow=${ledInWindow.value}" }
+        openUnderLed("lift")
     }
 
     /** The screen went off during a call: once it is over, the LED as the screen-off would have had it. */
@@ -1035,13 +1044,13 @@ class WakeScreenActivity : ComponentActivity(), GlowSession.Host {
     /**
      * Power pressed with the lock screen ready under the LED: a sleep request, as on any lit
      * screen, cancelled at once and the window lifted off the lock screen, which then runs its own
-     * timeout. Woken after One UI's lock screen had started for sleep (as soon as 12 ms after the
+     * timeout. A pickup ([pickedUp]) opens it the same way. Woken after One UI's lock screen had started for sleep (as soon as 12 ms after the
      * request), its wallpaper was hidden and shown again ~0.1 s after the lift: 1 press in 8 with
      * [READY_SLEEP_WATCH_MS], 2 in 5 with [SLEEP_WATCH_MS] (measured on the S23).
      */
     private fun openUnderLed(seenBy: String) {
         if (!ledInWindow.value) return
-        GlowLog.d { "act power pressed under the LED ($seenBy): sleep cancelled, window lifted" }
+        GlowLog.d { "act opened under the LED ($seenBy): sleep cancelled, window lifted" }
         timers.removeCallbacks(wakeNow)
         wakeNow.run()
         endLedWindow()

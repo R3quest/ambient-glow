@@ -46,7 +46,7 @@ internal fun sleepShowsAod(state: Int?): Boolean? = when (state) {
 internal fun aodSetting(resolver: ContentResolver): Int? =
     readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_MODE) } ?: readSetting { Settings.Secure.getInt(resolver, DOZE_ALWAYS_ON) }
 
-private inline fun readSetting(read: () -> Int): Int? = try {
+internal inline fun readSetting(read: () -> Int): Int? = try {
     read()
 } catch (_: Exception) {
     null

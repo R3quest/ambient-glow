@@ -1,13 +1,17 @@
 package app.lumement
 
+import android.content.ContentResolver
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.TriggerEvent
+import android.hardware.TriggerEventListener
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import kotlin.math.abs
 
 // ---------------------------------------------------------------------------------------------
@@ -123,12 +127,28 @@ internal class FaceDownLook {
 }
 
 /**
+ * The system's lift to wake switch: One UI's `lift_to_wake`, else Android's `wake_gesture_enabled`
+ * (both hidden settings, read only).
+ */
+internal fun liftToWake(resolver: ContentResolver): Boolean = liftWakes(
+    oneUi = readSetting { Settings.System.getInt(resolver, ONE_UI_LIFT_TO_WAKE) },
+    android = readSetting { Settings.Secure.getInt(resolver, WAKE_GESTURE_ENABLED) },
+)
+
+/** One UI's switch where it can be read, else Android's; off where neither can be. */
+internal fun liftWakes(oneUi: Int?, android: Int?): Boolean = (oneUi ?: android ?: 0) != 0
+
+private const val ONE_UI_LIFT_TO_WAKE = "lift_to_wake"
+private const val WAKE_GESTURE_ENABLED = "wake_gesture_enabled"
+
+/**
  * The sensors behind [StowDetector], all event-driven: nothing samples while the phone lies still.
  *
  * - [watchLit]: while the LED is lit, the sensor hub's tilt detector, which fires only when the
  *   phone turns by 35° or more, as laying it face down always does. A turn (or the LED lighting
  *   up, in case it already lies face down) opens a short [FaceDownLook]: the accelerometer until
  *   [LOOK_MS] after the last turn, or until it lies face down and still ([onStow]).
+ *   And, if the system's lift to wake is on ([liftToWake]), the pick-up gesture: [onPickedUp].
  * - [watchStowed]: once the panel sleeps, wake-up sensors that fire on a change: proximity and the
  *   tilt detector. Each event takes one accelerometer sample; [onTakenOut] if the phone is out.
  *
@@ -143,6 +163,7 @@ internal class StowWatch(
     private val covered: () -> Boolean,
     private val onStow: () -> Unit,
     private val onTakenOut: () -> Unit,
+    private val onPickedUp: () -> Unit,
 ) {
     private val sensors = context.getSystemService(SensorManager::class.java)
     private val accelerometer = sensors?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -150,6 +171,10 @@ internal class StowWatch(
 
     // Sensor.TYPE_TILT_DETECTOR is hidden from the SDK, but the sensor is public where it exists.
     private val tilt = sensors?.getDefaultSensor(TYPE_TILT_DETECTOR, true)
+
+    // Sensor.TYPE_PICK_UP_GESTURE likewise: one-shot, so armed again after each event. The system's
+    // lift to wake listens only while the phone sleeps, and the lit LED keeps it awake.
+    private val pickUp = sensors?.getDefaultSensor(TYPE_PICK_UP_GESTURE, true)
     private val look = FaceDownLook()
     private val main = Handler(Looper.getMainLooper())
 
@@ -192,6 +217,14 @@ internal class StowWatch(
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
     }
 
+    private val pickedUp = object : TriggerEventListener() {
+        override fun onTrigger(event: TriggerEvent) {
+            if (mode != Mode.LIT) return
+            pickUp?.let { sensors?.requestTriggerSensor(this, it) }
+            onPickedUp()
+        }
+    }
+
     // One sample, then let go: is it still face down?
     private val probe = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
@@ -220,6 +253,7 @@ internal class StowWatch(
         }
         stop()
         mode = Mode.LIT
+        if (liftToWake(context.contentResolver)) pickUp?.let { sensors?.requestTriggerSensor(pickedUp, it) }
         if (tilt == null || accelerometer == null) return
         sensors?.registerListener(turned, tilt, SensorManager.SENSOR_DELAY_NORMAL)
         lookAgain() // it may lie face down already
@@ -261,6 +295,7 @@ internal class StowWatch(
         sensors?.unregisterListener(nearby)
         sensors?.unregisterListener(turned)
         sensors?.unregisterListener(probe)
+        pickUp?.let { sensors?.cancelTriggerSensor(pickedUp, it) }
     }
 
     private fun checkSoon() {
@@ -274,6 +309,9 @@ internal class StowWatch(
     private companion object {
         /** Sensor.TYPE_TILT_DETECTOR (hidden): a wake-up event each time the phone turns by 35° or more. */
         const val TYPE_TILT_DETECTOR = 22
+
+        /** Sensor.TYPE_PICK_UP_GESTURE (hidden): a one-shot wake-up event when the phone is picked up. */
+        const val TYPE_PICK_UP_GESTURE = 25
 
         /** Ten samples a second during a look. */
         const val LOOK_SAMPLE_US = 100_000

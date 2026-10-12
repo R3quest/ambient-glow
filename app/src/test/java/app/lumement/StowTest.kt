@@ -134,4 +134,12 @@ class StowTest {
         assertFalse("in the pocket", takenOut(0f, near = true))
         assertFalse("lifted a little, still mostly face down", takenOut(-7f, near = false))
     }
+
+    @Test
+    fun liftWakesAsTheSystemSwitchSays() {
+        assertTrue("One UI on", liftWakes(oneUi = 1, android = null))
+        assertFalse("One UI off, whatever Android's says", liftWakes(oneUi = 0, android = 1))
+        assertTrue("no One UI switch: Android's", liftWakes(oneUi = null, android = 1))
+        assertFalse("neither readable: off", liftWakes(oneUi = null, android = null))
+    }
 }
