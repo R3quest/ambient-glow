@@ -34,3 +34,31 @@
 ## Every release
 - [ ] `make check`: lint, tests, both builds, and `make permissions` (fails if the APK asks for INTERNET).
 - [ ] Never ship a `PREMIUM=1` build to Play (`make bundle` refuses it).
+
+## Stability, battery, tests
+- [x] **Shield lost mid-session**: when GlowShield is unbound, it removes the LED window but doesn't tell the glow screen, which keeps holding the screen-on lock, so the lock screen stays lit until a power press. Add a callback from `GlowShield.release()` (for example `onShieldGone()`) that puts the LED's own black face back in front.
+- [x] **Keep waiting messages across process death**: the waiting list is memory only, so a Play update or One UI killing the process silently drops the LED for unread messages. Save the waiting keys (key, app, colour) to a small prefs file, and on reconnect keep only the ones still in the shade.
+- [x] **Update the accessibility description**: `shield_description` still talks about the removed blink, and it doesn't mention the focused LED window. Rewrite it to match what the service does now; Play's accessibility review checks this text.
+- [ ] **Play declarations**: fill in the full-screen intent declaration and the accessibility API declaration in Play Console, along with the release signing key.
+- [ ] **No per-frame allocation in `LedSurface.paint`**: create `CanvasDrawScope`, `Size` and `Density` once and reuse them. Moving LED materials repaint 30 times a second, possibly all night.
+- [ ] **CI**: add a GitHub Actions workflow that runs `make check` (lint, tests, both builds, the INTERNET guard) on every push. Added in `.github/workflows/check.yml`; check its first run after the push.
+- [ ] **Decide: the 16 ms sleep check under the lit LED** (~3.5% of a core): no power-key event can replace it. Tested 2026-10-12 on the S23 with physical presses: accessibility key filtering gets volume keys but never the power key. Left to choose: 16 ms (1 in 8 presses glitch) or 50 ms (2 in 5).
+- [ ] **Measure the AOD LED's CPU hold**: `DarkHold` is re-taken every breath, so the CPU never sleeps while the LED is on the AOD. Measure one night with `dumpsys power` and batterystats, and check it against Play's current limit for excessive partial wake locks.
+- [ ] **Extract `LockFlow` from `WakeScreenActivity`**: one state object plus `onEvent(event) → effects`, with the activity only carrying out the effects. Steps:
+  - write scenario tests that pin today's behaviour first, one per bug in the notes (timeout trap, `takenOut` ordering, AOD learning, alarm under the window)
+  - move the flags into one state object
+  - move the handlers over one at a time
+- [x] **Wake-lock audit test**: a test that reads the source and fails if any `acquire(` has no timeout, apart from `Lumement:led` and `Lumement:pocket`.
+- [ ] **`make scenario`**: posts a test message over adb, locks the phone, reads the message, then checks `dumpsys power` that no `Lumement:*` lock is still held.
+- [ ] **`make soak MODE=lit|aod`**: scripts the 10-minute charge-counter measurement and logs the result for each release.
+- [ ] **Pixel / stock Android pass**: check the constants taken from One UI (`TAKEOVER_MS`, `SLEEP_CANCEL_DELAY_MS`) and the whole lock flow on a non-Samsung phone or emulator.
+- [ ] **targetSdk 37**: before raising it, test that the panel wake (`ACQUIRE_CAUSES_WAKEUP` in `PanelWaker`) still works.
+- [ ] **Brightness events on the lock-screen display listener**: keep the subscription only if a measurement shows it helps catch the press earlier; otherwise drop it.
+- [ ] **Decide: LED brightness latch**: One UI's auto-brightness sticks at its 0 lux level under the lit LED, so the dot stays dim.
+
+## Later: separate topic
+- [ ] **Decide: lit LED overnight with the AOD off**: today one unread message keeps the screen on all night. Proposal to check:
+  - on the charger, the LED stays lit
+  - with Battery Saver on, no lit LED
+  - on battery, one written-down limit on how long it stays lit with nobody touching the phone
+- [ ] **Build the overnight rule**: once decided, as a pure function with unit tests, the same pattern as `ledWindowWanted`.
