@@ -272,6 +272,15 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
     /** The LED breathes on the always-on display ([LedRound]): the phone dozes, the lock screen in front. */
     private var aodLit = false
 
+    /**
+     * Shown for new notifications only ([LockPort.aodOnly]), One UI shows its always-on display once
+     * for a new message, at the sleep after it arrives; the LED may take that doze, and no other. One
+     * UI dozes the panel for other screens of its own too (a missed fingerprint: DOZE_MOD on the
+     * S23), which to an app look like any doze. Set by a new message (a launch for one, or one while
+     * up), used by the doze the LED goes onto.
+     */
+    private var aodDue = false
+
     /** SCREEN_OFF came with the panel still on, on its way to the always-on display or off: [onScreenOff] once it has gone. */
     private var sleepSettling = false
 
@@ -557,6 +566,7 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
     override fun onNewMessage() {
         GlowLog.d { "act onNewMessage face=${face.value} interactive=${port.interactive}" }
         if (face.value == Face.AWAY) return
+        aodDue = true
         ending.value = false
         if (stowed) return // nobody to show it to: the LED has it once the phone is taken out
         // The message takes the screen; the LED's round starts over after it, newest colour first.
@@ -715,11 +725,15 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
     // Lock flow
     // ---------------------------------------------------------------------------------------
 
-    /** Launched (or launched again) in [requested] mode. */
+    /**
+     * Launched (or launched again) in [requested] mode: for a new message, or, but not where the LED
+     * lives on One UI's always-on display alone (the listener doesn't relight there), to light it again.
+     */
     fun start(requested: WakeMode) {
         port.dismissBridge()
         port.cancelTimers()
         clearLed()
+        aodDue = true
         settings.value = port.loadSettings()
         if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
@@ -1188,9 +1202,10 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
             inCall = port.inCall,
             ending = ending.value,
         )
-        if (!allowed || !shield.startAodLed(GlowPending::colors, 0)) return
+        if (!allowed || (port.aodOnly && !aodDue) || !shield.startAodLed(GlowPending::colors, 0)) return
         GlowLog.d { "act aod: LED on the always-on display" }
         aodLit = true
+        if (port.aodOnly) aodDue = false
     }
 
     private fun endAodLed() {

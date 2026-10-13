@@ -423,6 +423,18 @@ internal class FakePhone : LockPort, ShieldPort {
         return true
     }
 
+    /**
+     * One UI's own short doze screen that isn't its always-on display: a missed fingerprint on a dark
+     * phone (DOZE_MOD on the S23), then off again. To an app it is a doze like any other.
+     */
+    fun dozeScreen() {
+        if (interactive) return
+        log += "system: doze screen"
+        displayState = Display.STATE_DOZE
+        displayChanged()
+        settle()
+    }
+
     /** One UI ends its always-on display by itself (low light, its timeout): the panel goes off, the phone still asleep. */
     fun aodGoes() {
         if (interactive) return

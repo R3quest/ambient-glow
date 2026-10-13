@@ -321,6 +321,48 @@ class LockFlowTest {
         assertFalse(phone.interactive)
     }
 
+    /**
+     * A missed fingerprint on the dark phone (2026-10-13): One UI shows a short doze screen of its
+     * own, which isn't the always-on display shown for the message. The LED had gone onto it.
+     */
+    @Test
+    fun shownForNewNotificationsTheLedTakesOnlyThatMessagesAlwaysOnDisplay() {
+        aodForNewNotifications()
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        assertTrue("on the always-on display shown for the message", phone.aodBreathing)
+
+        phone.aodGoes()
+        phone.advance(1_000)
+        phone.log.clear()
+        phone.dozeScreen() // the missed fingerprint's screen
+        phone.advance(3_000)
+
+        notLogged("aod LED on")
+        assertFalse(phone.aodBreathing)
+    }
+
+    @Test
+    fun shownForNewNotificationsTheNextMessageBringsTheLedBack() {
+        aodForNewNotifications()
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        phone.aodGoes()
+        phone.advance(1_000)
+
+        message("chat-2")
+        phone.host { onNewMessage() }
+        phone.advance(4_000)
+        phone.pressPower() // the lock screen's own sleep
+        phone.advance(2_000)
+
+        assertTrue("the new message's always-on display, the LED on it", phone.aodBreathing)
+    }
+
     /** A black arrival ends on the LED's face; shown for new notifications, the phone then sleeps into One UI's always-on display. */
     @Test
     fun shownForNewNotificationsABlackArrivalSleepsIntoTheAlwaysOnDisplay() {
