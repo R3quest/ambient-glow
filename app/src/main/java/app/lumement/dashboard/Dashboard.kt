@@ -417,6 +417,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             loop = !reduceMotion,
                                             shieldOn = access.shield,
                                             onShield = actions.shield,
+                                            aodOff = access.aodOff,
+                                            onAod = actions.aod,
                                             edit = edit,
                                         )
                                         DashboardTab.EFFECT -> EffectPage(
@@ -512,6 +514,8 @@ private fun ScreenPage(
     loop: Boolean,
     shieldOn: Boolean,
     onShield: () -> Unit,
+    aodOff: Boolean,
+    onAod: () -> Unit,
     edit: SettingsEdit,
 ) {
     SettingsGroup(index = "01", title = R.string.group_screen_title, body = R.string.group_screen_body) {
@@ -522,6 +526,8 @@ private fun ScreenPage(
             loop = loop,
             shieldOn = shieldOn,
             onShield = onShield,
+            aodOff = aodOff,
+            onAod = onAod,
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
         )
     }
