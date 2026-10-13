@@ -33,7 +33,19 @@ class AccessStepTest {
         assertEquals(listOf(BRIDGE, LISTENER), access(applies = false).steps)
     }
 
-    /** Suggested (setup's optional step, the Screen tab's line) only on One UI, and only while it is off. */
+    /** The Screen tab's While a message waits shows it on One UI only, in every mode. */
+    @Test
+    fun theAlwaysOnDisplayIsShownOnOneUiOnly() {
+        fun aod(mode: AodMode?, forNew: Boolean) = access().copy(aod = mode, aodForNew = forNew).oneUiAod
+        assertEquals(AodMode.OFF, aod(AodMode.OFF, forNew = true))
+        assertEquals(AodMode.ON, aod(AodMode.ON, forNew = true))
+        assertEquals(AodMode.NEW_NOTIFICATIONS, aod(AodMode.NEW_NOTIFICATIONS, forNew = true))
+        assertNull("not One UI: Android's switch may not be the phone's", aod(AodMode.ON, forNew = false))
+        assertNull("not One UI, off", aod(AodMode.OFF, forNew = false))
+        assertNull("can't be read", aod(null, forNew = true))
+    }
+
+    /** Suggested (setup's optional step) only on One UI, and only while it is off. */
     @Test
     fun theAlwaysOnDisplayIsSuggestedWhileOneUisIsOff() {
         fun aod(mode: AodMode?, forNew: Boolean) = access().copy(aod = mode, aodForNew = forNew).aodOff

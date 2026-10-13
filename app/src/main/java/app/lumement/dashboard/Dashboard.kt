@@ -525,10 +525,8 @@ private fun ScreenPage(
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
         )
     }
-    // One UI only, where it was measured: its switches are read right, its Settings row is the one
-    // opened, and it has Show for new notifications. Elsewhere Android's switch may not be the one
-    // the phone's own always-on display uses, and a wrong mode is worse than none.
-    val aod = access.aod?.takeIf { access.aodForNew } ?: return
+    // Only where the phone's always-on display is read right: One UI.
+    val aod = access.oneUiAod ?: return
     SettingsGroup(index = "02", title = R.string.group_waiting_title, body = R.string.group_waiting_body) {
         WaitingCard(aod = aod, shieldOn = access.shield, onAod = actions.aod)
     }

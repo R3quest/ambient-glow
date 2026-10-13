@@ -47,48 +47,50 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.waiting_label), GlowPalette.TextMuted)
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            WaitingWay(
-                title = stringResource(R.string.waiting_screen_title),
-                setting = stringResource(R.string.waiting_screen_setting),
-                now = aod == AodMode.OFF,
-                onClick = onAod,
-            )
-            WaitingWay(
-                title = stringResource(R.string.waiting_aod_title),
-                setting = stringResource(if (aod == AodMode.ON && !shieldOn) R.string.waiting_needs_shield else R.string.waiting_aod_setting),
-                now = aod == AodMode.ON,
-                onClick = onAod,
-            )
-            WaitingWay(
-                title = stringResource(R.string.waiting_new_title),
-                setting = stringResource(if (aod == AodMode.NEW_NOTIFICATIONS && !shieldOn) R.string.waiting_needs_shield else R.string.waiting_new_setting),
-                now = aod == AodMode.NEW_NOTIFICATIONS,
-                onClick = onAod,
-                leastBattery = true,
-            )
+            WAYS.forEach { way ->
+                WaitingWay(
+                    way = way,
+                    now = aod == way,
+                    // The phone's own, but the LED can't go on the display without the window.
+                    needsShield = aod == way && way != AodMode.OFF && !shieldOn,
+                    onClick = onAod,
+                )
+            }
         }
     }
 }
 
 /**
- * One way the LED can wait: where, and what to set for it, picked as the screen card's are, the
- * phone's own ([now]) selected; a tap on any leads to Settings ([onClick]), where it is changed.
- * The one that uses least battery says so, picked or not. In line with the
- * card's label: the row's highlight reaches into the card's padding.
+ * From the most screen to the least: kept on, the display always on, the display only while a
+ * message is new.
+ */
+private val WAYS = listOf(AodMode.OFF, AodMode.ON, AodMode.NEW_NOTIFICATIONS)
+
+/**
+ * One way the LED can wait ([way]): where, and what the display is set to for it, picked as the
+ * screen card's are, the phone's own ([now]) selected; a tap on any leads to Settings
+ * ([onClick]), where it is changed. The one that uses least battery says so, picked or not. In
+ * line with the card's label: the row's highlight reaches into the card's padding.
  */
 @Composable
-private fun WaitingWay(title: String, setting: String, now: Boolean, onClick: () -> Unit, leastBattery: Boolean = false) {
+private fun WaitingWay(way: AodMode, now: Boolean, needsShield: Boolean, onClick: () -> Unit) {
+    val (title, setting) = when (way) {
+        AodMode.OFF -> R.string.waiting_screen_title to R.string.waiting_screen_setting
+        AodMode.ON -> R.string.waiting_aod_title to R.string.waiting_aod_setting
+        AodMode.NEW_NOTIFICATIONS -> R.string.waiting_new_title to R.string.waiting_new_setting
+    }
     RadioRow(
-        title = title,
-        body = setting,
+        title = stringResource(title),
+        body = stringResource(if (needsShield) R.string.waiting_needs_shield else setting),
         selected = now,
         onClick = onClick,
         modifier = Modifier.rowBleed(),
     ) {
-        if (leastBattery) {
+        if (way == AodMode.NEW_NOTIFICATIONS) {
             Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Canvas(Modifier.size(12.dp)) {
-                    battery(GlowPalette.TextMuted, Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    battery(GlowPalette.TextMuted, line)
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
