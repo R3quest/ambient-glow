@@ -77,14 +77,15 @@ internal enum class AodMode {
     ON,
 }
 
-/** The always-on display's mode, or null where the phone's switch can't be read. */
-internal fun aodMode(resolver: ContentResolver): AodMode? {
-    val on = aodSetting(resolver) ?: return null
-    return when {
-        on == 0 -> AodMode.OFF
-        aodForNewNotifications(resolver) -> AodMode.NEW_NOTIFICATIONS
-        else -> AodMode.ON
-    }
+/** The always-on display's mode ([aodModeOf]), or null where the phone's switch can't be read. */
+internal fun aodMode(resolver: ContentResolver): AodMode? = aodModeOf(aodSetting(resolver), aodForNewNotifications(resolver))
+
+/** The mode from the system's switch ([setting], [aodSetting]) and One UI's [forNew] ([aodForNewNotifications]). */
+internal fun aodModeOf(setting: Int?, forNew: Boolean): AodMode? = when {
+    setting == null -> null
+    setting == 0 -> AodMode.OFF
+    forNew -> AodMode.NEW_NOTIFICATIONS
+    else -> AodMode.ON
 }
 
 /** One UI, which has "Show for new notifications": the dashboard suggests it while the always-on display is off. */
@@ -97,7 +98,7 @@ internal fun aodForNewNotificationsAvailable(resolver: ContentResolver): Boolean
  * message seen once the phone was woken, low light, its timeout), and the LED follows it: no lit
  * LED in its place (the user's choice, 2026-10-13).
  */
-internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = (aodSetting(resolver) ?: 0) != 0 && aodForNewNotifications(resolver)
+internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = aodMode(resolver) == AodMode.NEW_NOTIFICATIONS
 
 /**
  * Will this sleep, with messages waiting, show the always-on display? As the last sleep did

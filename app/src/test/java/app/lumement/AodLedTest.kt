@@ -2,6 +2,7 @@ package app.lumement
 
 import android.view.Display
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,6 +51,14 @@ class AodLedTest {
         assertEquals("no sleep seen yet", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = 1, newOnly = true))
         assertEquals("the always-on display off: the mode doesn't matter", false, sleepWillDoze(lastShowed = false, settingThen = 0, settingNow = 0, newOnly = true))
         assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null, newOnly = true))
+    }
+
+    @Test
+    fun theAlwaysOnDisplaysModeFromItsSwitches() {
+        assertEquals(AodMode.OFF, aodModeOf(setting = 0, forNew = true))
+        assertEquals("Show for new notifications", AodMode.NEW_NOTIFICATIONS, aodModeOf(setting = 1, forNew = true))
+        assertEquals("always, on a tap, on a schedule", AodMode.ON, aodModeOf(setting = 1, forNew = false))
+        assertNull("no switch to read", aodModeOf(setting = null, forNew = false))
     }
 
     private fun onAod(
