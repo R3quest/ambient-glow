@@ -102,7 +102,8 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
             ) {
                 // On the first line's middle.
                 Canvas(Modifier.padding(top = 3.dp).size(12.dp)) {
-                    battery(GlowPalette.TextMuted, Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    battery(GlowPalette.TextMuted, line)
                 }
                 Spacer(Modifier.width(8.dp))
                 Tip(tip ?: lastTip)
@@ -111,7 +112,7 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
     }
 }
 
-/** The footnote: that it is optional, then what the mode would bring, One UI's name for it lit in cyan. */
+/** The footnote: that it is optional, then what the mode would bring, its One UI name in cyan. */
 @Composable
 private fun Tip(@StringRes text: Int) {
     val mode = stringResource(R.string.waiting_tip_mode)
@@ -161,5 +162,13 @@ private fun DrawScope.aodPhone(tint: Color, line: Stroke) {
     drawRoundRect(tint, Offset(w * 0.24f, h * 0.04f), Size(w * 0.52f, h * 0.92f), CornerRadius(w * 0.12f), style = line)
     drawCircle(tint, radius = w * 0.06f, center = Offset(w * 0.5f, h * 0.2f))
     drawLine(tint, Offset(w * 0.38f, h * 0.5f), Offset(w * 0.62f, h * 0.5f), line.width, StrokeCap.Round)
-    drawLine(tint.copy(alpha = 0.5f), Offset(w * 0.42f, h * 0.63f), Offset(w * 0.58f, h * 0.63f), line.width * 0.75f, StrokeCap.Round)
+    // The date under it, thinner and fainter.
+    val date = h * 0.63f
+    drawLine(
+        tint.copy(alpha = 0.5f),
+        Offset(w * 0.42f, date),
+        Offset(w * 0.58f, date),
+        line.width * 0.75f,
+        StrokeCap.Round,
+    )
 }
