@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,6 +43,8 @@ import app.lumement.AodMode
 import app.lumement.R
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.LinkRow
+import app.lumement.ui.components.RowBleed
+import app.lumement.ui.components.rowBleed
 import app.lumement.ui.components.glowCard
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
@@ -58,9 +61,10 @@ import app.lumement.ui.theme.GlowShapes
  * wouldn't flip. The LED is drawn on it in Lumement effects' window ([shieldOn]), which the screen
  * card asks for while it is off.
  *
- * Under the card, until it is set to Show for new notifications, a quiet footnote says what that
- * mode would bring from the one set now. Grey, as it isn't needed, with only One UI's name for the
- * mode in cyan, to look for there; it leads to the same page.
+ * Under the row, until it is set to Show for new notifications, a quiet footnote says what that
+ * mode would bring from the one set now, on the row's grid so the two read as one. Grey, as it
+ * isn't needed, with only One UI's name for the mode in cyan, to look for there; it leads to the
+ * same page.
  */
 @Composable
 internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
@@ -74,39 +78,49 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
     // Kept while the footnote folds away, so its text doesn't go before its space does.
     var lastTip by remember { mutableIntStateOf(R.string.waiting_tip_off) }
     SideEffect { if (tip != null) lastTip = tip }
-    Column {
-        Column(Modifier.glowCard(vertical = 10.dp)) {
-            LinkRow(
-                title = stringResource(R.string.waiting_aod_title),
-                summary = stringResource(
-                    when {
-                        !aodOn -> R.string.waiting_aod_off
-                        !shieldOn -> R.string.waiting_aod_needs_shield
-                        aod == AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
-                        else -> R.string.waiting_aod_on
-                    },
-                ),
-                action = action,
-                onClick = onAod,
-                leading = { StatusTile(aodOn) { tint, line -> aodPhone(tint, line) } },
-            )
-        }
+    Column(Modifier.glowCard(vertical = 10.dp)) {
+        LinkRow(
+            title = stringResource(R.string.waiting_aod_title),
+            summary = stringResource(
+                when {
+                    !aodOn -> R.string.waiting_aod_off
+                    !shieldOn -> R.string.waiting_aod_needs_shield
+                    aod == AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
+                    else -> R.string.waiting_aod_on
+                },
+            ),
+            action = action,
+            onClick = onAod,
+            leading = { StatusTile(aodOn) { tint, line -> aodPhone(tint, line) } },
+        )
+        // On the row's grid: the divider from its text, the mark under its tile, the text in line.
         Disclosure(visible = tip != null) {
-            Row(
-                Modifier
-                    .padding(top = 6.dp)
-                    .fillMaxWidth()
-                    .clip(GlowShapes.Tile)
-                    .clickable(role = Role.Button, onClickLabel = action, onClick = onAod)
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-            ) {
-                // On the first line's middle.
-                Canvas(Modifier.padding(top = 3.dp).size(12.dp)) {
-                    val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    battery(GlowPalette.TextMuted, line)
+            Column {
+                Box(
+                    Modifier
+                        .padding(start = TILE + TILE_GAP, top = 2.dp, bottom = 2.dp)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(GlowPalette.OutlineSoft),
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .rowBleed()
+                        .clip(GlowShapes.Tile)
+                        .clickable(role = Role.Button, onClickLabel = action, onClick = onAod)
+                        .padding(horizontal = RowBleed, vertical = 10.dp),
+                ) {
+                    // On the first line's middle.
+                    Box(Modifier.width(TILE).padding(top = 3.dp), contentAlignment = Alignment.TopCenter) {
+                        Canvas(Modifier.size(12.dp)) {
+                            val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            battery(GlowPalette.TextMuted, line)
+                        }
+                    }
+                    Spacer(Modifier.width(TILE_GAP))
+                    Tip(tip ?: lastTip)
                 }
-                Spacer(Modifier.width(8.dp))
-                Tip(tip ?: lastTip)
             }
         }
     }

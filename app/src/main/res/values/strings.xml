@@ -163,8 +163,8 @@
     <string name="waiting_aod_needs_shield">On · the LED glows on it with Lumement effects on</string>
     <string name="waiting_tip_mode">Show\u00A0for\u00A0new\u00A0notifications</string>
     <string name="waiting_tip_title">Optional, saves battery</string>
-    <string name="waiting_tip_off">%1$s: the LED glows on the always-on display, with the screen off.</string>
-    <string name="waiting_tip_on">%1$s: the always-on display stays off until a message comes in.</string>
+    <string name="waiting_tip_off">%1$s: the LED glows on the always-on display instead.</string>
+    <string name="waiting_tip_on">%1$s: it stays off until a message comes in.</string>
     <string name="arrival_needs_shield_led">Turn on Lumement effects so the LED shows over the lock screen, and power or your fingerprint opens it straight away.</string>
     <string name="arrival_needs_shield">Turn on Lumement effects to play the effect over the lock screen. Without it the lock screen only lights up.</string>
     <string name="section_effect">EFFECT</string>
