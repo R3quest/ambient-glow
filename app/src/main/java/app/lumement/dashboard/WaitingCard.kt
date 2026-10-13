@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,9 +40,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import app.lumement.AodMode
 import app.lumement.R
+import app.lumement.ui.components.CardDivider
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.LinkRow
 import app.lumement.ui.components.RowBleed
+import app.lumement.ui.components.SectionLabel
 import app.lumement.ui.components.rowBleed
 import app.lumement.ui.components.glowCard
 import app.lumement.ui.theme.GlowPalette
@@ -54,17 +55,17 @@ import app.lumement.ui.theme.GlowShapes
 // ---------------------------------------------------------------------------------------------
 
 /**
- * One UI's always-on display ([aod]; the card is left out on other phones), the one system
- * setting here that is a choice: off, the LED keeps the screen on; on, the LED glows on it. Lit in
- * cyan when on, what that means for the LED, and a way to the Settings page where it is changed:
- * apps can't switch it (Samsung's own AOD page needs a signature permission), so no switch that
- * wouldn't flip. The LED is drawn on it in Lumement effects' window ([shieldOn]), which the screen
- * card asks for while it is off.
+ * One UI's always-on display ([aod]; the card is left out on other phones), laid out as the
+ * dashboard's other cards are: its label, then a row with its mode and what the LED does in it,
+ * lit in cyan when on, and a way to the Settings page where it is changed. Apps can't switch it
+ * (Samsung's own AOD page needs a signature permission), so no switch that wouldn't flip. The LED
+ * is drawn on it in Lumement effects' window ([shieldOn]), which the screen card asks for while
+ * it is off.
  *
- * Under the row, until it is set to Show for new notifications, a quiet footnote says what that
- * mode would bring from the one set now, on the row's grid so the two read as one. Grey, as it
- * isn't needed, with only One UI's name for the mode in cyan, to look for there; it leads to the
- * same page.
+ * Under a divider, until it is set to Show for new notifications, what that mode would bring from
+ * the one set now, all in quiet grey as it isn't needed: a tag that says it saves battery and is
+ * optional, then the line, One UI's name for the mode a shade brighter, to look for there. It
+ * leads to the same page.
  */
 @Composable
 internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
@@ -75,50 +76,55 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
         AodMode.ON -> R.string.waiting_tip_on
         AodMode.NEW_NOTIFICATIONS -> null
     }
-    // Kept while the footnote folds away, so its text doesn't go before its space does.
+    // Kept while the tip folds away, so its text doesn't go before its space does.
     var lastTip by remember { mutableIntStateOf(R.string.waiting_tip_off) }
     SideEffect { if (tip != null) lastTip = tip }
-    Column(Modifier.glowCard(vertical = 10.dp)) {
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel(stringResource(R.string.waiting_aod_label), GlowPalette.TextMuted)
         LinkRow(
-            title = stringResource(R.string.waiting_aod_title),
+            title = stringResource(
+                when (aod) {
+                    AodMode.OFF -> R.string.waiting_aod_off
+                    AodMode.ON -> R.string.waiting_aod_on
+                    AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
+                },
+            ),
             summary = stringResource(
                 when {
-                    !aodOn -> R.string.waiting_aod_off
-                    !shieldOn -> R.string.waiting_aod_needs_shield
-                    aod == AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
-                    else -> R.string.waiting_aod_on
+                    !aodOn -> R.string.waiting_led_screen
+                    !shieldOn -> R.string.waiting_led_needs_shield
+                    else -> R.string.waiting_led_aod
                 },
             ),
             action = action,
             onClick = onAod,
             leading = { StatusTile(aodOn) { tint, line -> aodPhone(tint, line) } },
         )
-        // On the row's grid: the divider from its text, the mark under its tile, the text in line.
         Disclosure(visible = tip != null) {
             Column {
-                Box(
+                CardDivider()
+                Column(
                     Modifier
-                        .padding(start = TILE + TILE_GAP, top = 2.dp, bottom = 2.dp)
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(GlowPalette.OutlineSoft),
-                )
-                Row(
-                    Modifier
+                        .padding(top = 6.dp)
                         .fillMaxWidth()
                         .rowBleed()
                         .clip(GlowShapes.Tile)
                         .clickable(role = Role.Button, onClickLabel = action, onClick = onAod)
                         .padding(horizontal = RowBleed, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // On the first line's middle.
-                    Box(Modifier.width(TILE).padding(top = 3.dp), contentAlignment = Alignment.TopCenter) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Canvas(Modifier.size(12.dp)) {
                             val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
                             battery(GlowPalette.TextMuted, line)
                         }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.waiting_tip_tag),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = GlowPalette.TextMuted,
+                        )
                     }
-                    Spacer(Modifier.width(TILE_GAP))
                     Tip(tip ?: lastTip)
                 }
             }
@@ -126,7 +132,7 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
     }
 }
 
-/** The footnote: that it is optional, then what the mode would bring, its One UI name in cyan. */
+/** What the mode would bring, its One UI name a shade brighter. */
 @Composable
 private fun Tip(@StringRes text: Int) {
     val mode = stringResource(R.string.waiting_tip_mode)
@@ -135,17 +141,10 @@ private fun Tip(@StringRes text: Int) {
         buildAnnotatedString {
             append(tip)
             val at = tip.indexOf(mode)
-            if (at >= 0) addStyle(SpanStyle(color = GlowPalette.Cyan), at, at + mode.length)
+            if (at >= 0) addStyle(SpanStyle(color = GlowPalette.TextPrimary), at, at + mode.length)
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = stringResource(R.string.waiting_tip_title),
-            style = MaterialTheme.typography.bodySmall,
-            color = GlowPalette.TextMuted,
-        )
-        Text(text = styled, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextFaint)
-    }
+    Text(text = styled, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
 }
 
 private val TILE = 36.dp
