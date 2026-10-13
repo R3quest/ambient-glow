@@ -41,8 +41,6 @@ internal fun ScreenCard(
     loop: Boolean,
     shieldOn: Boolean,
     onShield: () -> Unit,
-    aodOff: Boolean,
-    onAod: () -> Unit,
     onSelect: (ArrivalMode) -> Unit,
 ) {
     val selected = settings.arrival
@@ -78,18 +76,6 @@ internal fun ScreenCard(
                         text = stringResource(R.string.arrival_needs_shield),
                         action = stringResource(R.string.access_shield_grant),
                         onAction = onShield,
-                    )
-                }
-            }
-            // One UI's always-on display off: the lit LED keeps the screen on. Shown for new
-            // notifications, the LED glows on it for less battery (it is drawn in the shield's
-            // window, so only with the shield on). Here for as long as that holds, as setup offers it once.
-            Disclosure(visible = shieldOn && aodOff) {
-                Box(Modifier.padding(top = 12.dp)) {
-                    NoticeRow(
-                        text = stringResource(R.string.arrival_aod_battery),
-                        action = stringResource(R.string.setup_aod_grant),
-                        onAction = onAod,
                     )
                 }
             }

@@ -73,7 +73,9 @@ import app.lumement.GlowLauncher
 import app.lumement.GlowLog
 import app.lumement.GlowPrefs
 import app.lumement.GlowShield
-import app.lumement.aodForNewNotificationsOffered
+import app.lumement.AodMode
+import app.lumement.aodForNewNotificationsAvailable
+import app.lumement.aodMode
 import app.lumement.MainActivity
 import app.lumement.NotificationWakerService
 import app.lumement.R
@@ -96,12 +98,17 @@ internal data class AccessState(
     val fullScreenApplies: Boolean,
     /** Optional: plays the effect over the lock screen and covers the bars for the LED (GlowShield). Not counted in [ready]. */
     val shield: Boolean,
+    /** The always-on display's mode ([aodMode]), null where it can't be read. */
+    val aod: AodMode? = null,
+    /** One UI's "Show for new notifications" exists here ([aodForNewNotificationsAvailable]). */
+    val aodForNew: Boolean = false,
+) {
     /**
      * Optional, One UI: its always-on display is off, and could show for new notifications only, for
-     * the LED to glow on instead of keeping the screen on ([aodForNewNotificationsOffered]).
+     * the LED to glow on instead of keeping the screen on.
      */
-    val aodOff: Boolean = false,
-) {
+    val aodOff: Boolean get() = aod == AodMode.OFF && aodForNew
+
     fun has(step: AccessStep): Boolean = when (step) {
         AccessStep.LISTENER -> listener
         AccessStep.BRIDGE -> bridge
@@ -131,7 +138,8 @@ internal data class AccessState(
                 fullScreen = fullScreen,
                 fullScreenApplies = fullScreenApplies,
                 shield = isShieldEnabled(context),
-                aodOff = aodForNewNotificationsOffered(context.contentResolver),
+                aod = aodMode(context.contentResolver),
+                aodForNew = aodForNewNotificationsAvailable(context.contentResolver),
             )
         }
     }
@@ -615,7 +623,7 @@ private fun DrawScope.phone(tint: Color, line: Stroke) {
 }
 
 /** A four-pointed spark, pinched at its waist, and a small one beside it. */
-private fun DrawScope.spark(tint: Color, line: Stroke) {
+internal fun DrawScope.spark(tint: Color, line: Stroke) {
     val (w, h) = size
     val c = Offset(w * 0.44f, h * 0.56f)
     val r = w * 0.4f
@@ -633,7 +641,7 @@ private fun DrawScope.spark(tint: Color, line: Stroke) {
 }
 
 /** A battery standing up, its terminal on top, two thirds full. */
-private fun DrawScope.battery(tint: Color, line: Stroke) {
+internal fun DrawScope.battery(tint: Color, line: Stroke) {
     val (w, h) = size
     drawRoundRect(tint, Offset(w * 0.27f, h * 0.14f), Size(w * 0.46f, h * 0.82f), CornerRadius(w * 0.1f), style = line)
     drawRoundRect(tint, Offset(w * 0.4f, h * 0.02f), Size(w * 0.2f, h * 0.08f), CornerRadius(w * 0.03f))

@@ -415,10 +415,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
-                                            shieldOn = access.shield,
-                                            onShield = actions.shield,
-                                            aodOff = access.aodOff,
-                                            onAod = actions.aod,
+                                            access = access,
+                                            actions = actions,
                                             edit = edit,
                                         )
                                         DashboardTab.EFFECT -> EffectPage(
@@ -512,10 +510,8 @@ private fun ScreenPage(
     sample: Int,
     previewHeld: PreviewPhase?,
     loop: Boolean,
-    shieldOn: Boolean,
-    onShield: () -> Unit,
-    aodOff: Boolean,
-    onAod: () -> Unit,
+    access: AccessState,
+    actions: AccessActions,
     edit: SettingsEdit,
 ) {
     SettingsGroup(index = "01", title = R.string.group_screen_title, body = R.string.group_screen_body) {
@@ -524,11 +520,18 @@ private fun ScreenPage(
             sample = sample,
             previewHeld = previewHeld,
             loop = loop,
-            shieldOn = shieldOn,
-            onShield = onShield,
-            aodOff = aodOff,
-            onAod = onAod,
+            shieldOn = access.shield,
+            onShield = actions.shield,
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
+        )
+    }
+    SettingsGroup(index = "02", title = R.string.group_waiting_title, body = R.string.group_waiting_body) {
+        WaitingCard(
+            aod = access.aod,
+            aodForNew = access.aodForNew,
+            shieldOn = access.shield,
+            onAod = actions.aod,
+            onShield = actions.shield,
         )
     }
 }
