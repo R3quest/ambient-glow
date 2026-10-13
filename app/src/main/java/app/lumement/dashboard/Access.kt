@@ -104,10 +104,18 @@ internal data class AccessState(
     val aodForNew: Boolean = false,
 ) {
     /**
+     * The always-on display's mode where the dashboard shows it: on One UI only, where it was
+     * measured (its switches read right, its Settings row, Show for new notifications). Elsewhere
+     * Android's switch may not be the one the phone's own always-on display uses, and a wrong mode
+     * is worse than none.
+     */
+    val oneUiAod: AodMode? get() = aod?.takeIf { aodForNew }
+
+    /**
      * Optional, One UI: its always-on display is off, and could show for new notifications only, for
      * the LED to glow on instead of keeping the screen on.
      */
-    val aodOff: Boolean get() = aod == AodMode.OFF && aodForNew
+    val aodOff: Boolean get() = oneUiAod == AodMode.OFF
 
     fun has(step: AccessStep): Boolean = when (step) {
         AccessStep.LISTENER -> listener

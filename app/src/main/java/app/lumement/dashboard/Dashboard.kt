@@ -525,10 +525,10 @@ private fun ScreenPage(
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
         )
     }
-    // Where the phone's always-on display can't be read there is nothing to show or choose.
-    val aod = access.aod ?: return
+    // Only where the phone's always-on display is read right: One UI.
+    val aod = access.oneUiAod ?: return
     SettingsGroup(index = "02", title = R.string.group_waiting_title, body = R.string.group_waiting_body) {
-        WaitingCard(aod = aod, aodForNew = access.aodForNew, shieldOn = access.shield, onAod = actions.aod)
+        WaitingCard(aod = aod, shieldOn = access.shield, onAod = actions.aod)
     }
 }
 
