@@ -261,9 +261,17 @@ private const val CAP_MIDDLE_EM = 0.355f
  * list). One eased value turns the fill, ring, dot and title together; it is read in draw, so a
  * pick doesn't recompose the row. The ring sits on the title's first line, centred on its
  * capitals: centred on the line box it reads low, since that box keeps room for descenders.
+ * [below] adds a line under the text, in line with it.
  */
 @Composable
-internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: () -> Unit) {
+internal fun RadioRow(
+    title: String,
+    body: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    below: @Composable () -> Unit = {},
+) {
     val on = animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = GlowMotion.stateChange(),
@@ -274,7 +282,7 @@ internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: 
     // From the ring's centre down to the title's baseline: the capitals' middle sits that far up.
     val capMiddle = with(LocalDensity.current) { (titleStyle.fontSize * CAP_MIDDLE_EM).roundToPx() }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(GlowShapes.Tile)
             .drawBehind { if (on.value > 0f) drawRect(GlowPalette.SurfaceRaised, alpha = on.value) }
@@ -307,6 +315,7 @@ internal fun RadioRow(title: String, body: String?, selected: Boolean, onClick: 
                 color = { lerp(GlowPalette.TextMuted, GlowPalette.TextPrimary, on.value) },
             )
             if (body != null) Text(text = body, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
+            below()
         }
     }
 }
