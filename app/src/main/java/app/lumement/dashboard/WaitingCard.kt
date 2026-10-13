@@ -33,17 +33,16 @@ import app.lumement.ui.theme.GlowPalette
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Where the LED waits, by the always-on display ([aod]; the card is left out where it can't be
- * read): each of its ways in one line, what to set for it under that, and the phone's own
- * selected. None is a wrong one, so none is pushed: the one that uses least battery says so,
+ * Where the LED waits, by One UI's always-on display ([aod]; the card is left out on other
+ * phones): each of its ways in one line, what it is set to for it under that, and the phone's
+ * own selected. None is a wrong one, so none is pushed: the one that uses least battery says so,
  * quietly. Apps can't switch it (Samsung's own AOD page, where its ways are, needs a signature
- * permission), so a tap on any of its ways leads to the Settings page where it is
- * changed. "Show for new notifications" is One UI's ([aodForNew]), listed only there. The LED is
- * drawn on the display in Lumement effects' window ([shieldOn]), which the screen card asks for
- * while it is off; till then the display's ways say they need it.
+ * permission), so a tap on any of its ways leads to the Settings page where it is changed. The
+ * LED is drawn on the display in Lumement effects' window ([shieldOn]), which the screen card
+ * asks for while it is off; till then the display's ways say they need it.
  */
 @Composable
-internal fun WaitingCard(aod: AodMode, aodForNew: Boolean, shieldOn: Boolean, onAod: () -> Unit) {
+internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
     // Laid out as the screen card is: its label, then its choices.
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionLabel(stringResource(R.string.waiting_label), GlowPalette.TextMuted)
@@ -60,15 +59,13 @@ internal fun WaitingCard(aod: AodMode, aodForNew: Boolean, shieldOn: Boolean, on
                 now = aod == AodMode.ON,
                 onClick = onAod,
             )
-            if (aodForNew) {
-                WaitingWay(
-                    title = stringResource(R.string.waiting_new_title),
-                    setting = stringResource(if (aod == AodMode.NEW_NOTIFICATIONS && !shieldOn) R.string.waiting_needs_shield else R.string.waiting_new_setting),
-                    now = aod == AodMode.NEW_NOTIFICATIONS,
-                    onClick = onAod,
-                    leastBattery = true,
-                )
-            }
+            WaitingWay(
+                title = stringResource(R.string.waiting_new_title),
+                setting = stringResource(if (aod == AodMode.NEW_NOTIFICATIONS && !shieldOn) R.string.waiting_needs_shield else R.string.waiting_new_setting),
+                now = aod == AodMode.NEW_NOTIFICATIONS,
+                onClick = onAod,
+                leastBattery = true,
+            )
         }
     }
 }
