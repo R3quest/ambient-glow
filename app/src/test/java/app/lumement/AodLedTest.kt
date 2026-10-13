@@ -53,6 +53,20 @@ class AodLedTest {
         assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null, newOnly = true))
     }
 
+    /**
+     * Switched from "Show for new notifications" to "Show always" (2026-10-13): the main switch is on
+     * in both, and the last sleep, with nothing new, went off. That answer is stale; the switches say.
+     */
+    @Test
+    fun switchedBetweenOneUisModesTheSwitchesSay() {
+        val forNew = aodSwitchesOf(setting = 1, forNew = true)
+        val always = aodSwitchesOf(setting = 1, forNew = false)
+        assertEquals("to Show always", true, sleepWillDoze(lastShowed = false, settingThen = forNew, settingNow = always))
+        assertEquals("unchanged, Show always: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = always, settingNow = always))
+        assertEquals("off is off, whatever the other switch", 0, aodSwitchesOf(setting = 0, forNew = true))
+        assertNull(aodSwitchesOf(setting = null, forNew = true))
+    }
+
     @Test
     fun theAlwaysOnDisplaysModeFromItsSwitches() {
         assertEquals(AodMode.OFF, aodModeOf(setting = 0, forNew = true))

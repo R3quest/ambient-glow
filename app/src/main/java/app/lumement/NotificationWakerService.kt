@@ -171,7 +171,7 @@ class NotificationWakerService : NotificationListenerService() {
             GlowLog.d { "svc sleep: always-on display ${if (shows) "showed" else "off"}" }
         }
         GlowSession.sleepDozes = shows
-        GlowSession.sleepDozesSetting = aodSetting(contentResolver)
+        GlowSession.sleepDozesSetting = aodSwitches(contentResolver)
     }
 
     private val sleepWatch = object : DisplayManager.DisplayListener {
