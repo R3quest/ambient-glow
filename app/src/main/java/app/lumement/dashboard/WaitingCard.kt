@@ -110,7 +110,8 @@ internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
                         .rowBleed()
                         .clip(GlowShapes.Tile)
                         .clickable(role = Role.Button, onClickLabel = action, onClick = onAod)
-                        .padding(horizontal = RowBleed, vertical = 10.dp),
+                        // None below: the card's own padding ends it, as it starts it above the label.
+                        .padding(start = RowBleed, end = RowBleed, top = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
