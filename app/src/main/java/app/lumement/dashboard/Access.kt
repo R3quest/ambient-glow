@@ -200,15 +200,24 @@ private fun Context.openListenerSettings() {
 }
 
 // The per-service page (ACCESSIBILITY_DETAILS_SETTINGS) needs a system-only permission, so this
-// opens the list; Settings highlights our entry where it supports the fragment-args key.
+// opens the list, with the row to tap highlighted where Settings supports the fragment-args key:
+// our service itself on stock Android, which lists services on that page; on One UI, which lists
+// them a page further in, the Installed apps row that leads there (seen on the S23, One UI 8.5).
 private fun Context.openShieldSettings() {
-    val shield = ComponentName(this, GlowShield::class.java).flattenToString()
+    val row = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) {
+        ONE_UI_INSTALLED_SERVICES
+    } else {
+        ComponentName(this, GlowShield::class.java).flattenToString()
+    }
     launchFirstAvailable(
         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            .putExtra(":settings:fragment_args_key", shield)
-            .putExtra(":settings:show_fragment_args", Bundle().apply { putString(":settings:fragment_args_key", shield) }),
+            .putExtra(":settings:fragment_args_key", row)
+            .putExtra(":settings:show_fragment_args", Bundle().apply { putString(":settings:fragment_args_key", row) }),
     )
 }
+
+/** One UI's key for the accessibility page's Installed apps row (from its Settings layout). */
+private const val ONE_UI_INSTALLED_SERVICES = "accessibility_installed_services"
 
 /**
  * Android's lock-screen settings, which One UI titles Lock screen and AOD, where the always-on
