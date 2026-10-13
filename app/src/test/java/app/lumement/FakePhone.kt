@@ -35,6 +35,10 @@ internal class FakePhone : LockPort, ShieldPort {
         private set
     override var nextAlarmAt: Long? = null
     override var expectsAod: Boolean? = false
+    override var aodOnly = false
+
+    /** The look and arrival the glow screen loads. */
+    var settings = GlowSettings()
 
     /** Where a sleep goes: the always-on display, or off. */
     var dozes = false
@@ -257,7 +261,7 @@ internal class FakePhone : LockPort, ShieldPort {
     override val wallMs: Long get() = now
     override val barsHideMs: Long = 360L
 
-    override fun loadSettings() = GlowSettings()
+    override fun loadSettings() = settings
 
     override fun schedule(timer: LockTimer, delayMs: Long) = later(delayMs, timer) { flow.onTimer(timer) }
     override fun cancel(timer: LockTimer) {
@@ -417,6 +421,27 @@ internal class FakePhone : LockPort, ShieldPort {
         log += "sleep now"
         later(0) { goToSleep() }
         return true
+    }
+
+    /**
+     * One UI's own short doze screen that isn't its always-on display: a missed fingerprint on a dark
+     * phone (DOZE_MOD on the S23), then off again. To an app it is a doze like any other.
+     */
+    fun dozeScreen() {
+        if (interactive) return
+        log += "system: doze screen"
+        displayState = Display.STATE_DOZE
+        displayChanged()
+        settle()
+    }
+
+    /** One UI ends its always-on display by itself (low light, its timeout): the panel goes off, the phone still asleep. */
+    fun aodGoes() {
+        if (interactive) return
+        log += "system: always-on display off"
+        displayState = Display.STATE_OFF
+        displayChanged()
+        settle()
     }
 
     /** GlowShield is turned off, or unbound by the system: its windows go, and the glow screen hears. */

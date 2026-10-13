@@ -66,19 +66,67 @@ internal fun aodForNewNotifications(resolver: ContentResolver): Boolean =
 
 private const val ONE_UI_AOD_NEW_NOTIFICATIONS = "aod_show_for_new_noti"
 
+/** The phone's always-on display, as the dashboard shows it ([AodSwitches.mode]). */
+internal enum class AodMode {
+    OFF,
+
+    /** One UI's "Show for new notifications" ([aodForNewNotifications]). */
+    NEW_NOTIFICATIONS,
+
+    /** On in any other way: always, on a tap, on a schedule. */
+    ON,
+}
+
+/**
+ * The always-on display's switches: the system's ([setting], [aodSetting]), and with it on, One
+ * UI's "Show for new notifications" ([forNew], [aodForNewNotifications]). Compared whole to tell
+ * when they changed since a sleep was seen ([sleepWillDoze]): switching between One UI's modes
+ * leaves the system's on, and the last sleep's answer would be stale once.
+ */
+internal data class AodSwitches(val setting: Int, val forNew: Boolean) {
+    val on: Boolean get() = setting != 0
+
+    val mode: AodMode get() = when {
+        !on -> AodMode.OFF
+        forNew -> AodMode.NEW_NOTIFICATIONS
+        else -> AodMode.ON
+    }
+}
+
+/** The switches as set now, or null where the system's can't be read. */
+internal fun aodSwitches(resolver: ContentResolver): AodSwitches? = aodSwitchesOf(aodSetting(resolver), aodForNewNotifications(resolver))
+
+/** [AodSwitches] from the settings: "Show for new notifications" counts only while it is on. */
+internal fun aodSwitchesOf(setting: Int?, forNew: Boolean): AodSwitches? = setting?.let { AodSwitches(it, forNew = it != 0 && forNew) }
+
+/** The always-on display's mode, or null where its switch can't be read. */
+internal fun aodMode(resolver: ContentResolver): AodMode? = aodSwitches(resolver)?.mode
+
+/** One UI, which has "Show for new notifications": the dashboard suggests it while the always-on display is off. */
+internal fun aodForNewNotificationsAvailable(resolver: ContentResolver): Boolean =
+    readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_NEW_NOTIFICATIONS) } != null
+
+/**
+ * The LED lives on One UI's always-on display alone: it is on, and shown for new notifications
+ * ([aodForNewNotifications]). One UI decides when it shows (a new message) and when it doesn't (the
+ * message seen once the phone was woken, low light, its timeout), and the LED follows it: no lit
+ * LED in its place (the user's choice, 2026-10-13).
+ */
+internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = aodSwitches(resolver)?.forNew == true
+
 /**
  * Will this sleep, with messages waiting, show the always-on display? As the last sleep did
- * ([lastShowed]) while the system's switch ([aodSetting]) is as it was then ([settingThen]): that
- * also covers modes where it is on but shows only on a tap, or on a schedule. Switched since (or no
- * sleep seen yet), the switch says ([settingNow]): no display event tells a sleep that stays off
- * from one about to doze, so the last sleep's answer would be wrong once, in either direction.
- * Shown only for new notifications ([newOnly], [aodForNewNotifications]), it shows now, whatever
- * the last sleep (with nothing waiting, off) did. Null: not known.
+ * ([lastShowed]) while the switches are as they were then ([settingThen]): that also covers modes
+ * where it is on but shows only on a tap, or on a schedule. Switched since (or no sleep seen yet),
+ * the switches say ([settingNow]): no display event tells a sleep that stays off from one about to
+ * doze, so the last sleep's answer would be wrong once, in either direction. Shown only for new
+ * notifications ([AodSwitches.forNew]), it shows now, whatever the last sleep (with nothing
+ * waiting, off) did. Null: not known.
  */
-internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?, newOnly: Boolean = false): Boolean? = when {
-    newOnly && settingNow != null && settingNow != 0 -> true
+internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: AodSwitches?, settingNow: AodSwitches?): Boolean? = when {
+    settingNow?.forNew == true -> true
     lastShowed != null && settingThen == settingNow -> lastShowed
-    settingNow != null -> settingNow != 0
+    settingNow != null -> settingNow.on
     else -> lastShowed
 }
 

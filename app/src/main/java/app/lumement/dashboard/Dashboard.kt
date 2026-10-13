@@ -415,8 +415,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
-                                            shieldOn = access.shield,
-                                            onShield = actions.shield,
+                                            access = access,
+                                            actions = actions,
                                             edit = edit,
                                         )
                                         DashboardTab.EFFECT -> EffectPage(
@@ -510,8 +510,8 @@ private fun ScreenPage(
     sample: Int,
     previewHeld: PreviewPhase?,
     loop: Boolean,
-    shieldOn: Boolean,
-    onShield: () -> Unit,
+    access: AccessState,
+    actions: AccessActions,
     edit: SettingsEdit,
 ) {
     SettingsGroup(index = "01", title = R.string.group_screen_title, body = R.string.group_screen_body) {
@@ -520,10 +520,15 @@ private fun ScreenPage(
             sample = sample,
             previewHeld = previewHeld,
             loop = loop,
-            shieldOn = shieldOn,
-            onShield = onShield,
+            shieldOn = access.shield,
+            onShield = actions.shield,
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
         )
+    }
+    // Where the phone's always-on display can't be read there is nothing to show or choose.
+    val aod = access.aod ?: return
+    SettingsGroup(index = "02", title = R.string.group_waiting_title, body = R.string.group_waiting_body) {
+        WaitingCard(aod = aod, aodForNew = access.aodForNew, shieldOn = access.shield, onAod = actions.aod)
     }
 }
 
