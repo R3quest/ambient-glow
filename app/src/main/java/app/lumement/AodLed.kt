@@ -67,6 +67,14 @@ internal fun aodForNewNotifications(resolver: ContentResolver): Boolean =
 private const val ONE_UI_AOD_NEW_NOTIFICATIONS = "aod_show_for_new_noti"
 
 /**
+ * The LED lives on One UI's always-on display alone: it is on, and shown for new notifications
+ * ([aodForNewNotifications]). One UI decides when it shows (a new message) and when it doesn't (the
+ * message seen once the phone was woken, low light, its timeout), and the LED follows it: no lit
+ * LED in its place (the user's choice, 2026-10-13).
+ */
+internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = (aodSetting(resolver) ?: 0) != 0 && aodForNewNotifications(resolver)
+
+/**
  * Will this sleep, with messages waiting, show the always-on display? As the last sleep did
  * ([lastShowed]) while the system's switch ([aodSetting]) is as it was then ([settingThen]): that
  * also covers modes where it is on but shows only on a tap, or on a schedule. Switched since (or no

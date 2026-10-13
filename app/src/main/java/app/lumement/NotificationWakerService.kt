@@ -344,6 +344,8 @@ class NotificationWakerService : NotificationListenerService() {
         // it; started in the dark ([GlowLauncher.startInTheDark]) it doesn't. Asleep on the
         // always-on display, the LED goes onto it, with no wake.
         val onAod = !power.isInteractive && dozing(displays.getDisplay(Display.DEFAULT_DISPLAY)?.state)
+        // On One UI's always-on display alone ([ledOnAodOnly]): with it off, the LED is dark too.
+        if (!onAod && ledOnAodOnly(contentResolver)) return
         GlowLog.d { "svc relight LED${if (onAod) " on the always-on display" else ""}" }
         launch(if (onAod) WakeMode.AOD else WakeMode.LED, newest.color)
     }

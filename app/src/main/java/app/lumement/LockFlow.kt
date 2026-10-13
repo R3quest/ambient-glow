@@ -77,6 +77,9 @@ interface LockPort {
     /** [GlowSession.expectsAod]. */
     val expectsAod: Boolean?
 
+    /** [ledOnAodOnly]: the LED shows on One UI's always-on display or not at all. */
+    val aodOnly: Boolean
+
     /** How long the framework's slide-out of the system bars takes here. */
     val barsHideMs: Long
 
@@ -993,11 +996,13 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
 
     /**
      * The lock screen is dark: put the LED up and light it after [delayMs], or, when the rate
-     * limit has no token, as soon as it has one.
+     * limit has no token, as soon as it has one. Not where the LED lives on One UI's always-on
+     * display alone ([LockPort.aodOnly]): dark there is One UI's choice (the message seen, low light,
+     * its timeout), and the LED stays dark with it.
      */
     private fun relightLed(delayMs: Long) {
         port.cancel(LockTimer.RELIGHT)
-        if (port.interactive || face.value != Face.LOCK_SCREEN || port.inCall || GlowPending.isEmpty || ledResting) return
+        if (port.aodOnly || port.interactive || face.value != Face.LOCK_SCREEN || port.inCall || GlowPending.isEmpty || ledResting) return
         if (!takeRelightToken()) return
         showLed()
         wakeAfter(delayMs)
@@ -1335,8 +1340,9 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
         arriving.value = false
         port.dismissMessage()
         if (face.value == Face.LED && !settling.value) port.applyWindow(lowRefresh = true)
-        // Do Not Disturb came on while it played: no LED after it.
-        if (GlowSession.resting && face.value == Face.LED && port.interactive && !ending.value) sleepUnderCover()
+        // Do Not Disturb came on while it played: no LED after it. Or the LED lives on One UI's
+        // always-on display alone: asleep, it comes for the new message.
+        if ((GlowSession.resting || port.aodOnly) && face.value == Face.LED && port.interactive && !ending.value) sleepUnderCover()
         // Laid face down or covered while it played (a stow waits for it): look again.
         if (face.value == Face.LED && !stowed && port.panelHeld) watchPutAway()
     }
