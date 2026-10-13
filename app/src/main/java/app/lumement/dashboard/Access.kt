@@ -623,7 +623,7 @@ private fun DrawScope.phone(tint: Color, line: Stroke) {
 }
 
 /** A four-pointed spark, pinched at its waist, and a small one beside it. */
-internal fun DrawScope.spark(tint: Color, line: Stroke) {
+private fun DrawScope.spark(tint: Color, line: Stroke) {
     val (w, h) = size
     val c = Offset(w * 0.44f, h * 0.56f)
     val r = w * 0.4f

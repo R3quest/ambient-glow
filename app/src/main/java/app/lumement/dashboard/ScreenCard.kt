@@ -69,11 +69,13 @@ internal fun ScreenCard(
         // Each carries its own gap, so the card doesn't jump as the notice comes and goes.
         Column {
             OptionBody(selected) { mode -> stringResource(mode.body) }
-            // Without the shield, Lock screen only lights the screen: say so where it is chosen.
-            Disclosure(visible = selected == ArrivalMode.LOCK_SCREEN && !shieldOn) {
+            // Lumement effects are set once and forgotten: only said here while they are off, for
+            // what this choice loses without them (Lock screen: the effect; any: the LED's window
+            // over the lock screen, which power and the fingerprint open at once).
+            Disclosure(visible = !shieldOn) {
                 Box(Modifier.padding(top = 12.dp)) {
                     NoticeRow(
-                        text = stringResource(R.string.arrival_needs_shield),
+                        text = stringResource(if (selected == ArrivalMode.LOCK_SCREEN) R.string.arrival_needs_shield else R.string.arrival_needs_shield_led),
                         action = stringResource(R.string.access_shield_grant),
                         onAction = onShield,
                     )

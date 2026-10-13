@@ -25,7 +25,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.lumement.AodMode
 import app.lumement.R
-import app.lumement.ui.components.CardDivider
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.LinkRow
 import app.lumement.ui.components.glowCard
@@ -37,58 +36,47 @@ import app.lumement.ui.theme.GlowShapes
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The two system settings the LED depends on, and how each is set now: the always-on display
- * ([aod]; left out where it can't be read), which the LED glows on instead of keeping the screen
- * on, and Lumement effects ([shieldOn]), whose window the LED is drawn in over the lock screen and
- * the always-on display. Each row is lit when on, says what that means for the LED, and opens the
- * Settings page where it is changed: apps can't switch either, so no switch that wouldn't flip.
- * While the always-on display is off on One UI ([aodForNew]), a quiet line under it says which mode
- * saves battery.
+ * The always-on display ([aod]; the card is left out where it can't be read), the one system
+ * setting here that is a choice: off, the LED keeps the screen on; on, the LED glows on it. Lit in
+ * cyan when on, what that means for the LED, and a way to the Settings page where it is changed:
+ * apps can't switch it, so no switch that wouldn't flip. While it is off on One UI ([aodForNew]), a
+ * quiet line under it says which mode saves battery. The LED is drawn on it in Lumement effects'
+ * window ([shieldOn]), which the screen card asks for while it is off.
  */
 @Composable
-internal fun WaitingCard(aod: AodMode?, aodForNew: Boolean, shieldOn: Boolean, onAod: () -> Unit, onShield: () -> Unit) {
+internal fun WaitingCard(aod: AodMode, aodForNew: Boolean, shieldOn: Boolean, onAod: () -> Unit) {
+    val aodOn = aod != AodMode.OFF
     Column(Modifier.glowCard(vertical = 10.dp)) {
-        if (aod != null) {
-            val aodOn = aod != AodMode.OFF
-            LinkRow(
-                title = stringResource(R.string.waiting_aod_title),
-                summary = stringResource(
-                    when {
-                        !aodOn -> R.string.waiting_aod_off
-                        !shieldOn -> R.string.waiting_aod_needs_shield
-                        aod == AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
-                        else -> R.string.waiting_aod_on
-                    },
-                ),
-                action = stringResource(R.string.setup_aod_grant),
-                onClick = onAod,
-                leading = { StatusTile(aodOn) { tint, line -> battery(tint, line) } },
-            )
-            Disclosure(visible = !aodOn && aodForNew) {
-                Row(
-                    Modifier.padding(start = TILE + TILE_GAP, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Canvas(Modifier.size(12.dp)) {
-                        battery(GlowPalette.Cyan, Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.waiting_aod_tip),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GlowPalette.Cyan,
-                    )
-                }
-            }
-            CardDivider()
-        }
         LinkRow(
-            title = stringResource(R.string.waiting_shield_title),
-            summary = stringResource(if (shieldOn) R.string.waiting_shield_on else R.string.waiting_shield_off),
-            action = stringResource(if (shieldOn) R.string.setup_aod_grant else R.string.access_shield_grant),
-            onClick = onShield,
-            leading = { StatusTile(shieldOn) { tint, line -> spark(tint, line) } },
+            title = stringResource(R.string.waiting_aod_title),
+            summary = stringResource(
+                when {
+                    !aodOn -> R.string.waiting_aod_off
+                    !shieldOn -> R.string.waiting_aod_needs_shield
+                    aod == AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
+                    else -> R.string.waiting_aod_on
+                },
+            ),
+            action = stringResource(R.string.setup_aod_grant),
+            onClick = onAod,
+            leading = { StatusTile(aodOn) { tint, line -> battery(tint, line) } },
         )
+        Disclosure(visible = !aodOn && aodForNew) {
+            Row(
+                Modifier.padding(start = TILE + TILE_GAP, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Canvas(Modifier.size(12.dp)) {
+                    battery(GlowPalette.Cyan, Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.waiting_aod_tip),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlowPalette.Cyan,
+                )
+            }
+        }
     }
 }
 
