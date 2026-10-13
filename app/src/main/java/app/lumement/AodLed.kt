@@ -66,7 +66,7 @@ internal fun aodForNewNotifications(resolver: ContentResolver): Boolean =
 
 private const val ONE_UI_AOD_NEW_NOTIFICATIONS = "aod_show_for_new_noti"
 
-/** The phone's always-on display, as the dashboard shows it ([aodMode]). */
+/** The phone's always-on display, as the dashboard shows it ([AodSwitches.mode]). */
 internal enum class AodMode {
     OFF,
 
@@ -77,34 +77,30 @@ internal enum class AodMode {
     ON,
 }
 
-/** The always-on display's mode ([aodModeOf]), or null where the phone's switch can't be read. */
-internal fun aodMode(resolver: ContentResolver): AodMode? = aodModeOf(aodSetting(resolver), aodForNewNotifications(resolver))
-
-/** The mode from the system's switch ([setting], [aodSetting]) and One UI's [forNew] ([aodForNewNotifications]). */
-internal fun aodModeOf(setting: Int?, forNew: Boolean): AodMode? = when {
-    setting == null -> null
-    setting == 0 -> AodMode.OFF
-    forNew -> AodMode.NEW_NOTIFICATIONS
-    else -> AodMode.ON
-}
-
 /**
- * The always-on display's switches as one value, for telling when they changed since a sleep was
- * seen ([sleepWillDoze]): the system's switch ([aodSetting]), and with it on, One UI's "Show for new
- * notifications" ([aodForNewNotifications]). Switching between One UI's modes leaves the first on,
- * and the last sleep's answer would be stale once. Null where the system's switch can't be read.
+ * The always-on display's switches: the system's ([setting], [aodSetting]), and with it on, One
+ * UI's "Show for new notifications" ([forNew], [aodForNewNotifications]). Compared whole to tell
+ * when they changed since a sleep was seen ([sleepWillDoze]): switching between One UI's modes
+ * leaves the system's on, and the last sleep's answer would be stale once.
  */
-internal fun aodSwitches(resolver: ContentResolver): Int? = aodSwitchesOf(aodSetting(resolver), aodForNewNotifications(resolver))
+internal data class AodSwitches(val setting: Int, val forNew: Boolean) {
+    val on: Boolean get() = setting != 0
 
-/** [aodSwitches] from the switches: 0 while off, whatever the other says. */
-internal fun aodSwitchesOf(setting: Int?, forNew: Boolean): Int? = when {
-    setting == null -> null
-    setting != 0 && forNew -> setting or AOD_FOR_NEW_BIT
-    else -> setting
+    val mode: AodMode get() = when {
+        !on -> AodMode.OFF
+        forNew -> AodMode.NEW_NOTIFICATIONS
+        else -> AodMode.ON
+    }
 }
 
-/** Above any value the system's switch takes (0, 1). */
-private const val AOD_FOR_NEW_BIT = 0x100
+/** The switches as set now, or null where the system's can't be read. */
+internal fun aodSwitches(resolver: ContentResolver): AodSwitches? = aodSwitchesOf(aodSetting(resolver), aodForNewNotifications(resolver))
+
+/** [AodSwitches] from the settings: "Show for new notifications" counts only while it is on. */
+internal fun aodSwitchesOf(setting: Int?, forNew: Boolean): AodSwitches? = setting?.let { AodSwitches(it, forNew = it != 0 && forNew) }
+
+/** The always-on display's mode, or null where its switch can't be read. */
+internal fun aodMode(resolver: ContentResolver): AodMode? = aodSwitches(resolver)?.mode
 
 /** One UI, which has "Show for new notifications": the dashboard suggests it while the always-on display is off. */
 internal fun aodForNewNotificationsAvailable(resolver: ContentResolver): Boolean =
@@ -116,21 +112,21 @@ internal fun aodForNewNotificationsAvailable(resolver: ContentResolver): Boolean
  * message seen once the phone was woken, low light, its timeout), and the LED follows it: no lit
  * LED in its place (the user's choice, 2026-10-13).
  */
-internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = aodMode(resolver) == AodMode.NEW_NOTIFICATIONS
+internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = aodSwitches(resolver)?.forNew == true
 
 /**
  * Will this sleep, with messages waiting, show the always-on display? As the last sleep did
- * ([lastShowed]) while the switches ([aodSwitches]) are as they were then ([settingThen]): that
- * also covers modes where it is on but shows only on a tap, or on a schedule. Switched since (or no
- * sleep seen yet), the switch says ([settingNow]): no display event tells a sleep that stays off
- * from one about to doze, so the last sleep's answer would be wrong once, in either direction.
- * Shown only for new notifications ([newOnly], [aodForNewNotifications]), it shows now, whatever
- * the last sleep (with nothing waiting, off) did. Null: not known.
+ * ([lastShowed]) while the switches are as they were then ([settingThen]): that also covers modes
+ * where it is on but shows only on a tap, or on a schedule. Switched since (or no sleep seen yet),
+ * the switches say ([settingNow]): no display event tells a sleep that stays off from one about to
+ * doze, so the last sleep's answer would be wrong once, in either direction. Shown only for new
+ * notifications ([AodSwitches.forNew]), it shows now, whatever the last sleep (with nothing
+ * waiting, off) did. Null: not known.
  */
-internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: Int?, settingNow: Int?, newOnly: Boolean = false): Boolean? = when {
-    newOnly && settingNow != null && settingNow != 0 -> true
+internal fun sleepWillDoze(lastShowed: Boolean?, settingThen: AodSwitches?, settingNow: AodSwitches?): Boolean? = when {
+    settingNow?.forNew == true -> true
     lastShowed != null && settingThen == settingNow -> lastShowed
-    settingNow != null -> settingNow != 0
+    settingNow != null -> settingNow.on
     else -> lastShowed
 }
 

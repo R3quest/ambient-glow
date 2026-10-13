@@ -9,6 +9,8 @@ import org.junit.Test
 
 class AodLedTest {
 
+    private fun sw(setting: Int, forNew: Boolean = false) = aodSwitchesOf(setting, forNew)
+
     @Test
     fun onlyADozingPanelShowsTheAlwaysOnDisplay() {
         assertTrue(dozing(Display.STATE_DOZE))
@@ -31,26 +33,26 @@ class AodLedTest {
 
     @Test
     fun theLastSleepSaysWhileTheSwitchIsAsItWas() {
-        assertEquals("showed, switch unchanged", true, sleepWillDoze(lastShowed = true, settingThen = 1, settingNow = 1))
-        assertEquals("on but tap to show: went off, unchanged", false, sleepWillDoze(lastShowed = false, settingThen = 1, settingNow = 1))
+        assertEquals("showed, switch unchanged", true, sleepWillDoze(lastShowed = true, settingThen = sw(1), settingNow = sw(1)))
+        assertEquals("on but tap to show: went off, unchanged", false, sleepWillDoze(lastShowed = false, settingThen = sw(1), settingNow = sw(1)))
         assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null))
     }
 
     @Test
     fun switchedSinceTheSwitchSays() {
-        assertEquals("turned on", true, sleepWillDoze(lastShowed = false, settingThen = 0, settingNow = 1))
-        assertEquals("turned off", false, sleepWillDoze(lastShowed = true, settingThen = 1, settingNow = 0))
-        assertEquals("no sleep seen yet, on", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = 1))
+        assertEquals("turned on", true, sleepWillDoze(lastShowed = false, settingThen = sw(0), settingNow = sw(1)))
+        assertEquals("turned off", false, sleepWillDoze(lastShowed = true, settingThen = sw(1), settingNow = sw(0)))
+        assertEquals("no sleep seen yet, on", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = sw(1)))
         assertEquals("nothing known", null, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = null))
     }
 
     /** One UI's "Show for new notifications": off with nothing waiting, on while a message waits. */
     @Test
     fun shownForNewNotificationsTheMessageBringsIt() {
-        assertEquals("the last sleep, nothing waiting, went off", true, sleepWillDoze(lastShowed = false, settingThen = 1, settingNow = 1, newOnly = true))
-        assertEquals("no sleep seen yet", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = 1, newOnly = true))
-        assertEquals("the always-on display off: the mode doesn't matter", false, sleepWillDoze(lastShowed = false, settingThen = 0, settingNow = 0, newOnly = true))
-        assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null, newOnly = true))
+        assertEquals("the last sleep, nothing waiting, went off", true, sleepWillDoze(lastShowed = false, settingThen = sw(1, forNew = true), settingNow = sw(1, forNew = true)))
+        assertEquals("no sleep seen yet", true, sleepWillDoze(lastShowed = null, settingThen = null, settingNow = sw(1, forNew = true)))
+        assertEquals("the always-on display off: the mode doesn't matter", false, sleepWillDoze(lastShowed = false, settingThen = sw(0, forNew = true), settingNow = sw(0, forNew = true)))
+        assertEquals("no switch to read: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = null, settingNow = null))
     }
 
     /**
@@ -63,16 +65,16 @@ class AodLedTest {
         val always = aodSwitchesOf(setting = 1, forNew = false)
         assertEquals("to Show always", true, sleepWillDoze(lastShowed = false, settingThen = forNew, settingNow = always))
         assertEquals("unchanged, Show always: the last sleep", false, sleepWillDoze(lastShowed = false, settingThen = always, settingNow = always))
-        assertEquals("off is off, whatever the other switch", 0, aodSwitchesOf(setting = 0, forNew = true))
+        assertEquals("off is off, whatever the other switch", sw(0), aodSwitchesOf(setting = 0, forNew = true))
         assertNull(aodSwitchesOf(setting = null, forNew = true))
     }
 
     @Test
     fun theAlwaysOnDisplaysModeFromItsSwitches() {
-        assertEquals(AodMode.OFF, aodModeOf(setting = 0, forNew = true))
-        assertEquals("Show for new notifications", AodMode.NEW_NOTIFICATIONS, aodModeOf(setting = 1, forNew = true))
-        assertEquals("always, on a tap, on a schedule", AodMode.ON, aodModeOf(setting = 1, forNew = false))
-        assertNull("no switch to read", aodModeOf(setting = null, forNew = false))
+        assertEquals(AodMode.OFF, aodSwitchesOf(setting = 0, forNew = true)?.mode)
+        assertEquals("Show for new notifications", AodMode.NEW_NOTIFICATIONS, aodSwitchesOf(setting = 1, forNew = true)?.mode)
+        assertEquals("always, on a tap, on a schedule", AodMode.ON, aodSwitchesOf(setting = 1, forNew = false)?.mode)
+        assertNull("no switch to read", aodSwitchesOf(setting = null, forNew = false)?.mode)
     }
 
     private fun onAod(

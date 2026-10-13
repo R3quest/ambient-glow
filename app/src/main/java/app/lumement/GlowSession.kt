@@ -336,12 +336,11 @@ object GlowSession {
     var sleepDozes: Boolean? = null
 
     /** The always-on display's switches ([aodSwitches]) when [sleepDozes] was seen. */
-    var sleepDozesSetting: Int? = null
+    internal var sleepDozesSetting: AodSwitches? = null
 
     /** Will the next sleep show the always-on display ([sleepWillDoze])? Null: not known. */
     fun expectsAod(context: Context): Boolean? {
-        val resolver = context.contentResolver
-        return sleepWillDoze(sleepDozes, sleepDozesSetting, aodSwitches(resolver), newOnly = aodForNewNotifications(resolver))
+        return sleepWillDoze(sleepDozes, sleepDozesSetting, aodSwitches(context.contentResolver))
     }
 
     /** Keys of other apps' posts showing now that want the screen ([takesScreen]). Set by the listener, main thread only. */
