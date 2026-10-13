@@ -50,6 +50,9 @@ object GlowPrefs {
     // Not a setting: whether setup has offered the optional shield step, so it is offered once.
     private const val KEY_SHIELD_OFFERED = "setup_shield_offered"
 
+    // Not a setting: whether setup has offered the always-on display step, so it is offered once.
+    private const val KEY_AOD_OFFERED = "setup_aod_offered"
+
     // Not a setting: whether the dashboard has asked for a review, so it asks once.
     private const val KEY_REVIEW_ASKED = "review_asked"
 
@@ -72,6 +75,10 @@ object GlowPrefs {
     fun shieldOffered(context: Context): Boolean = prefs(context).getBoolean(KEY_SHIELD_OFFERED, false)
 
     fun markShieldOffered(context: Context) = prefs(context).edit { putBoolean(KEY_SHIELD_OFFERED, true) }
+
+    fun aodOffered(context: Context): Boolean = prefs(context).getBoolean(KEY_AOD_OFFERED, false)
+
+    fun markAodOffered(context: Context) = prefs(context).edit { putBoolean(KEY_AOD_OFFERED, true) }
 
     fun reviewAsked(context: Context): Boolean = prefs(context).getBoolean(KEY_REVIEW_ASKED, false)
 

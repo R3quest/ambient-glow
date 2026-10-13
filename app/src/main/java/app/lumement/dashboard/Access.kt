@@ -73,6 +73,7 @@ import app.lumement.GlowLauncher
 import app.lumement.GlowLog
 import app.lumement.GlowPrefs
 import app.lumement.GlowShield
+import app.lumement.aodForNewNotificationsOffered
 import app.lumement.MainActivity
 import app.lumement.NotificationWakerService
 import app.lumement.R
@@ -95,6 +96,11 @@ internal data class AccessState(
     val fullScreenApplies: Boolean,
     /** Optional: plays the effect over the lock screen and covers the bars for the LED (GlowShield). Not counted in [ready]. */
     val shield: Boolean,
+    /**
+     * Optional, One UI: its always-on display is off, and could show for new notifications only, for
+     * the LED to glow on instead of keeping the screen on ([aodForNewNotificationsOffered]).
+     */
+    val aodOff: Boolean = false,
 ) {
     fun has(step: AccessStep): Boolean = when (step) {
         AccessStep.LISTENER -> listener
@@ -125,6 +131,7 @@ internal data class AccessState(
                 fullScreen = fullScreen,
                 fullScreenApplies = fullScreenApplies,
                 shield = isShieldEnabled(context),
+                aodOff = aodForNewNotificationsOffered(context.contentResolver),
             )
         }
     }
@@ -173,6 +180,8 @@ private fun Context.launchFirstAvailable(vararg intents: Intent) {
             return
         } catch (_: ActivityNotFoundException) {
             // OEM builds omit some deep links; fall through to the next, broader screen.
+        } catch (_: SecurityException) {
+            // Or guard them with a permission of their own (Samsung's AOD settings): the same.
         }
     }
 }
@@ -201,6 +210,20 @@ private fun Context.openShieldSettings() {
     )
 }
 
+/**
+ * Android's lock-screen settings, which One UI titles Lock screen and AOD, where the always-on
+ * display is set (Samsung's own AOD page needs a permission of Samsung's); else the display settings.
+ */
+private fun Context.openAodSettings() {
+    launchFirstAvailable(
+        Intent(ACTION_LOCK_SCREEN_SETTINGS),
+        Intent(Settings.ACTION_DISPLAY_SETTINGS),
+    )
+}
+
+/** Settings.ACTION_LOCKSCREEN_SETTINGS (hidden), the lock-screen page. */
+private const val ACTION_LOCK_SCREEN_SETTINGS = "android.settings.LOCK_SCREEN_SETTINGS"
+
 private fun Context.openBridgeSettings() {
     launchFirstAvailable(
         Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
@@ -225,6 +248,7 @@ internal class AccessActions(
     val bridge: () -> Unit,
     val fullScreen: () -> Unit,
     val shield: () -> Unit,
+    val aod: () -> Unit,
 ) {
     fun open(step: AccessStep) = when (step) {
         AccessStep.LISTENER -> listener()
@@ -262,6 +286,7 @@ internal fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
                 GrantReturn.await(GrantReturn.Grant.SHIELD)
                 context.openShieldSettings()
             },
+            aod = context::openAodSettings,
         )
     }
 }
@@ -319,6 +344,11 @@ private sealed interface SetupPage {
         override val action get() = R.string.access_shield_grant
     }
 
+    data object Aod : SetupPage {
+        override val title get() = R.string.setup_aod_title
+        override val action get() = R.string.setup_aod_grant
+    }
+
     data object Done : SetupPage {
         override val title get() = R.string.access_done_title
         override val action get() = R.string.access_done_action
@@ -332,9 +362,12 @@ private sealed interface SetupPage {
  * notification access sounds far worse than what the app does. Steps granted before setup
  * started (full-screen wake usually is) are neither shown nor counted.
  *
- * After the required steps comes the shield, the one optional grant, with a way past it. It is
- * offered once: passed over (or turned on), later setups leave it out, and the Screen tab keeps
- * offering it where it matters. Then an all-set page, left with [onDone].
+ * After the required steps come the optional ones, each with a way past it and offered once:
+ * passed over (or done), later setups leave it out. The shield (the Screen tab keeps offering it
+ * where it matters), then, on One UI with its always-on display off and the shield on (the LED on
+ * the always-on display is drawn in its window), the always-on display shown for new
+ * notifications: the LED glows on it for less battery than the lit screen. Then an all-set page,
+ * left with [onDone].
  */
 @Composable
 internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -> Unit, modifier: Modifier = Modifier) {
@@ -345,15 +378,21 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
     val startPlan = rememberSaveable { access.steps.filterNot(access::has).map { it.name } }
     val plan = access.steps.filter { it.name in startPlan || !access.has(it) }
     val offerShield = rememberSaveable { !access.shield && !GlowPrefs.shieldOffered(context) }
+    val offerAod = rememberSaveable { access.aodOff && !GlowPrefs.aodOffered(context) }
     val startedReady = rememberSaveable { access.ready }
     var shieldPassed by rememberSaveable { mutableStateOf(false) }
+    var aodPassed by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(access.shield) { if (access.shield && offerShield) GlowPrefs.markShieldOffered(context) }
+    LaunchedEffect(access.aodOff) { if (!access.aodOff && offerAod) GlowPrefs.markAodOffered(context) }
     val page = access.nextStep?.let { SetupPage.Grant(it) } ?: when {
         offerShield && !access.shield && !shieldPassed -> SetupPage.Shield
+        offerAod && access.shield && access.aodOff && !aodPassed -> SetupPage.Aod
         else -> SetupPage.Done
     }
-    val total = plan.size + if (offerShield) 1 else 0
-    val done = plan.count(access::has) + if (offerShield && page == SetupPage.Done) 1 else 0
+    val total = plan.size + (if (offerShield) 1 else 0) + (if (offerAod) 1 else 0)
+    val done = plan.count(access::has) +
+        (if (offerShield && (page == SetupPage.Aod || page == SetupPage.Done)) 1 else 0) +
+        (if (offerAod && page == SetupPage.Done) 1 else 0)
     // Once, as the last grant lands: not again for the same all-set page redrawn.
     val haptics = LocalHapticFeedback.current
     LaunchedEffect(access.ready) { if (access.ready && !startedReady) haptics.performHapticFeedback(HapticFeedbackType.Confirm) }
@@ -380,10 +419,11 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
                     Text(
                         text = when (shown) {
                             is SetupPage.Grant -> stringResource(R.string.setup_step, plan.indexOf(shown.step) + 1, total)
+                            SetupPage.Shield -> stringResource(R.string.setup_step_optional, plan.size + 1, total)
                             else -> stringResource(R.string.setup_step_optional, total, total)
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = GlowPalette.Cyan,
+                        color = shown.accent,
                     )
                     Spacer(Modifier.height(10.dp))
                 }
@@ -398,16 +438,17 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
                         when (shown) {
                             is SetupPage.Grant -> shown.step.body
                             SetupPage.Shield -> R.string.setup_shield_body
+                            SetupPage.Aod -> R.string.setup_aod_body
                             SetupPage.Done -> if (access.shield) R.string.access_done_body else R.string.access_done_body_no_shield
                         },
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = GlowPalette.TextMuted,
                 )
-                if (shown == SetupPage.Shield) {
+                if (shown == SetupPage.Shield || shown == SetupPage.Aod) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = stringResource(R.string.setup_shield_where),
+                        text = stringResource(if (shown == SetupPage.Aod) R.string.setup_aod_where else R.string.setup_shield_where),
                         style = MaterialTheme.typography.bodySmall,
                         color = GlowPalette.TextMuted,
                     )
@@ -430,20 +471,26 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
                 when (page) {
                     is SetupPage.Grant -> actions.open(page.step)
                     SetupPage.Shield -> actions.shield()
+                    SetupPage.Aod -> actions.aod()
                     SetupPage.Done -> onDone()
                 }
             },
         )
-        // The way past the optional step: quiet, under the button, so turning it on stays the lead.
-        Disclosure(visible = page == SetupPage.Shield) {
+        // The way past an optional step: quiet, under the button, so taking it stays the lead.
+        Disclosure(visible = page == SetupPage.Shield || page == SetupPage.Aod) {
             Box(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 6.dp)
                     .clip(GlowShapes.Button)
                     .clickable(role = Role.Button) {
-                        GlowPrefs.markShieldOffered(context)
-                        shieldPassed = true
+                        if (page == SetupPage.Aod) {
+                            GlowPrefs.markAodOffered(context)
+                            aodPassed = true
+                        } else {
+                            GlowPrefs.markShieldOffered(context)
+                            shieldPassed = true
+                        }
                     }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center,
@@ -480,37 +527,41 @@ private fun SetupProgress(done: Int, total: Int) {
     }
 }
 
+/** The page's colour: cyan, and lime for the battery's page, so the one step that saves battery stands out. */
+private val SetupPage.accent: Color get() = if (this == SetupPage.Aod) GlowPalette.Lime else GlowPalette.Cyan
+
 /**
- * The page's mark in a tile edged in cyan: a bell, a message, a phone waking,
- * a spark for the effects, or a check once all is set.
+ * The page's mark in a tile edged in its accent: a bell, a message, a phone waking, a spark for the
+ * effects, a battery for the always-on display, or a check once all is set.
  */
 @Composable
 private fun StepGlyph(page: SetupPage, modifier: Modifier = Modifier) {
+    val accent = page.accent
     Box(
         modifier
             // A soft halo past the tile's edge, the app's glow in miniature.
             .drawBehind {
                 drawCircle(
-                    Brush.radialGradient(listOf(GlowPalette.Cyan.copy(alpha = 0.22f), Color.Transparent), center, size.maxDimension),
+                    Brush.radialGradient(listOf(accent.copy(alpha = 0.22f), Color.Transparent), center, size.maxDimension),
                     radius = size.maxDimension,
                 )
             }
             .clip(GlowShapes.Tile)
             .background(GlowPalette.Surface)
-            .border(1.dp, GlowPalette.Cyan.copy(alpha = 0.6f), GlowShapes.Tile),
+            .border(1.dp, accent.copy(alpha = 0.6f), GlowShapes.Tile),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(30.dp)) {
             val line = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-            val tint = GlowPalette.Cyan
             when (page) {
                 is SetupPage.Grant -> when (page.step) {
-                    AccessStep.BRIDGE -> bell(tint, line)
-                    AccessStep.LISTENER -> bubble(tint, line)
-                    AccessStep.FULL_SCREEN -> phone(tint, line)
+                    AccessStep.BRIDGE -> bell(accent, line)
+                    AccessStep.LISTENER -> bubble(accent, line)
+                    AccessStep.FULL_SCREEN -> phone(accent, line)
                 }
-                SetupPage.Shield -> spark(tint, line)
-                SetupPage.Done -> check(tint, line)
+                SetupPage.Shield -> spark(accent, line)
+                SetupPage.Aod -> battery(accent, line)
+                SetupPage.Done -> check(accent, line)
             }
         }
     }
@@ -567,6 +618,14 @@ private fun DrawScope.spark(tint: Color, line: Stroke) {
     }
     drawPath(path, tint, style = line)
     drawCircle(tint, radius = w * 0.06f, center = Offset(w * 0.86f, h * 0.14f))
+}
+
+/** A battery standing up, its terminal on top, two thirds full. */
+private fun DrawScope.battery(tint: Color, line: Stroke) {
+    val (w, h) = size
+    drawRoundRect(tint, Offset(w * 0.27f, h * 0.14f), Size(w * 0.46f, h * 0.82f), CornerRadius(w * 0.1f), style = line)
+    drawRoundRect(tint, Offset(w * 0.4f, h * 0.02f), Size(w * 0.2f, h * 0.08f), CornerRadius(w * 0.03f))
+    drawRoundRect(tint.copy(alpha = 0.45f), Offset(w * 0.36f, h * 0.42f), Size(w * 0.28f, h * 0.46f), CornerRadius(w * 0.04f))
 }
 
 private fun DrawScope.check(tint: Color, line: Stroke) {

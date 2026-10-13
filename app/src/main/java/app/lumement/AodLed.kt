@@ -67,6 +67,14 @@ internal fun aodForNewNotifications(resolver: ContentResolver): Boolean =
 private const val ONE_UI_AOD_NEW_NOTIFICATIONS = "aod_show_for_new_noti"
 
 /**
+ * One UI's always-on display is off, and it has "Show for new notifications"
+ * ([aodForNewNotifications]): setup suggests that mode.
+ */
+internal fun aodForNewNotificationsOffered(resolver: ContentResolver): Boolean =
+    readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_MODE) } == 0 &&
+        readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_NEW_NOTIFICATIONS) } != null
+
+/**
  * The LED lives on One UI's always-on display alone: it is on, and shown for new notifications
  * ([aodForNewNotifications]). One UI decides when it shows (a new message) and when it doesn't (the
  * message seen once the phone was woken, low light, its timeout), and the LED follows it: no lit

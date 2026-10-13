@@ -208,6 +208,10 @@
     <string name="setup_skip">Not now</string>
     <string name="setup_shield_title">Effects on the lock screen</string>
     <string name="setup_shield_body">Plays your effect over the lock screen when a message arrives; without it the lock screen only lights up. Android files this under accessibility and warns about full control: Lumement reads nothing on screen.</string>
+    <string name="setup_aod_title">LED on the always-on display</string>
+    <string name="setup_aod_body">Glows the LED on the always-on display instead of keeping the screen on, which uses less battery. Pick Show for new notifications: the screen stays dark, and the LED shows only while a new message waits. Once you\'ve seen it on the lock screen, it goes dark too.</string>
+    <string name="setup_aod_where">In Settings, open Lock screen and AOD, turn on Always On Display and choose Show for new notifications.</string>
+    <string name="setup_aod_grant">Open settings</string>
     <string name="setup_shield_where">In Settings, open Installed apps (or Downloaded apps), tap Lumement effects and turn it on.</string>
     <string name="access_done_title">You\'re all set</string>
     <string name="access_done_body">Lumement now lights up for new messages. Next, choose what that looks like, then tap the padlock at the top to try it on the locked phone.</string>
