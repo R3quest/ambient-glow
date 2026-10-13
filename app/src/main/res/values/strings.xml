@@ -327,6 +327,17 @@
         <item quantity="one">%1$d is off.</item>
         <item quantity="other">%1$d are off.</item>
     </plurals>
+    <string name="apps_all_off">All off</string>
+    <string name="apps_all_on">All on</string>
+    <plurals name="apps_all_off_done">
+        <item quantity="one">%1$d app switched off</item>
+        <item quantity="other">%1$d apps switched off</item>
+    </plurals>
+    <plurals name="apps_all_on_done">
+        <item quantity="one">%1$d app switched on</item>
+        <item quantity="other">%1$d apps switched on</item>
+    </plurals>
+    <string name="apps_undo">Undo</string>
     <string name="apps_search">Search apps</string>
     <string name="apps_search_clear">Clear search</string>
     <string name="apps_search_none">No app called \"%1$s\".</string>

@@ -137,8 +137,11 @@ object GlowApps {
         return AppsSnapshot(apps, AppChoices(muted, colors))
     }
 
-    fun setMuted(prefs: SharedPreferences, pkg: String, muted: Boolean) = prefs.edit {
-        if (muted) putBoolean(MUTED + pkg, true) else remove(MUTED + pkg)
+    fun setMuted(prefs: SharedPreferences, pkg: String, muted: Boolean) = setMuted(prefs, listOf(pkg), muted)
+
+    /** Many apps in one write, so the Apps screen redraws once. */
+    fun setMuted(prefs: SharedPreferences, pkgs: Collection<String>, muted: Boolean) = prefs.edit {
+        for (pkg in pkgs) if (muted) putBoolean(MUTED + pkg, true) else remove(MUTED + pkg)
     }
 
     /** [color] null goes back to the icon's colour. */
@@ -288,10 +291,17 @@ internal fun otherApps(launcher: List<LauncherApp>, heard: Collection<String>): 
 }
 
 /** Apps whose name contains [query], ignoring case and accents ("cafe" finds "Café"). */
-internal fun List<LauncherApp>.matching(query: String): List<LauncherApp> {
+@JvmName("launcherMatching")
+internal fun List<LauncherApp>.matching(query: String): List<LauncherApp> = matching(query) { it.label }
+
+/** The same search over apps that have sent a message. */
+@JvmName("glowMatching")
+internal fun List<GlowApp>.matching(query: String): List<GlowApp> = matching(query) { it.label }
+
+private fun <T> List<T>.matching(query: String, label: (T) -> String): List<T> {
     val key = searchKey(query.trim())
     if (key.isEmpty()) return this
-    return filter { searchKey(it.label).contains(key) }
+    return filter { searchKey(label(it)).contains(key) }
 }
 
 private val ACCENTS = Regex("\\p{Mn}+")
