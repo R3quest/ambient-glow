@@ -65,11 +65,30 @@ internal class AppsModel(
      * Muting also takes the app's waiting messages off the LED at once, as if they were read. An
      * app kept apart from it may glow in its icon's colour again ([own]: premium's colours count).
      */
-    fun mute(pkg: String, muted: Boolean, own: Boolean) {
-        GlowApps.setMuted(prefs, pkg, muted)
-        if (muted && GlowPending.removeApp(pkg)) GlowSession.host?.onPendingChanged()
+    fun mute(pkg: String, muted: Boolean, own: Boolean) = mute(listOf(pkg), muted, own)
+
+    /** [mute] for many apps at once: one write, and the LED told once. */
+    fun mute(pkgs: Collection<String>, muted: Boolean, own: Boolean) {
+        GlowApps.setMuted(prefs, pkgs, muted)
+        // Every app's messages come off, not only those up to the first that had any.
+        val removed = muted && pkgs.map { GlowPending.removeApp(it) }.any { it }
+        if (removed) GlowSession.host?.onPendingChanged()
         resettle(own)
     }
+
+    /**
+     * One switch for every app [shown] (each to whether it is muted): off while any of them lights
+     * up, else on. Only the apps that change are switched, so [undo] puts back exactly what was.
+     */
+    fun switchAll(shown: Map<String, Boolean>, own: Boolean): Switched {
+        val muting = shown.values.any { muted -> !muted }
+        val pkgs = shown.filterValues { muted -> muted != muting }.keys.toList()
+        mute(pkgs, muting, own)
+        return Switched(pkgs, muting)
+    }
+
+    /** Takes back a [switchAll]. Messages that came off the LED with it stay off, as if read. */
+    fun undo(switched: Switched, own: Boolean) = mute(switched.pkgs, !switched.muted, own)
 
     /**
      * Gives [app] [color] (null: its icon's again), a premium choice. Its waiting messages blink in
@@ -88,6 +107,9 @@ internal class AppsModel(
         return glows
     }
 }
+
+/** What one [AppsModel.switchAll] did: the apps it switched, and which way. */
+internal class Switched(val pkgs: List<String>, val muted: Boolean)
 
 /** The dashboard's [AppsModel], listening to the file while the dashboard is up. */
 @Composable

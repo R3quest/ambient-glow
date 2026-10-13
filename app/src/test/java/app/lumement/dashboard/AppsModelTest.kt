@@ -72,6 +72,45 @@ class AppsModelTest {
     }
 
     @Test
+    fun allOffSwitchesOnlyTheLitAppsAndTakesEachOffTheLed() {
+        GlowApps.setMuted(prefs, "mail", true)
+        GlowPending.put(PendingGlow(key = "1", pkg = "chat", color = green))
+        GlowPending.put(PendingGlow(key = "2", pkg = "shop", color = blue))
+        GlowPending.put(PendingGlow(key = "3", pkg = "news", color = blue))
+
+        val switched = model.switchAll(mapOf("chat" to false, "mail" to true, "shop" to false), own = true)
+
+        assertTrue(switched.muted)
+        assertEquals(listOf("chat", "shop"), switched.pkgs)
+        assertEquals(setOf("chat", "mail", "shop"), model.current.choices.muted)
+        // Every switched app's messages come off, not just the first's; an app not shown keeps its.
+        assertEquals(listOf("news"), GlowPending.entries.map { it.pkg })
+    }
+
+    @Test
+    fun undoPutsBackExactlyWhatAllOffChanged() {
+        GlowApps.setMuted(prefs, "mail", true)
+        val switched = model.switchAll(mapOf("chat" to false, "mail" to true), own = true)
+
+        model.undo(switched, own = true)
+
+        // Mail was off before All off, so it stays off.
+        assertEquals(setOf("mail"), model.current.choices.muted)
+    }
+
+    @Test
+    fun allOnOnceNoneLightsUp() {
+        GlowApps.setMuted(prefs, "chat", true)
+        GlowApps.setMuted(prefs, "mail", true)
+
+        val switched = model.switchAll(mapOf("chat" to true, "mail" to true), own = true)
+
+        assertFalse(switched.muted)
+        assertEquals(listOf("chat", "mail"), switched.pkgs)
+        assertTrue(model.current.choices.muted.isEmpty())
+    }
+
+    @Test
     fun aNewColourReachesTheWaitingMessagesAndAutoGoesBackToTheIcon() {
         GlowApps.noticed(prefs, "chat", at = 1L, autoColor = green) { "Chat" }
         GlowPending.put(PendingGlow(key = "1", pkg = "chat", color = green))

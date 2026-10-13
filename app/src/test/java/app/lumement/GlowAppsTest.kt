@@ -192,6 +192,13 @@ class GlowAppsTest {
     }
 
     @Test
+    fun searchFindsHeardAppsByName() {
+        val heard = listOf(app("whatsapp", 0).copy(label = "WhatsApp"), app("signal", 0).copy(label = "Signal"))
+        assertEquals(listOf("signal"), heard.matching("sig").map { it.pkg })
+        assertEquals(heard, heard.matching(""))
+    }
+
+    @Test
     fun anOtherAppIsListedWithItsIconColourAndTheUsersChoices() {
         val choices = AppChoices(muted = setOf("shop"), colors = mapOf("chat" to telegram))
         val chat = LauncherApp("chat", "Chat").toGlowApp(autoColor = whatsApp, choices)

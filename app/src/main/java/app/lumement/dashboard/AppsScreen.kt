@@ -30,6 +30,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarData
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +42,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,8 +55,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -76,6 +85,7 @@ import app.lumement.otherApps
 import app.lumement.toGlowApp
 import app.lumement.ui.components.Chevron
 import app.lumement.ui.components.FoldHeader
+import app.lumement.ui.components.GhostButton
 import app.lumement.ui.components.OptionNote
 import app.lumement.ui.components.SectionLabel
 import app.lumement.ui.components.glowCard
@@ -83,6 +93,7 @@ import app.lumement.ui.components.glowCardSlice
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // ---------------------------------------------------------------------------------------------
@@ -94,9 +105,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * The header the dashboard's has, with a way back in place of the mark ([onBack]; the system's
- * back does the same), then two lists: the apps that have sent a message, and folded under them
- * the phone's other apps, A to Z with a search. Both list the same rows, and one app's colours
- * are open at a time across them. A lazy list, so only the rows on screen are built and load
+ * back does the same), a search over both lists, then the lists: the apps that have sent a
+ * message, and folded under them the phone's other apps, A to Z. Both list the same rows, each
+ * with one switch for all it shows (Undo takes it back), and one app's colours are open at a time
+ * across them. A lazy list, so only the rows on screen are built and load
  * their icons. A picked colour shows on the real LED ([onTryColor]). Colours of one's own are
  * [premium]'s; every app is kept apart from look-alikes either way ([settled]).
  *
@@ -124,12 +136,39 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
     val alike = remember(apps, others, choices) { lookAlikesAmong(apps, others.orEmpty(), choices) }
     var othersOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    val searching = query.isNotBlank()
+    val heardFound = remember(heard, query) { heard.matching(query) }
     val found = remember(others, query) { others?.matching(query).orEmpty() }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val undoBar = remember { SnackbarHostState() }
+    val undo = stringResource(R.string.apps_undo)
+    val resources = LocalResources.current
 
     LifecycleResumeEffect(model) {
         onPauseOrDispose { model.markViewed() }
+    }
+
+    // A list's All off / All on ([shown]: each app to whether it is muted), then an offer to undo it.
+    fun switchAll(shown: Map<String, Boolean>) {
+        val switched = model.switchAll(shown, own)
+        if (switched.muted && open in switched.pkgs) open = null
+        haptics.performHapticFeedback(if (switched.muted) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+        val count = switched.pkgs.size
+        val done = resources.getQuantityString(
+            if (switched.muted) R.plurals.apps_all_off_done else R.plurals.apps_all_on_done,
+            count,
+            count,
+        )
+        scope.launch {
+            // A second switch replaces the first's offer rather than queueing behind it.
+            undoBar.currentSnackbarData?.dismiss()
+            if (undoBar.showSnackbar(done, undo, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                model.undo(switched, own)
+            }
+        }
     }
 
     // What each row does, the same in both lists. A muted app's colours fold away with it.
@@ -152,75 +191,105 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
         )
     }
 
-    Column(Modifier.fillMaxSize()) {
-        PageHeader(stringResource(R.string.group_apps_title), onBack)
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth().imePadding(),
-            contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 20.dp, bottom = 24.dp),
-        ) {
-            item(key = "intro") {
-                Text(
-                    text = stringResource(R.string.group_apps_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GlowPalette.TextMuted,
-                    modifier = Modifier.padding(bottom = 14.dp),
-                )
-            }
-            item(key = "heard") {
-                if (heard.isEmpty()) {
-                    AppsEmptyCard()
-                } else {
-                    HeardCard(heard) { app ->
-                        // Its colour is the one the listener worked out and stored.
-                        row(app, rememberAppLook(app.pkg), true, app.isNewSince(model.viewedAt))
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            PageHeader(stringResource(R.string.group_apps_title), onBack)
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth().imePadding(),
+                contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 20.dp, bottom = 24.dp),
+            ) {
+                item(key = "intro") {
+                    Text(
+                        text = stringResource(R.string.group_apps_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GlowPalette.TextMuted,
+                        modifier = Modifier.padding(bottom = 14.dp),
+                    )
+                }
+                // One search over both lists, once there is something to search.
+                if (heard.isNotEmpty() || !others.isNullOrEmpty()) {
+                    item(key = "search") {
+                        SearchField(
+                            query = query,
+                            onQuery = {
+                                // What it finds among the other apps shows without a second tap.
+                                if (it.isNotBlank()) othersOpen = true
+                                query = it
+                            },
+                            onDone = { keyboard?.hide() },
+                            modifier = Modifier.padding(bottom = 14.dp),
+                        )
                     }
                 }
-            }
-            // Only once the phone's list is in, so the section never shows empty.
-            if (!others.isNullOrEmpty()) {
-                // One card in slices: its header (and search), then a row per app.
-                item(key = "others") {
-                    Column(
-                        Modifier
-                            .padding(top = 28.dp)
-                            .glowCardSlice(top = true, bottom = !othersOpen)
-                            .padding(top = 10.dp, bottom = if (othersOpen) 4.dp else 10.dp),
-                    ) {
-                        FoldHeader(
-                            title = stringResource(R.string.apps_others),
-                            summary = othersSummary(others, choices.muted),
-                            open = othersOpen,
+                if (!searching || heardFound.isNotEmpty()) {
+                    item(key = "heard") {
+                        if (heard.isEmpty()) {
+                            AppsEmptyCard()
+                        } else {
+                            HeardCard(
+                                heard = heardFound,
+                                onSwitchAll = { switchAll(heardFound.associate { it.pkg to it.muted }) },
+                            ) { app ->
+                                // Its colour is the one the listener worked out and stored.
+                                row(app, rememberAppLook(app.pkg), true, app.isNewSince(model.viewedAt))
+                            }
+                        }
+                    }
+                }
+                if (searching && heardFound.isEmpty() && found.isEmpty()) {
+                    item(key = "none") {
+                        OptionNote(stringResource(R.string.apps_search_none, query.trim()))
+                    }
+                }
+                // Only once the phone's list is in, so the section never shows empty; while searching,
+                // only when it has a match.
+                if (!others.isNullOrEmpty() && (!searching || found.isNotEmpty())) {
+                    // One card in slices: its header (and All off / on), then a row per app.
+                    item(key = "others") {
+                        Column(
+                            Modifier
+                                .padding(top = if (searching && heardFound.isEmpty()) 0.dp else 28.dp)
+                                .glowCardSlice(top = true, bottom = !othersOpen)
+                                .padding(top = 10.dp, bottom = if (othersOpen) 4.dp else 10.dp),
                         ) {
-                            if (othersOpen) keyboard?.hide()
-                            othersOpen = !othersOpen
-                        }
-                        if (othersOpen) {
-                            Spacer(Modifier.height(10.dp))
-                            SearchField(query, onQuery = { query = it }, onDone = { keyboard?.hide() })
-                        }
-                    }
-                }
-                // The last row closes the card: a foot of its own would be shorter than the card's
-                // corner, and the row above it would draw the corner's start as a straight edge.
-                if (othersOpen) {
-                    itemsIndexed(found, key = { _, other -> "app:" + other.pkg }) { index, other ->
-                        val last = index == found.lastIndex
-                        val look = rememberAppLook(other.pkg)
-                        val app = other.toGlowApp(look?.glow ?: DEFAULT_GLOW_COLOR, choices)
-                        Box(Modifier.glowCardSlice(top = false, bottom = last).padding(bottom = if (last) 10.dp else 0.dp)) {
-                            row(app, look, look != null || app.color != null, false)
+                            FoldHeader(
+                                title = stringResource(R.string.apps_others),
+                                summary = othersSummary(others, choices.muted),
+                                open = othersOpen,
+                            ) {
+                                if (othersOpen) keyboard?.hide()
+                                othersOpen = !othersOpen
+                            }
+                            if (othersOpen && found.size > 1) {
+                                val shown = found.associate { it.pkg to (it.pkg in choices.muted) }
+                                Spacer(Modifier.height(6.dp))
+                                SwitchAllRow(shown.count { !it.value }, shown.size) { switchAll(shown) }
+                            }
                         }
                     }
-                    if (found.isEmpty()) {
-                        item(key = "none") {
-                            Box(Modifier.glowCardSlice(top = false, bottom = true).padding(top = 10.dp, bottom = 20.dp)) {
-                                OptionNote(stringResource(R.string.apps_search_none, query.trim()))
+                    // The last row closes the card: a foot of its own would be shorter than the card's
+                    // corner, and the row above it would draw the corner's start as a straight edge.
+                    if (othersOpen) {
+                        itemsIndexed(found, key = { _, other -> "app:" + other.pkg }) { index, other ->
+                            val last = index == found.lastIndex
+                            val look = rememberAppLook(other.pkg)
+                            val app = other.toGlowApp(look?.glow ?: DEFAULT_GLOW_COLOR, choices)
+                            Box(Modifier.glowCardSlice(top = false, bottom = last).padding(bottom = if (last) 10.dp else 0.dp)) {
+                                row(app, look, look != null || app.color != null, false)
                             }
                         }
                     }
                 }
             }
         }
+        // Over the list's foot, and above the keyboard while searching.
+        SnackbarHost(
+            hostState = undoBar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .imePadding()
+                .padding(start = PageGutter, end = PageGutter, bottom = 16.dp),
+        ) { data -> UndoBar(data) }
     }
 }
 
@@ -250,20 +319,74 @@ internal fun PageHeader(title: String, onBack: () -> Unit) {
 
 /** The apps that have sent a message, in [heard] order, under how many of them light up. */
 @Composable
-private fun HeardCard(heard: List<GlowApp>, row: @Composable (GlowApp) -> Unit) {
-    val lit = heard.count { !it.muted }
+private fun HeardCard(heard: List<GlowApp>, onSwitchAll: () -> Unit, row: @Composable (GlowApp) -> Unit) {
     Column(Modifier.glowCard(vertical = 16.dp)) {
-        SectionLabel(
-            if (lit == heard.size) {
-                pluralStringResource(R.plurals.apps_count_all, lit, lit)
-            } else {
-                stringResource(R.string.apps_count, lit, heard.size - lit)
-            },
-        )
+        SwitchAllRow(heard.count { !it.muted }, heard.size, onSwitchAll)
         Spacer(Modifier.height(8.dp))
         heard.forEach { app -> key(app.pkg) { row(app) } }
         Spacer(Modifier.height(8.dp))
         OptionNote(stringResource(R.string.apps_hint))
+    }
+}
+
+/**
+ * How many of the [shown] apps light up, and beside it one switch for all of them: off while any
+ * of them lights up, on once none does. A single app has its own switch, so it gets none.
+ */
+@Composable
+private fun SwitchAllRow(lit: Int, shown: Int, onSwitchAll: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            SectionLabel(
+                if (lit == shown) {
+                    pluralStringResource(R.plurals.apps_count_all, lit, lit)
+                } else {
+                    stringResource(R.string.apps_count, lit, shown - lit)
+                },
+            )
+        }
+        if (shown > 1) {
+            Spacer(Modifier.width(12.dp))
+            GhostButton(
+                // The count beside it says how many: the button only says which way.
+                text = stringResource(if (lit > 0) R.string.apps_all_off else R.string.apps_all_on),
+                emphasized = false,
+                onClick = onSwitchAll,
+            )
+        }
+    }
+}
+
+/** What a switch-all did, with Undo, styled as the screen's cards are. */
+@Composable
+private fun UndoBar(data: SnackbarData) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GlowShapes.Tile)
+            .background(GlowPalette.SurfaceHigh)
+            .border(1.dp, GlowPalette.Outline, GlowShapes.Tile)
+            .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = data.visuals.message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = GlowPalette.TextPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            modifier = Modifier
+                .clip(GlowShapes.GhostButton)
+                .clickable(role = Role.Button) { data.performAction() }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            Text(
+                text = data.visuals.actionLabel.orEmpty().uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = GlowPalette.Cyan,
+            )
+        }
     }
 }
 
@@ -308,11 +431,11 @@ private fun launcherApps(context: Context): List<LauncherApp> {
 }
 
 /**
- * The search over the other apps: a magnifier, the query, and a clear button once there is one.
+ * The search over both lists: a magnifier, the query, and a clear button once there is one.
  * The keyboard's search key only puts the keyboard away; the list narrows as you type.
  */
 @Composable
-private fun SearchField(query: String, onQuery: (String) -> Unit, onDone: () -> Unit) {
+private fun SearchField(query: String, onQuery: (String) -> Unit, onDone: () -> Unit, modifier: Modifier = Modifier) {
     val clear = stringResource(R.string.apps_search_clear)
     BasicTextField(
         value = query,
@@ -322,6 +445,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, onDone: () -> 
         cursorBrush = SolidColor(GlowPalette.Cyan),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onDone() }),
+        modifier = modifier,
         decorationBox = { field ->
             Row(
                 modifier = Modifier
