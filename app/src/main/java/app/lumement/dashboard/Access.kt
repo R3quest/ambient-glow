@@ -438,7 +438,7 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
                             else -> stringResource(R.string.setup_step_optional, total, total)
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = shown.accent,
+                        color = GlowPalette.Cyan,
                     )
                     Spacer(Modifier.height(10.dp))
                 }
@@ -542,16 +542,13 @@ private fun SetupProgress(done: Int, total: Int) {
     }
 }
 
-/** The page's colour: cyan, and lime for the battery's page, so the one step that saves battery stands out. */
-private val SetupPage.accent: Color get() = if (this == SetupPage.Aod) GlowPalette.Lime else GlowPalette.Cyan
-
 /**
- * The page's mark in a tile edged in its accent: a bell, a message, a phone waking, a spark for the
+ * The page's mark in a tile edged in cyan: a bell, a message, a phone waking, a spark for the
  * effects, a battery for the always-on display, or a check once all is set.
  */
 @Composable
 private fun StepGlyph(page: SetupPage, modifier: Modifier = Modifier) {
-    val accent = page.accent
+    val accent = GlowPalette.Cyan
     Box(
         modifier
             // A soft halo past the tile's edge, the app's glow in miniature.
