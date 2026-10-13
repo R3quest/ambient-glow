@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The soak build only (make soak): lets the listener see adb's test messages
+     (cmd notification post, from com.android.shell), so a battery run needs no hand on the phone. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.android.shell" />
+    </queries>
+</manifest>

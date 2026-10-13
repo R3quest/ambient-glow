@@ -197,12 +197,20 @@ class NotificationWakerService : NotificationListenerService() {
         GlowSession.screenTakers.clear()
         activeNotifications?.forEach(::noteScreenTaker)
         learnApps()
+        GlowPending.keepIn(getSharedPreferences(PENDING_FILE, MODE_PRIVATE))
+        // A new process (an app update, or the system had killed it): the messages still unread
+        // wait on the LED again, which then lights as the screen-off would have had it.
+        val restored = GlowPending.restore(::stillShowing)
         pruneStalePending()
         if (!screenReceiverRegistered) {
             registerScreenEvents(screenEvents)
             screenReceiverRegistered = true
         }
         GrantReturn.granted(this, GrantReturn.Grant.LISTENER)
+        if (restored) {
+            GlowLog.d { "svc restored ${GlowPending.entries.size} waiting" }
+            relightIfWaiting()
+        }
     }
 
     override fun onListenerDisconnected() {
@@ -392,13 +400,14 @@ class NotificationWakerService : NotificationListenerService() {
      */
     private fun pruneStalePending() {
         if (GlowPending.isEmpty) return
-        val keys = Array(GlowPending.entries.size) { GlowPending.entries[it].key }
-        val active = try {
-            getActiveNotifications(keys)?.mapTo(HashSet()) { it.key } ?: return
-        } catch (_: SecurityException) {
-            return // not connected yet
-        }
-        GlowPending.entries.removeAll { it.key !in active }
+        GlowPending.keepOnly(stillShowing(GlowPending.entries.map { it.key }) ?: return)
+    }
+
+    /** Which of [keys] are still in the shade, or null if the system can't say yet. */
+    private fun stillShowing(keys: List<String>): Set<String>? = try {
+        getActiveNotifications(keys.toTypedArray())?.mapTo(HashSet()) { it.key }
+    } catch (_: SecurityException) {
+        null // not connected yet
     }
 
     private fun launch(mode: WakeMode, color: Int): Boolean {
@@ -466,6 +475,9 @@ class NotificationWakerService : NotificationListenerService() {
     private companion object {
         const val WAKE_LOCK_TAG = "Lumement:wake"
         const val WAKE_LOCK_TIMEOUT_MS = 4_000L
+
+        /** [GlowPending]'s file, so the waiting messages outlive the process. */
+        const val PENDING_FILE = "lumement_pending"
 
         /** The watchdog looks this long after the screen went off: past every relight's own delay. */
         const val LED_CHECK_MS = 4_000L

@@ -365,12 +365,14 @@ class GlowShield : AccessibilityService() {
     }
 
     private fun release() {
-        // Gone mid-breath (turned off, or unbound by the system): the glow screen takes its LED back.
-        if (instance === this) instance = null
+        val wasOn = instance === this
+        if (wasOn) instance = null
         removeLedWindow()
         removeAodWindow()
         removeArrival()
         removeCover()
+        // Gone mid-breath (turned off, or unbound by the system): the glow screen takes its LED back.
+        if (wasOn) GlowSession.host?.onShieldGone()
     }
 
     /**

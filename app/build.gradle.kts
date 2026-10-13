@@ -47,6 +47,12 @@ android {
             // Replace with a real signingConfig before publishing.
             signingConfig = signingConfigs.getByName("debug")
         }
+        // `make soak`: the release build as it ships (R8, no logs), plus the one thing a battery run
+        // needs, adb's test messages (src/soak: <queries> com.android.shell). Never for Play.
+        create("soak") {
+            initWith(getByName("release"))
+            matchingFallbacks += "release"
+        }
     }
 
     compileOptions {
