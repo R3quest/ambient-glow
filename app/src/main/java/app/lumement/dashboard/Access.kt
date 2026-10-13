@@ -212,17 +212,23 @@ private fun Context.openShieldSettings() {
 
 /**
  * Android's lock-screen settings, which One UI titles Lock screen and AOD, where the always-on
- * display is set (Samsung's own AOD page needs a permission of Samsung's); else the display settings.
+ * display is set (Samsung's own AOD page needs a permission of Samsung's), with its Always On
+ * Display row highlighted (seen on the S23, One UI 8.5); else the display settings.
  */
 private fun Context.openAodSettings() {
     launchFirstAvailable(
-        Intent(ACTION_LOCK_SCREEN_SETTINGS),
+        Intent(ACTION_LOCK_SCREEN_SETTINGS)
+            .putExtra(":settings:fragment_args_key", AOD_PREFERENCE)
+            .putExtra(":settings:show_fragment_args", Bundle().apply { putString(":settings:fragment_args_key", AOD_PREFERENCE) }),
         Intent(Settings.ACTION_DISPLAY_SETTINGS),
     )
 }
 
 /** Settings.ACTION_LOCKSCREEN_SETTINGS (hidden), the lock-screen page. */
 private const val ACTION_LOCK_SCREEN_SETTINGS = "android.settings.LOCK_SCREEN_SETTINGS"
+
+/** One UI's key for the Always On Display row there (it shows in Settings' change history). */
+private const val AOD_PREFERENCE = "always_on_screen"
 
 private fun Context.openBridgeSettings() {
     launchFirstAvailable(
