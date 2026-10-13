@@ -1,7 +1,12 @@
 package app.lumement.dashboard
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,96 +14,152 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import app.lumement.AodMode
 import app.lumement.R
-import app.lumement.ui.components.RadioRow
-import app.lumement.ui.components.SectionLabel
+import app.lumement.ui.components.Disclosure
+import app.lumement.ui.components.LinkRow
 import app.lumement.ui.components.glowCard
-import app.lumement.ui.components.rowBleed
 import app.lumement.ui.theme.GlowPalette
+import app.lumement.ui.theme.GlowShapes
 
 // ---------------------------------------------------------------------------------------------
 // The SCREEN tab's second section: what the phone lets the LED use while a message waits.
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Where the LED waits, by One UI's always-on display ([aod]; the card is left out on other
- * phones): each of its ways in one line, what it is set to for it under that, and the phone's
- * own selected. None is a wrong one, so none is pushed: the one that uses least battery says so,
- * quietly. Apps can't switch it (Samsung's own AOD page, where its ways are, needs a signature
- * permission), so a tap on any of its ways leads to the Settings page where it is changed. The
- * LED is drawn on the display in Lumement effects' window ([shieldOn]), which the screen card
- * asks for while it is off; till then the display's ways say they need it.
+ * One UI's always-on display ([aod]; the card is left out on other phones), the one system
+ * setting here that is a choice: off, the LED keeps the screen on; on, the LED glows on it. Lit in
+ * cyan when on, what that means for the LED, and a way to the Settings page where it is changed:
+ * apps can't switch it (Samsung's own AOD page needs a signature permission), so no switch that
+ * wouldn't flip. The LED is drawn on it in Lumement effects' window ([shieldOn]), which the screen
+ * card asks for while it is off.
+ *
+ * Under the card, until it is set to Show for new notifications, a quiet footnote says what that
+ * mode would bring from the one set now. Grey, as it isn't needed, with only One UI's name for the
+ * mode in cyan, to look for there; it leads to the same page.
  */
 @Composable
 internal fun WaitingCard(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
-    // Laid out as the screen card is: its label, then its choices.
-    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.waiting_label), GlowPalette.TextMuted)
-        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            WAYS.forEach { way ->
-                WaitingWay(
-                    way = way,
-                    now = aod == way,
-                    // The phone's own, but the LED can't go on the display without the window.
-                    needsShield = aod == way && way != AodMode.OFF && !shieldOn,
-                    onClick = onAod,
-                )
+    val aodOn = aod != AodMode.OFF
+    val action = stringResource(R.string.setup_aod_grant)
+    val tip = when (aod) {
+        AodMode.OFF -> R.string.waiting_tip_off
+        AodMode.ON -> R.string.waiting_tip_on
+        AodMode.NEW_NOTIFICATIONS -> null
+    }
+    // Kept while the footnote folds away, so its text doesn't go before its space does.
+    var lastTip by remember { mutableIntStateOf(R.string.waiting_tip_off) }
+    SideEffect { if (tip != null) lastTip = tip }
+    Column {
+        Column(Modifier.glowCard(vertical = 10.dp)) {
+            LinkRow(
+                title = stringResource(R.string.waiting_aod_title),
+                summary = stringResource(
+                    when {
+                        !aodOn -> R.string.waiting_aod_off
+                        !shieldOn -> R.string.waiting_aod_needs_shield
+                        aod == AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
+                        else -> R.string.waiting_aod_on
+                    },
+                ),
+                action = action,
+                onClick = onAod,
+                leading = { StatusTile(aodOn) { tint, line -> aodPhone(tint, line) } },
+            )
+        }
+        Disclosure(visible = tip != null) {
+            Row(
+                Modifier
+                    .padding(top = 6.dp)
+                    .fillMaxWidth()
+                    .clip(GlowShapes.Tile)
+                    .clickable(role = Role.Button, onClickLabel = action, onClick = onAod)
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+            ) {
+                // On the first line's middle.
+                Canvas(Modifier.padding(top = 3.dp).size(12.dp)) {
+                    battery(GlowPalette.TextMuted, Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+                Spacer(Modifier.width(8.dp))
+                Tip(tip ?: lastTip)
             }
         }
     }
 }
 
-/**
- * From the most screen to the least: kept on, the display always on, the display only while a
- * message is new.
- */
-private val WAYS = listOf(AodMode.OFF, AodMode.ON, AodMode.NEW_NOTIFICATIONS)
-
-/**
- * One way the LED can wait ([way]): where, and what the display is set to for it, picked as the
- * screen card's are, the phone's own ([now]) selected; a tap on any leads to Settings
- * ([onClick]), where it is changed. The one that uses least battery says so, picked or not. In
- * line with the card's label: the row's highlight reaches into the card's padding.
- */
+/** The footnote: that it is optional, then what the mode would bring, One UI's name for it lit in cyan. */
 @Composable
-private fun WaitingWay(way: AodMode, now: Boolean, needsShield: Boolean, onClick: () -> Unit) {
-    val (title, setting) = when (way) {
-        AodMode.OFF -> R.string.waiting_screen_title to R.string.waiting_screen_setting
-        AodMode.ON -> R.string.waiting_aod_title to R.string.waiting_aod_setting
-        AodMode.NEW_NOTIFICATIONS -> R.string.waiting_new_title to R.string.waiting_new_setting
-    }
-    RadioRow(
-        title = stringResource(title),
-        body = stringResource(if (needsShield) R.string.waiting_needs_shield else setting),
-        selected = now,
-        onClick = onClick,
-        modifier = Modifier.rowBleed(),
-    ) {
-        if (way == AodMode.NEW_NOTIFICATIONS) {
-            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Canvas(Modifier.size(12.dp)) {
-                    val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    battery(GlowPalette.TextMuted, line)
-                }
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.waiting_least_battery),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GlowPalette.TextMuted,
-                )
-            }
+private fun Tip(@StringRes text: Int) {
+    val mode = stringResource(R.string.waiting_tip_mode)
+    val tip = stringResource(text, mode)
+    val styled = remember(tip, mode) {
+        buildAnnotatedString {
+            append(tip)
+            val at = tip.indexOf(mode)
+            if (at >= 0) addStyle(SpanStyle(color = GlowPalette.Cyan), at, at + mode.length)
         }
     }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = stringResource(R.string.waiting_tip_title),
+            style = MaterialTheme.typography.bodySmall,
+            color = GlowPalette.TextMuted,
+        )
+        Text(text = styled, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextFaint)
+    }
+}
+
+private val TILE = 36.dp
+private val TILE_GAP = 14.dp
+
+/** A row's mark in a small tile: lit in cyan, edged in it, when [on]; faint when off. */
+@Composable
+private fun StatusTile(on: Boolean, glyph: DrawScope.(tint: Color, line: Stroke) -> Unit) {
+    val tint = if (on) GlowPalette.Cyan else GlowPalette.TextFaint
+    Box(
+        Modifier
+            .size(TILE)
+            .clip(GlowShapes.Tile)
+            .background(if (on) GlowPalette.Cyan.copy(alpha = 0.08f) else GlowPalette.SurfaceRaised)
+            .border(1.dp, if (on) GlowPalette.Cyan.copy(alpha = 0.5f) else GlowPalette.OutlineSoft, GlowShapes.Tile),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(18.dp)) {
+            glyph(tint, Stroke(1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+    }
+    Spacer(Modifier.width(TILE_GAP))
+}
+
+/** A phone dozing: the time across its dark screen, and the LED's dot above it. */
+private fun DrawScope.aodPhone(tint: Color, line: Stroke) {
+    val (w, h) = size
+    drawRoundRect(tint, Offset(w * 0.24f, h * 0.04f), Size(w * 0.52f, h * 0.92f), CornerRadius(w * 0.12f), style = line)
+    drawCircle(tint, radius = w * 0.06f, center = Offset(w * 0.5f, h * 0.2f))
+    drawLine(tint, Offset(w * 0.38f, h * 0.5f), Offset(w * 0.62f, h * 0.5f), line.width, StrokeCap.Round)
+    drawLine(tint.copy(alpha = 0.5f), Offset(w * 0.42f, h * 0.63f), Offset(w * 0.58f, h * 0.63f), line.width * 0.75f, StrokeCap.Round)
 }
