@@ -92,12 +92,13 @@ internal class AppsModel(
 
     /**
      * Gives [app] [color] (null: its icon's again), a premium choice. Its waiting messages blink in
-     * it from the next breath, as do those of an app that now glows apart from it. Returns the
-     * colour it now glows in.
+     * it from the next breath, as do those of an app that now glows apart from it. Colours of one's
+     * own count only with premium ([own]): after the trial its icon's colour can still be picked, and
+     * the others' saved colours stay off the LED. Returns the colour it now glows in.
      */
-    fun recolor(app: GlowApp, color: Int?): Int {
+    fun recolor(app: GlowApp, color: Int?, own: Boolean): Int {
         GlowApps.setColor(prefs, app.pkg, color)
-        return resettle(own = true)[app.pkg] ?: color ?: app.autoColor
+        return resettle(own)[app.pkg] ?: color ?: app.autoColor
     }
 
     /** Waiting messages take the colour their app glows in now ([settled]); returns every app's. */

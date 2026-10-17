@@ -187,7 +187,7 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
                 if (muted && open == app.pkg) open = null
                 model.mute(app.pkg, muted, own)
             },
-            onColor = { color -> onTryColor(model.recolor(app, color)) },
+            onColor = { color -> onTryColor(model.recolor(app, color, own)) },
         )
     }
 

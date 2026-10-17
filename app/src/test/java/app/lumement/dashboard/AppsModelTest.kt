@@ -116,11 +116,25 @@ class AppsModelTest {
         GlowPending.put(PendingGlow(key = "1", pkg = "chat", color = green))
         val chat = model.current.apps.single()
 
-        assertEquals(blue, model.recolor(chat, blue))
+        assertEquals(blue, model.recolor(chat, blue, own = true))
         assertEquals(blue, model.current.apps.single().glow)
         assertEquals(listOf(blue), GlowPending.colors())
 
-        assertEquals(green, model.recolor(chat, null))
+        assertEquals(green, model.recolor(chat, null, own = true))
         assertEquals(listOf(green), GlowPending.colors())
+    }
+
+    /** After the trial, an app's icon colour can still be picked: the others' saved colours stay off the LED. */
+    @Test
+    fun withoutPremiumAnIconColourLeavesTheOthersInTheirIcons() {
+        val red = 0xFFE53935.toInt()
+        GlowApps.noticed(prefs, "chat", at = 1L, autoColor = green) { "Chat" }
+        GlowApps.noticed(prefs, "mail", at = 2L, autoColor = red) { "Mail" }
+        GlowApps.setColor(prefs, "mail", blue) // picked during the trial
+        GlowPending.put(PendingGlow(key = "1", pkg = "mail", color = red))
+        val chat = model.current.apps.first { it.pkg == "chat" }
+
+        assertEquals(green, model.recolor(chat, null, own = false))
+        assertEquals(listOf(red), GlowPending.colors())
     }
 }

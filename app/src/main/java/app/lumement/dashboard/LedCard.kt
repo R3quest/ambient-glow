@@ -48,8 +48,6 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
@@ -295,21 +293,25 @@ internal fun LedCard(
                     modifier = Modifier.fillMaxSize(),
                 )
                 val margin = with(density) { previewRadius.toPx() * DOT_HALO_FACTOR }
+                // The gestures outlive a recomposition: they read the newest snap spots (a lens fit
+                // moves them) rather than those of the first touch.
+                val currentMove by rememberUpdatedState(move)
+                val currentCommit by rememberUpdatedState(onCommit)
                 Box(
                     Modifier
                         .fillMaxSize()
                         .pointerInput(margin) {
                             detectTapGestures { position ->
                                 val f = dotFraction(position, size.toSize(), margin)
-                                move(f.x, f.y)
-                                onCommit()
+                                currentMove(f.x, f.y)
+                                currentCommit()
                             }
                         }
                         .pointerInput(margin) {
-                            detectDragGestures(onDragEnd = onCommit, onDragCancel = onCommit) { change, _ ->
+                            detectDragGestures(onDragEnd = { currentCommit() }, onDragCancel = { currentCommit() }) { change, _ ->
                                 change.consume()
                                 val f = dotFraction(change.position, size.toSize(), margin)
-                                move(f.x, f.y)
+                                currentMove(f.x, f.y)
                             }
                         },
                 )

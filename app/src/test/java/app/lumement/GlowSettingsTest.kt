@@ -29,4 +29,11 @@ class GlowSettingsTest {
         val changed = base.copy(lensOffsetDp = 3f, lensOffsetXDp = -1f)
         assertEquals(base.forPreview(), changed.forPreview())
     }
+
+    /** The Screen tab's Bright LED and Then rows sit under the preview; the effect never reads them. */
+    @Test
+    fun theBrightPhaseNeverReachesThePreview() {
+        val base = GlowSettings()
+        assertEquals(base.forPreview(), base.copy(brightFor = BrightFor.OFF, afterBright = AfterBright.OFF).forPreview())
+    }
 }
