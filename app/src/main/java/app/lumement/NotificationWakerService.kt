@@ -306,11 +306,14 @@ class NotificationWakerService : NotificationListenerService() {
         if (GlowSession.screenTakers.remove(sbn.key)) GlowSession.host?.onScreenTakersChanged()
         if (!GlowPending.remove(sbn.key)) return
         LedDiary.note(this, "read", "waiting=${GlowPending.entries.size}")
-        // All read: the next message starts a new streak.
-        if (GlowPending.isEmpty) GlowSession.bright = BrightStreak()
-        // Nothing waits any more, and no glow screen is up to take its windows down.
-        if (GlowPending.isEmpty && GlowSession.host == null) GlowShield.removeLed()
+        if (GlowPending.isEmpty) allRead()
         GlowSession.host?.onPendingChanged()
+    }
+
+    /** Nothing waits any more: the next message starts a new streak, and with no glow screen up to take its windows down, they go here. */
+    private fun allRead() {
+        GlowSession.bright = BrightStreak()
+        if (GlowSession.host == null) GlowShield.removeLed()
     }
 
     /** Keeps [GlowSession.screenTakers] in step with [sbn], a post or an update to one; tells the glow screen of a change. */
@@ -417,6 +420,11 @@ class NotificationWakerService : NotificationListenerService() {
     private fun pruneStalePending() {
         if (GlowPending.isEmpty) return
         GlowPending.keepOnly(stillShowing(GlowPending.entries.map { it.key }) ?: return)
+        // Every one was read unseen: as if their removals had come.
+        if (GlowPending.isEmpty) {
+            allRead()
+            GlowSession.host?.onPendingChanged()
+        }
     }
 
     /** Which of [keys] are still in the shade, or null if the system can't say yet. */
