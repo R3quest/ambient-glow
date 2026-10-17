@@ -29,7 +29,7 @@ SDK_PACKAGES := "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 .DEFAULT_GOAL := help
 .PHONY: help debug release bundle lint test check permissions install install-release \
         install-premium release-premium install-trial-over launch uninstall devices apks clean stop sdk \
-        soak wifi-adb diary scripts-test
+        soak soak-set wifi-adb diary scripts-test
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -98,6 +98,11 @@ diary: ## Pull the LED diary from the phone (debug build) and say what it means 
 	@mkdir -p app/build/diary
 	$(ADB) exec-out run-as $(PACKAGE) cat files/led-diary.txt > app/build/diary/led-diary.txt
 	@python3 -I scripts/diary.py app/build/diary/led-diary.txt
+
+soak-set: ## The defaults' battery set, ~4.5 h unplugged and left alone: idle, lit, the AOD tail, the hybrid
+	$(GRADLE) assembleSoak
+	$(ADB) install -r $(SOAK_APK)
+	ADB="$(ADB)" scripts/soak_set.sh
 
 wifi-adb: ## Switch adb to Wi-Fi (phone on USB first), so it can be unplugged for make soak
 	$(ADB) tcpip 5555
