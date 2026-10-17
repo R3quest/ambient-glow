@@ -287,6 +287,8 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
     override val nextAlarmAt: Long? get() = alarms.nextAlarmClock?.triggerTime
     override val expectsAod: Boolean? get() = GlowSession.expectsAod(this)
     override val aodOnly: Boolean get() = ledOnAodOnly(contentResolver)
+    override val batterySaver: Boolean get() = power.isPowerSaveMode
+    override val batteryPct: Int? get() = (this as Context).batteryPct()
 
     /** The framework's bar slide-out follows the animator scale, so wait no longer than it takes. */
     override val barsHideMs: Long

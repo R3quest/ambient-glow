@@ -525,10 +525,16 @@ private fun ScreenPage(
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
         )
     }
-    // Only where the phone's always-on display is read right: One UI.
-    val aod = access.oneUiAod ?: return
     SettingsGroup(index = "02", title = R.string.group_waiting_title, body = R.string.group_waiting_body) {
-        WaitingCard(aod = aod, shieldOn = access.shield, onAod = actions.aod)
+        WaitingCard(
+            settings = settings,
+            // Its always-on display part only where that is read right: One UI.
+            aod = access.oneUiAod,
+            shieldOn = access.shield,
+            onAod = actions.aod,
+            onBrightFor = { choice -> edit(save = true) { it.copy(brightFor = choice) } },
+            onAfterBright = { choice -> edit(save = true) { it.copy(afterBright = choice) } },
+        )
     }
 }
 

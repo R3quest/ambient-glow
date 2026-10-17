@@ -116,9 +116,11 @@ internal fun aodForNewNotificationsAvailable(resolver: ContentResolver): Boolean
     readSetting { Settings.System.getInt(resolver, ONE_UI_AOD_NEW_NOTIFICATIONS) } != null
 
 /**
- * The LED lives on One UI's always-on display alone: it is on, and shown for new notifications
- * ([aodForNewNotifications]). One UI decides when it shows (a new message) and when it doesn't (the
- * message seen once the phone was woken, low light, its timeout), and the LED follows it: no lit
+ * One UI's always-on display is on and shown for new notifications ([aodForNewNotifications]). One
+ * UI decides when it shows: for a message that arrived while the phone slept, even after its lock
+ * screen was then lit for 10 minutes, and not for one that arrived on a lit screen (measured on
+ * the S23, 2026-10-17), nor once the message was seen (the phone woken, low light, its timeout).
+ * After its bright phase the LED follows it and takes only the doze a new message brings: no lit
  * LED in its place (the user's choice, 2026-10-13).
  */
 internal fun ledOnAodOnly(resolver: ContentResolver): Boolean = aodSwitches(resolver)?.forNew == true

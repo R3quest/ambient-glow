@@ -254,6 +254,8 @@ class NotificationWakerService : NotificationListenerService() {
         if (quietUpdate) return
 
         val settings = GlowPrefs.load(this)
+        // A new message: the LED's bright phase starts over, within the streak's time ([BrightStreak]).
+        GlowSession.bright = GlowSession.bright.onMessage(SystemClock.elapsedRealtime(), settings.brightFor.ms)
         val arrival = arrivalFor(settings.arrival, GlowSession.resting)
         // Premium's trial starts with the first message it plays for: its element, or an app's own colour.
         val premium = unlocked && (settings.playsPremium || GlowApps.colorOf(apps, pkg) != null)
@@ -301,6 +303,8 @@ class NotificationWakerService : NotificationListenerService() {
         GlowLauncher.dismissMessage(this, sbn.key)
         if (GlowSession.screenTakers.remove(sbn.key)) GlowSession.host?.onScreenTakersChanged()
         if (!GlowPending.remove(sbn.key)) return
+        // All read: the next message starts a new streak.
+        if (GlowPending.isEmpty) GlowSession.bright = BrightStreak()
         // Nothing waits any more, and no glow screen is up to take its windows down.
         if (GlowPending.isEmpty && GlowSession.host == null) GlowShield.removeLed()
         GlowSession.host?.onPendingChanged()
@@ -341,13 +345,18 @@ class NotificationWakerService : NotificationListenerService() {
         val newest = GlowPending.entries.firstOrNull() ?: return
         // Only reached when the glow screen was not on top (the phone had been unlocked). Through
         // the full-screen intent Android shows the lock screen for a moment before the LED covers
-        // it; started in the dark ([GlowLauncher.startInTheDark]) it doesn't. Asleep on the
-        // always-on display, the LED goes onto it, with no wake.
-        // On One UI's always-on display alone ([ledOnAodOnly]), the LED comes with a new message's
-        // always-on display only; a relight here (after an unlock, Do Not Disturb, the watchdog) is
-        // for messages One UI counts as seen, and a doze now may be another screen of One UI's.
-        if (ledOnAodOnly(contentResolver)) return
+        // it; started in the dark ([GlowLauncher.startInTheDark]) it doesn't.
         val onAod = !power.isInteractive && dozing(displays.getDisplay(Display.DEFAULT_DISPLAY)?.state)
+        if (onAod) {
+            // Asleep on the always-on display, the LED goes onto it, with no wake. Not where it
+            // goes out after its bright phase, nor where One UI shows it for new notifications only
+            // ([ledOnAodOnly]): a relight here (after an unlock, Do Not Disturb, the watchdog) is for
+            // messages One UI counts as seen, and a doze now may be another screen of One UI's.
+            if (GlowPrefs.load(this).afterBright != AfterBright.AOD || ledOnAodOnly(contentResolver)) return
+        } else if (!litLedAllowed(SystemClock.elapsedRealtime(), GlowSession.bright, { batterySaver }, { batteryPct() })) {
+            // The lit LED only in its bright phase: after it, dark until the next message.
+            return
+        }
         GlowLog.d { "svc relight LED${if (onAod) " on the always-on display" else ""}" }
         launch(if (onAod) WakeMode.AOD else WakeMode.LED, newest.color)
     }

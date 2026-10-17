@@ -36,6 +36,8 @@ internal class FakePhone : LockPort, ShieldPort {
     override var nextAlarmAt: Long? = null
     override var expectsAod: Boolean? = false
     override var aodOnly = false
+    override var batterySaver = false
+    override var batteryPct: Int? = 80
 
     /** The look and arrival the glow screen loads. */
     var settings = GlowSettings()
@@ -70,6 +72,10 @@ internal class FakePhone : LockPort, ShieldPort {
     // ---- GlowShield ---------------------------------------------------------------------------
 
     var shieldOn = true
+
+    /** A black cover of GlowShield's is up ([show], [blackout], [dimIn]) and not taken down yet. */
+    var coverUp = false
+        private set
     var litShown = false
         private set
     var aodBreathing = false
@@ -355,13 +361,23 @@ internal class FakePhone : LockPort, ShieldPort {
 
     // ---- ShieldPort ---------------------------------------------------------------------------
 
-    override fun show() = Unit
-    override fun blackout() {
-        if (shieldOn) log += "blackout"
+    override fun show() {
+        if (shieldOn) coverUp = true
     }
 
-    override fun dimIn(durationMs: Long) = Unit
-    override fun hide() = Unit
+    override fun blackout() {
+        if (!shieldOn) return
+        log += "blackout"
+        coverUp = true
+    }
+
+    override fun dimIn(durationMs: Long) {
+        if (shieldOn) coverUp = true
+    }
+
+    override fun hide() {
+        coverUp = false
+    }
 
     override fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit): Boolean {
         if (!shieldOn) return false
@@ -408,7 +424,10 @@ internal class FakePhone : LockPort, ShieldPort {
         aodReady = false
     }
 
-    override fun hideWhenDone(onGone: () -> Unit) = onGone()
+    override fun hideWhenDone(onGone: () -> Unit) {
+        coverUp = false
+        onGone()
+    }
 
     override fun playArrival(color: Int) {
         if (shieldOn) log += "arrival effect"
