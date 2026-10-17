@@ -487,6 +487,28 @@ class LockFlowTest {
     }
 
     /**
+     * Woken from the LED on the always-on display (a press, a lift) is a look like one on the lit
+     * LED: a new streak, so the next message has its whole bright time. It wasn't counted, and a
+     * busy chat ran out of bright time sooner (the power-press A/B on the S23, 2026-10-17).
+     */
+    @Test
+    fun wokenFromTheAlwaysOnDisplayStartsANewStreak() {
+        aodForNewNotifications()
+        phone.settings = phone.settings.copy(brightFor = BrightFor.TEN)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.advance(11 * MINUTE)
+        assertTrue("on the always-on display after the bright phase", phone.aodBreathing)
+
+        phone.log.clear()
+        phone.pressPower()
+        phone.advance(2_000)
+
+        logged("aod LED off", "diary: peek aod")
+        assertEquals("a new streak", BrightStreak(), GlowSession.bright)
+    }
+
+    /**
      * One UI drops its always-on display in low light after ~10 minutes (measured on the S23,
      * 2026-10-12), and the flow lit the screen in its place, all night in a dark room.
      */

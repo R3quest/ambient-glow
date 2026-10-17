@@ -1007,6 +1007,8 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
             // its place (it did, all night in a dark room, before 2026-10-17).
             GlowLog.d { "act aod: interactive=$interactiveSeen state=$state" }
             endAodLed(if (interactiveSeen) "woken" else "gone")
+            // Woken by the user (a press, a lift): a new message ends the LED here before it wakes.
+            if (interactiveSeen) userLooked("aod")
         } else if (!aodLit && !interactiveSeen && face.value == Face.LOCK_SCREEN && dozing(state) && !revealingAfterPower) {
             // Not on the way to the lock screen after a power press: that wakes at SCREEN_OFF.
             startAodLed()
