@@ -76,7 +76,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -84,12 +83,12 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.lumement.ArrivalEffect
 import app.lumement.GlassHaze
 import app.lumement.GlassHazeTarget
@@ -169,8 +168,9 @@ internal fun Dashboard(reported: ScreenGeometry) {
 
     // Setup takes the whole screen until everything is granted (again, if a grant is withdrawn),
     // and stays on its all-set page until the user moves on, so the last grant is seen to land.
+    // Both saved: the last grant can land while the dashboard is recreated (killed in Settings).
     var finishing by rememberSaveable { mutableStateOf(false) }
-    var wasReady by remember { mutableStateOf(access.ready) }
+    var wasReady by rememberSaveable { mutableStateOf(access.ready) }
     if (access.ready != wasReady) {
         wasReady = access.ready
         finishing = access.ready
@@ -260,7 +260,11 @@ internal fun Dashboard(reported: ScreenGeometry) {
             }
         }
     }
-    val showLed = { holding: Boolean ->
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val showLed = showLed@{ holding: Boolean ->
+        // A run of taps settling after the user left is stored, but not shown: nothing is left to
+        // replay on return.
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@showLed
         // The LED is the newer request: a pick still waiting to play gives way to it.
         if (showcasePending) {
             fadeJob?.cancel()

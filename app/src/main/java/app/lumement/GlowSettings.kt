@@ -512,10 +512,10 @@ data class GlowSettings(
 }
 
 /**
- * This look as the arrival effect sees it: LED-only fields reset, so changing the lens fit
- * doesn't restart effect previews. Where the LED sits and its size stay: the
- * beacon plays there and becomes it, and the Edge Frame's last light flies to it ([LedHandOff]).
+ * This look as the arrival effect sees it: LED-only fields reset, so changing the lens fit or how
+ * long the LED stays bright doesn't restart effect previews. Where the LED sits and its size stay:
+ * the beacon plays there and becomes it, and the Edge Frame's last light flies to it ([LedHandOff]).
  * The lens fit reaches the effect through its geometry instead.
  */
 fun GlowSettings.forPreview(): GlowSettings =
-    copy(lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f)
+    copy(lensOffsetDp = 0f, lensOffsetXDp = 0f, lensGrowDp = 0f, brightFor = BrightFor.TEN, afterBright = AfterBright.AOD)

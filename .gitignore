@@ -28,3 +28,6 @@ dist/
 
 # Raw soak dumps (batterystats, power): they list every app on the test phone. Kept locally only.
 /measurements/raw/
+
+# Python bytecode (make check runs diary.py --selftest)
+__pycache__/
