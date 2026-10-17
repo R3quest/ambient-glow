@@ -96,6 +96,7 @@ class NotificationWakerService : NotificationListenerService() {
             // listener relights. With nothing waiting there is no LED: let the CPU sleep at once.
             // Nor while Do Not Disturb rests it.
             val screenOff = intent.action == Intent.ACTION_SCREEN_OFF
+            LedDiary.note(context, if (screenOff) "screen-off" else "screen-on")
             val relights = screenOff && !GlowPending.isEmpty && !GlowSession.resting
             // Unless this sleep is expected to go off ([GlowSession.expectsAod]), it may show the
             // always-on display: the relight waits for it to doze, to put the LED on it with no
@@ -256,6 +257,7 @@ class NotificationWakerService : NotificationListenerService() {
         val settings = GlowPrefs.load(this)
         // A new message: the LED's bright phase starts over, within the streak's time ([BrightStreak]).
         GlowSession.bright = GlowSession.bright.onMessage(SystemClock.elapsedRealtime(), settings.brightFor.ms)
+        LedDiary.note(this, "message", "waiting=${GlowPending.entries.size}")
         val arrival = arrivalFor(settings.arrival, GlowSession.resting)
         // Premium's trial starts with the first message it plays for: its element, or an app's own colour.
         val premium = unlocked && (settings.playsPremium || GlowApps.colorOf(apps, pkg) != null)
@@ -303,6 +305,7 @@ class NotificationWakerService : NotificationListenerService() {
         GlowLauncher.dismissMessage(this, sbn.key)
         if (GlowSession.screenTakers.remove(sbn.key)) GlowSession.host?.onScreenTakersChanged()
         if (!GlowPending.remove(sbn.key)) return
+        LedDiary.note(this, "read", "waiting=${GlowPending.entries.size}")
         // All read: the next message starts a new streak.
         if (GlowPending.isEmpty) GlowSession.bright = BrightStreak()
         // Nothing waits any more, and no glow screen is up to take its windows down.
@@ -424,6 +427,7 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     private fun launch(mode: WakeMode, color: Int): Boolean {
+        LedDiary.note(this, "launch", mode.name)
         wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
         // The full-screen intent wakes the panel: the LED lit there, not on the always-on display.
         val woken = if (mode == WakeMode.AOD) WakeMode.LED else mode

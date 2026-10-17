@@ -354,6 +354,10 @@ internal class FakePhone : LockPort, ShieldPort {
     override fun dismissMessage() = Unit
     override fun showMessage(sbn: StatusBarNotification) = Unit
 
+    override fun note(event: String, detail: String) {
+        log += "diary: $event${if (detail.isEmpty()) "" else " $detail"}"
+    }
+
     override fun launchFromBackground(mode: WakeMode, color: Int): Boolean {
         log += "full-screen intent $mode"
         return true

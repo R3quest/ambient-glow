@@ -29,7 +29,7 @@ SDK_PACKAGES := "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 .DEFAULT_GOAL := help
 .PHONY: help debug release bundle lint test check permissions install install-release \
         install-premium release-premium install-trial-over launch uninstall devices apks clean stop sdk \
-        soak wifi-adb
+        soak wifi-adb diary scripts-test
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -56,7 +56,7 @@ lint: ## Run Android lint and print the summary
 test: ## Run the JVM unit tests
 	$(GRADLE) testDebugUnitTest
 
-check: lint test debug release permissions ## Lint + tests + both builds + permissions: the full pre-deploy gate
+check: lint test scripts-test debug release permissions ## Lint + tests + both builds + permissions: the full pre-deploy gate
 
 permissions: release ## Fail if the release APK asks to go online
 	@$(AAPT2) dump permissions $(RELEASE_APK)
@@ -80,15 +80,24 @@ release-premium: ## Build a release APK with premium unlocked, for testers (neve
 	cp $(RELEASE_APK) $(PREMIUM_APK)
 	@echo "Premium release: $(PREMIUM_APK)"
 
-# MODE=lit (the lit LED, always-on display off), aod (the LED on the always-on display) or idle
-# (nothing waiting, asleep); MINUTES long; NOTE labels the run in the log. See scripts/soak.sh.
+# MODE=lit (the lit LED, always-on display off), aod (the LED straight onto the always-on display),
+# hybrid (the LED as shipped: BRIGHT=OFF|FIVE|TEN|FIFTEEN, then AFTER=AOD|OFF) or idle (nothing
+# waiting, asleep); MINUTES long; NOTE labels the run in the log. See scripts/soak.sh.
 MODE    ?= lit
 MINUTES ?= 10
 
-soak: ## Battery run on the unplugged phone (adb over Wi-Fi): MODE=lit|aod|idle MINUTES=10
+soak: ## Battery run on the unplugged phone (adb over Wi-Fi): MODE=lit|aod|idle|hybrid MINUTES=10
 	$(GRADLE) assembleSoak
 	$(ADB) install -r $(SOAK_APK)
-	ADB=$(ADB) NOTE="$(NOTE)" scripts/soak.sh $(MODE) $(MINUTES)
+	ADB=$(ADB) NOTE="$(NOTE)" BRIGHT="$(BRIGHT)" AFTER="$(AFTER)" scripts/soak.sh $(MODE) $(MINUTES)
+
+scripts-test: ## Self-test the measurement scripts' own logic
+	python3 -I scripts/diary.py --selftest
+
+diary: ## Pull the LED diary from the phone (debug build) and say what it means for the defaults
+	@mkdir -p app/build/diary
+	$(ADB) exec-out run-as $(PACKAGE) cat files/led-diary.txt > app/build/diary/led-diary.txt
+	@python3 -I scripts/diary.py app/build/diary/led-diary.txt
 
 wifi-adb: ## Switch adb to Wi-Fi (phone on USB first), so it can be unplugged for make soak
 	$(ADB) tcpip 5555

@@ -154,6 +154,10 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
         override fun onReceive(context: Context, intent: Intent) = flow.onNextAlarmChanged()
     }
 
+    private val batterySaverSignal = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = flow.onBatterySaverChanged()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // "Light" bar style = DARK icons and gesture handle. On our black panel they are invisible,
         // which matters because One UI re-shows the bars for ~150 ms on every wake before our
@@ -173,6 +177,7 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
         registerScreenEvents(screenSignals)
         ContextCompat.registerReceiver(this, unlockSignal, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_EXPORTED)
         ContextCompat.registerReceiver(this, alarmSignal, IntentFilter(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(this, batterySaverSignal, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
         onBackPressedDispatcher.addCallback(this) { flow.onUserDismiss() }
 
         setContent {
@@ -232,6 +237,7 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
         unregisterReceiver(screenSignals)
         unregisterReceiver(unlockSignal)
         unregisterReceiver(alarmSignal)
+        unregisterReceiver(batterySaverSignal)
         super.onDestroy()
     }
 
@@ -344,6 +350,7 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
     override fun dismissMessage() = GlowLauncher.dismissMessage(this)
     override fun showMessage(sbn: StatusBarNotification) = GlowLauncher.showMessage(this, sbn)
     override fun launchFromBackground(mode: WakeMode, color: Int) = GlowLauncher.launchFromBackground(this, mode, color)
+    override fun note(event: String, detail: String) = LedDiary.note(this, event, detail)
 
     override fun finishSession() = finishAndRemoveTask()
 

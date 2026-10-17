@@ -76,7 +76,7 @@ class LockFlowTest {
         phone.pressPower()
         phone.advance(1_000)
 
-        logged("system: going to sleep", "wake", "system: sleep cancelled", "lit LED down")
+        logged("system: going to sleep", "diary: peek power", "wake", "system: sleep cancelled", "lit LED down")
         notLogged("system: SCREEN_OFF")
         assertTrue(phone.interactive)
         assertFalse(flow.ledInWindow.value)
@@ -416,6 +416,7 @@ class LockFlowTest {
         phone.advance(2 * MINUTE)
 
         logged("blackout", "lit LED down", "release panel", "sleep now", "system: going to sleep", "system: SCREEN_OFF", "system: always-on display", "aod LED on")
+        logged("diary: bright-end", "diary: aod-on")
         notLogged("wake")
         assertFalse(phone.interactive)
         assertFalse("no screen lock left", phone.panelLocked)
@@ -525,6 +526,28 @@ class LockFlowTest {
         notLogged("wake")
         assertFalse(phone.interactive)
         assertFalse(phone.panelLocked)
+    }
+
+    /** Battery Saver switched on while the LED is lit: the bright phase ends then, not at its time. */
+    @Test
+    fun batterySaverComingOnEndsTheBrightPhase() {
+        readyUnderLed()
+        phone.batterySaver = true
+        flow.onBatterySaverChanged()
+        phone.advance(3_000)
+
+        logged("diary: bright-end", "blackout", "lit LED down", "sleep now", "system: SCREEN_OFF")
+        assertFalse(phone.interactive)
+        assertFalse(phone.panelLocked)
+    }
+
+    @Test
+    fun batterySaverGoingOffLeavesTheLedAlone() {
+        readyUnderLed()
+        flow.onBatterySaverChanged()
+        phone.advance(3_000)
+
+        assertTrue(flow.ledInWindow.value)
     }
 
     @Test
