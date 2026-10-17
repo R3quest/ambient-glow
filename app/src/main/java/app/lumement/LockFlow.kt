@@ -208,7 +208,11 @@ internal object RealShield : ShieldPort {
  * every switch between them, on the phone's events. Plain Kotlin over [LockPort] and [ShieldPort],
  * so the flow runs in a JVM test as it does on the phone. Main thread only.
  */
-internal class LockFlow(private val port: LockPort, private val shield: ShieldPort) : GlowSession.Host {
+internal class LockFlow(
+    private val port: LockPort,
+    private val shield: ShieldPort,
+    private val relightLimit: RelightLimiter = RelightLimiter(RELIGHT_BURST, RELIGHT_REFILL_MS),
+) : GlowSession.Host {
 
     val face = mutableStateOf(Face.LOCK_SCREEN)
 
@@ -257,8 +261,6 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
      * no system bars at all. Not after a tap or power press: then the user is likely unlocking.
      */
     private var autoTakeover = false
-
-    private val relightLimit = RelightLimiter(RELIGHT_BURST, RELIGHT_REFILL_MS)
 
     /**
      * The lock screen was handed back to run out its own short timeout under a black cover
@@ -944,6 +946,7 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
         if (stowed) unstow()
         revealingAfterPower = false
         ledArmedForSleep = false
+        sleepSettling = false
         port.cancel(LockTimer.RELIGHT)
         port.armTurnScreenOn(false)
         port.cancel(LockTimer.VERIFY_WAKE)
@@ -993,9 +996,11 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
             if (!dark && interactiveSeen && stowed && face.value == Face.LED) takenOut()
         }
         if (interactiveSeen) {
-            // Awake again: the sleep we were handling was cancelled; the next one is the user's.
+            // Awake again: the sleep we were handling was cancelled, or its doze never came; the
+            // next one is the user's.
             ledArmedForSleep = false
             revealingAfterPower = false
+            sleepSettling = false
         }
         if (wasInteractive && ledTurnedOff()) {
             GlowLog.d { "act display changed: going to sleep with the LED in front" }
@@ -1107,14 +1112,15 @@ internal class LockFlow(private val port: LockPort, private val shield: ShieldPo
     }
 
     /**
-     * The lock screen is dark: put the LED up and light it after [delayMs], or, when the rate
-     * limit has no token, as soon as it has one. Only in its bright phase ([litAllowed]): after it
-     * the LED is on the always-on display where One UI shows one, and dark wherever it doesn't (the
-     * message seen, low light, its timeout, or no always-on display at all).
+     * The lock screen is dark (or the LED's face, its relight put off by the rate limit): put the
+     * LED up and light it after [delayMs], or, when the rate limit has no token, as soon as it has
+     * one. Only in its bright phase ([litAllowed]): after it the LED is on the always-on display
+     * where One UI shows one, and dark wherever it doesn't (the message seen, low light, its
+     * timeout, or no always-on display at all).
      */
     private fun relightLed(delayMs: Long) {
         port.cancel(LockTimer.RELIGHT)
-        if (!litAllowed || port.interactive || face.value != Face.LOCK_SCREEN || port.inCall || GlowPending.isEmpty || ledResting) return
+        if (!litAllowed || port.interactive || face.value == Face.AWAY || port.inCall || GlowPending.isEmpty || ledResting) return
         if (!takeRelightToken()) return
         showLed()
         wakeAfter(delayMs)

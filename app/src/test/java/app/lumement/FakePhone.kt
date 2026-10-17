@@ -9,8 +9,8 @@ import android.view.Display
  * fade, SCREEN_OFF's lag), so a scenario plays out in the order it does on the phone. Everything
  * the flow does is in [log], in order.
  */
-internal class FakePhone : LockPort, ShieldPort {
-    val flow = LockFlow(this, this)
+internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.RELIGHT_BURST, LockFlow.RELIGHT_REFILL_MS)) : LockPort, ShieldPort {
+    val flow = LockFlow(this, this, relightLimit)
     val log = mutableListOf<String>()
 
     var now = 1_000_000L

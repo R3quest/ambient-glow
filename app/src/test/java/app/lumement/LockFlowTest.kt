@@ -615,6 +615,71 @@ class LockFlowTest {
         assertTrue(phone.interactive)
     }
 
+    /**
+     * A sleep that waited for an always-on display One UI didn't show (the message already seen)
+     * kept waiting through the next wake. At the next sleep the panel going off ran its screen-off
+     * early: power on the LED's face lit the lock screen before SCREEN_OFF, while One UI's lock
+     * screen was still on its way to sleep ([LockFlow.revealAfterPower]).
+     */
+    @Test
+    fun aDozeThatNeverCameIsForgottenOnceAwake() {
+        phone.shieldOn = false // the LED's own face, which power opens at SCREEN_OFF
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = false
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower() // the lock screen's own sleep, waiting for a doze that doesn't come
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+
+        phone.settings = phone.settings.copy(brightFor = BrightFor.TEN)
+        message("chat-2")
+        phone.host { onNewMessage() }
+        phone.advance(4_000)
+        assertEquals("bright: the LED's face", Face.LED, flow.face.value)
+
+        phone.log.clear()
+        phone.pressPower()
+        phone.advance(2_000)
+
+        logged("system: going to sleep", "uncover", "system: SCREEN_OFF", "wake")
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertTrue(phone.interactive)
+    }
+
+    /**
+     * A relight the rate limit puts off with the LED's face in front (a call over, the phone taken
+     * out, the watchdog's check) comes once a token is due: the limit spaces relights out, it never
+     * drops one ([RelightLimiter]). Its timer only relit the lock screen in front, and the LED
+     * stayed dark.
+     */
+    @Test
+    fun aRelightPutOffWithTheLedsFaceInFrontStillComes() {
+        val limit = RelightLimiter(LockFlow.RELIGHT_BURST, LockFlow.RELIGHT_REFILL_MS)
+        phone = FakePhone(limit)
+        phone.shieldOn = false
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertEquals(Face.LED, flow.face.value)
+
+        phone.inCall = true
+        phone.pressPower() // the call's proximity: dark, the LED's face left in front
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+        assertEquals(Face.LED, flow.face.value)
+
+        repeat(LockFlow.RELIGHT_BURST) { limit.take(phone.now) } // quick presses just spent the burst
+        phone.inCall = false
+        phone.log.clear()
+        flow.callOver()
+        phone.advance(LockFlow.RELIGHT_REFILL_MS + 1_000)
+
+        logged("wake")
+        assertTrue(phone.interactive)
+        assertEquals(Face.LED, flow.face.value)
+    }
+
     @Test
     fun theLockScreenTimingOutBringsTheLedBackLit() {
         phone.shieldOn = false
