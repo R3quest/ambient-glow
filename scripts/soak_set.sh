@@ -30,7 +30,8 @@ run() {
 wait_dark() {
     local i
     for i in $(seq 64); do
-        [ "$(sh dumpsys power | grep -c "'Lumement:led'")" = 0 ] && return 0
+        # Held now: the tag as the line's second field, as soak.sh reads it (the history lists old ones too).
+        [ "$(sh dumpsys power | awk -v tag="'Lumement:led'" '$2 == tag' | wc -l)" = 0 ] && return 0
         sleep 15
     done
     log "the lit LED is still up after 16 minutes"
