@@ -396,6 +396,26 @@ enum class ArrivalMode(@param:StringRes override val label: Int, @param:StringRe
 }
 
 /**
+ * How long the LED holds the screen on after a new message ([BrightStreak]) before it makes way
+ * ([AfterBright]). [OFF]: never; the LED goes straight to what comes after.
+ */
+enum class BrightFor(val ms: Long, @param:StringRes override val label: Int) : Labeled {
+    OFF(0L, R.string.bright_off),
+    FIVE(5 * 60_000L, R.string.bright_5),
+    TEN(10 * 60_000L, R.string.bright_10),
+    FIFTEEN(15 * 60_000L, R.string.bright_15),
+}
+
+/** Where the LED goes once its bright minutes are over ([BrightFor]). */
+enum class AfterBright(@param:StringRes override val label: Int) : Labeled {
+    /** The phone sleeps into One UI's always-on display, shown for new notifications, and the LED stays on it, still. */
+    AOD(R.string.after_bright_aod),
+
+    /** The phone sleeps and the LED goes out until a new message. */
+    OFF(R.string.after_bright_off),
+}
+
+/**
  * The element a fresh install starts on. Air where its look runs (Android 13+): premium, so every
  * new user gets the trial with their first message, in its lightest, calmest look, which keeps
  * the lock screen readable. Water, the free one, below that, where every element plays the same
@@ -426,6 +446,10 @@ data class GlowSettings(
     val lensOffsetXDp: Float = 0f,
     val lensGrowDp: Float = 0f,
     val arrival: ArrivalMode = ArrivalMode.LOCK_SCREEN,
+    /** How long the LED holds the screen on after a new message. */
+    val brightFor: BrightFor = BrightFor.TEN,
+    /** Where it goes then: the always-on display, or out. */
+    val afterBright: AfterBright = AfterBright.AOD,
     /** AirDrop-style intro: a light wave bursts from the camera and ignites the glow as it passes. */
     val spawn: Boolean = true,
     /** The element the spawn wave takes after; Water, the glass wave, is the free one. */

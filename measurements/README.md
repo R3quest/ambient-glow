@@ -4,6 +4,17 @@
 `soak.tsv`. The raw dumps of each run (batterystats, power) are in `raw/`, kept locally only: they
 list every app on the test phone.
 
+Modes (2026-10-17, for the bright phase): `lit` (the always-on display off, the lit LED for the whole
+run, 10 minutes at most), `aod` (the LED straight onto the always-on display, still), `hybrid` (the LED
+as shipped: `BRIGHT=OFF|FIVE|TEN|FIFTEEN` then `AFTER=AOD|OFF`, the always-on display set to Show for
+new notifications, the message posted as the measured window starts), `idle`. The soak build sets
+Bright LED and Then for each run through its own receiver (`app/src/soak`, `SoakSettings`) and puts the
+phone's back afterwards. A sleeping run's end state is read off the display (`mScreenState`), since
+wakefulness says Dozing even with the always-on display off.
+
+When people look, for the defaults, comes from the LED diary instead (`make diary`, debug builds
+only; see `claude.md`).
+
 ## How a run measures
 
 - Galaxy S23 (One UI 8.5), unplugged, adb over Wi-Fi (`make wifi-adb`), the `soak` build (the

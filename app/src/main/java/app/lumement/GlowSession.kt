@@ -229,10 +229,11 @@ internal const val MAX_LOCK_WAIT_MS = 30_000L
 /**
  * The watchdog's question, a few seconds after the screen went off with a glow screen on top:
  * messages are waiting, nothing that rightly keeps the LED dark holds (Do Not Disturb, a call, the
- * phone put away, the last message just read), and yet the panel is still off.
+ * phone put away, the last message just read), the LED has somewhere to be ([lit]: its bright
+ * phase; [onAod]: the always-on display showing), and yet it isn't up.
  */
-internal fun ledMissing(screenOn: Boolean, waiting: Boolean, resting: Boolean, inCall: Boolean, putAway: Boolean, ending: Boolean): Boolean =
-    !screenOn && waiting && !resting && !inCall && !putAway && !ending
+internal fun ledMissing(screenOn: Boolean, waiting: Boolean, resting: Boolean, inCall: Boolean, putAway: Boolean, ending: Boolean, lit: Boolean, onAod: Boolean): Boolean =
+    !screenOn && waiting && !resting && !inCall && !putAway && !ending && (lit || onAod)
 
 /**
  * May the lit LED go into its window, the lock screen readied under it? Once the LED face is in
@@ -337,6 +338,14 @@ object GlowSession {
 
     /** The always-on display's switches ([aodSwitches]) when [sleepDozes] was seen. */
     internal var sleepDozesSetting: AodSwitches? = null
+
+    /**
+     * The unread streak's bright phases ([BrightStreak]): started over by the listener with each
+     * new message, a new streak when the user looks at the lock screen, empty once nothing waits or
+     * the phone is unlocked. Memory only: after a restart of the process the LED holds the screen
+     * on again only for the next message. Main thread only.
+     */
+    internal var bright = BrightStreak()
 
     /** Will the next sleep show the always-on display ([sleepWillDoze])? Null: not known. */
     fun expectsAod(context: Context): Boolean? {

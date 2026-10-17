@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.media.AudioPlaybackConfiguration
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -81,6 +82,13 @@ object DarkHold {
 
 /** Proximity blanks the screen during calls; never light up over a call. */
 internal val AudioManager.inCall: Boolean get() = mode != AudioManager.MODE_NORMAL
+
+/** Battery Saver (One UI's Power saving) is on: the LED never holds the screen on then ([litLedAllowed]). */
+internal val Context.batterySaver: Boolean get() = getSystemService(PowerManager::class.java).isPowerSaveMode
+
+/** The battery's charge in %, or null where it can't be read. */
+internal fun Context.batteryPct(): Int? =
+    getSystemService(BatteryManager::class.java)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
 
 /**
  * Runs [then] once, when the call in progress is over (audio back to normal). Every relight bails

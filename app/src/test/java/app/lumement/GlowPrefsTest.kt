@@ -20,6 +20,8 @@ class GlowPrefsTest {
         lensOffsetXDp = -2f,
         lensGrowDp = 0.5f,
         arrival = ArrivalMode.LED_ONLY,
+        brightFor = BrightFor.FIVE,
+        afterBright = AfterBright.OFF,
         spawn = false,
         element = SpawnElement.EARTH,
         glassBlur = GlassBlur.STRONG,

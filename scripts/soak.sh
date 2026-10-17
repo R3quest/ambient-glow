@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A battery run on the phone (make soak MODE=lit|aod|idle MINUTES=10): the phone unplugged, adb over
+# A battery run on the phone (make soak MODE=lit|aod|idle|hybrid MINUTES=10): the phone unplugged, adb over
 # Wi-Fi (make wifi-adb), the soak build installed. Sets the mode up, then reads the phone only at
 # the start and the end, so adb costs next to nothing in between:
 # - the battery's charge counter: the average current over the run. It moves in steps (~3.7 mAh on
@@ -9,11 +9,23 @@
 #   one core;
 # - batterystats, reset at the start: Lumement's wake locks over the run.
 # One line per run goes to measurements/soak.tsv (committed); the raw dumps to app/build/soak/.
+#
+# The modes, each with the LED's bright phase (Bright LED) and what follows it (Then) set for it
+# through the soak build's own receiver (SoakSettings), and put back as they were afterwards:
+# - lit: the always-on display off, the lit LED for the whole run (Bright LED 15 min, so a run is
+#   10 minutes at most: the waits for the charge counter's steps come around it);
+# - aod: the LED straight onto the always-on display (Bright LED off), still;
+# - hybrid: the LED as shipped, BRIGHT (OFF, FIVE, TEN, FIFTEEN; TEN) then AFTER (AOD, OFF; AOD), the
+#   always-on display set to Show for new notifications; the message is posted as the measured
+#   window starts, so its bright phase is in it;
+# - idle: nothing waiting, asleep.
 set -euo pipefail
 
 MODE=${1:-lit}
 MINUTES=${2:-10}
 NOTE=${NOTE:-}
+BRIGHT=${BRIGHT:-TEN}
+AFTER=${AFTER:-AOD}
 ADB=${ADB:-adb}
 PKG=app.lumement
 TSV=measurements/soak.tsv
@@ -29,8 +41,14 @@ wakefulness() { sh dumpsys power | awk -F= '/mWakefulness=/ && !seen {print $2; 
 held() { [ "$(sh dumpsys power | awk -v tag="'Lumement:$1'" '$2 == tag' | wc -l)" -gt 0 ]; }
 counter() { sh dumpsys battery | awk -F': ' '/Charge counter/ && !seen {print $2; seen = 1}'; }
 level() { sh dumpsys battery | awk -F': ' '/^  level/ && !seen {print $2; seen = 1}'; }
+# The display itself: OFF, ON, or DOZE / DOZE_SUSPEND (the always-on display). Wakefulness says
+# Dozing even with the always-on display off, so it can't tell.
+screen() { sh dumpsys display | awk -F= '/mScreenState=/ && !seen {print $2; seen = 1}'; }
+dozing() { case "$1" in DOZE | DOZE_SUSPEND) return 0 ;; *) return 1 ;; esac; }
+# Bright LED and Then through SoakSettings; prints them as set ("brightFor=TEN afterBright=AOD").
+soakset() { sh am broadcast -n "$PKG/.SoakSettings" "$@" | sed -n 's/.*data="\(.*\)".*/\1/p'; }
 
-case "$MODE" in lit | aod | idle) ;; *) fail "MODE is lit, aod or idle, not $MODE" ;; esac
+case "$MODE" in lit | aod | idle | hybrid) ;; *) fail "MODE is lit, aod, idle or hybrid, not $MODE" ;; esac
 mkdir -p "$RAW" "$(dirname "$TSV")"
 
 # ---- The phone as a run needs it ----------------------------------------------------------------
@@ -44,21 +62,41 @@ post() {
 unpost() {
     sh cmd notification snooze --for 315360000000 "'0|com.android.shell|2020|$TAG|2000'" >/dev/null 2>&1 || true
 }
-trap unpost EXIT
+# The phone's own Bright LED and Then, put back when the run ends.
+was=$(soakset)
+[ -n "$was" ] || fail "the soak build's settings receiver didn't answer: is the soak build installed?"
+cleanup() {
+    unpost
+    soakset --es bright_for "$(sed 's/.*brightFor=\([A-Z]*\).*/\1/' <<<"$was")" --es after_bright "$(sed 's/.*afterBright=\([A-Z]*\).*/\1/' <<<"$was")" >/dev/null
+}
+trap cleanup EXIT
 
 echo "soak: $MODE for $MINUTES min, battery $(level) %"
 case "$MODE" in
     lit)
         [ "$aod" = "0" ] || fail "the always-on display is on (aod_mode $aod): the LED would go onto it. Turn it off in Settings for a lit run"
+        [ "$MINUTES" -le 10 ] || fail "a lit run is 10 minutes at most: the LED's longest bright phase is 15, and the waits for the charge counter's steps come around the run"
+        soakset --es bright_for FIFTEEN >/dev/null
         post
         sleep 20
         held led || fail "the lit LED isn't up (no Lumement:led lock): is GlowShield on, the phone locked?"
         ;;
     aod)
         [ "$aod" != "0" ] && [ "$aod" != "null" ] || fail "the always-on display is off (aod_mode $aod): turn it on in Settings for an aod run"
+        soakset --es bright_for OFF --es after_bright AOD >/dev/null
         post
         sleep 30 # the arrival, then the lock screen's own timeout into the always-on display
-        [ "$(wakefulness)" = "Dozing" ] || fail "not dozing after the message ($(wakefulness))"
+        dozing "$(screen)" || fail "not on the always-on display after the message (display $(screen))"
+        ;;
+    hybrid)
+        [ "$aod" != "0" ] && [ "$aod" != "null" ] && [ "$(sh settings get system aod_show_for_new_noti)" = "1" ] ||
+            fail "a hybrid run needs the always-on display on, set to Show for new notifications"
+        log=$(soakset --es bright_for "$BRIGHT" --es after_bright "$AFTER")
+        echo "soak: $log"
+        held led && fail "the lit LED is up: messages are waiting; read them first"
+        [ "$(wakefulness)" = "Awake" ] && sh input keyevent KEYCODE_SLEEP
+        sleep 10
+        [ "$(wakefulness)" != "Awake" ] || fail "the phone is still awake"
         ;;
     idle)
         held led && fail "the lit LED is up: messages are waiting; read them first"
@@ -93,6 +131,8 @@ step() {
 echo "soak: waiting for the charge counter's next step to start on"
 step "$(counter)" 3600 5
 sh dumpsys batterystats --reset >/dev/null
+# A hybrid run's message arrives as it starts, so its bright phase and the handover are in it.
+[ "$MODE" = hybrid ] && post
 c0=$(counter)
 l0=$(level)
 t0=$(date +%s)
@@ -109,7 +149,7 @@ t1=$(date +%s)
 mapfile -t k1 < <(ticks)
 sh dumpsys batterystats "$PKG" >"$RAW/$STAMP-$MODE-batterystats.txt"
 sh dumpsys power >"$RAW/$STAMP-$MODE-power.txt"
-state=$(wakefulness)
+state="$(wakefulness) / $(screen)"
 
 secs=$((t1 - t0))
 
@@ -142,7 +182,17 @@ bs_cpu=$(awk -v s="$secs" '
 # A sleeping run (aod, idle) that had the screen on measured something else as well: a message
 # arriving (lights the lock screen, by design), a hand on it, or One UI dropping the always-on
 # display in low light (burn-in protection) and the lit LED taking over. Flagged, for a look.
-if [ "$MODE" != lit ]; then
+# Each mode ends where it should: the lit LED still up, or the LED on the always-on display.
+case "$MODE" in
+    lit) held led || NOTE="CHECK: the lit LED wasn't up at the end${NOTE:+; $NOTE}" ;;
+    aod) dozing "$(screen)" || NOTE="CHECK: not on the always-on display at the end ($(screen))${NOTE:+; $NOTE}" ;;
+    hybrid)
+        NOTE="Bright LED $BRIGHT, then $AFTER${NOTE:+; $NOTE}"
+        if [ "$AFTER" = AOD ] && ! dozing "$(screen)"; then NOTE="CHECK: not on the always-on display at the end ($(screen)); $NOTE"; fi
+        ;;
+esac
+
+if [ "$MODE" != lit ] && [ "$MODE" != hybrid ]; then
     on=$(awk '/^  Screen on: / {print $3, $4, $5; exit}' "$stats")
     on_ms=$(awk -v t="$on" 'BEGIN { n = split(t, tok, " "); v = 0
         for (i = 1; i <= n; i++) { if (tok[i] ~ /ms$/) v += tok[i] + 0; else if (tok[i] ~ /h$/) v += tok[i] * 3600000

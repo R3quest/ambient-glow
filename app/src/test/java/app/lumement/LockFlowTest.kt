@@ -22,6 +22,7 @@ class LockFlowTest {
         GlowPending.message = null
         GlowSession.resting = false
         GlowSession.screenTakers.clear()
+        GlowSession.bright = BrightStreak()
         phone = FakePhone()
     }
 
@@ -30,9 +31,14 @@ class LockFlowTest {
         assertTrue("broken on the way:\n${phone.broken.joinToString("\n")}", phone.broken.isEmpty())
         GlowSession.detach(flow)
         GlowPending.entries.clear()
+        GlowSession.bright = BrightStreak()
     }
 
-    private fun message(key: String = "chat-1") = GlowPending.put(PendingGlow(key, "chat", 0xFF25D366.toInt()))
+    /** A new message, as the listener takes it: waiting on the LED, and its bright phase started over. */
+    private fun message(key: String = "chat-1") {
+        GlowPending.put(PendingGlow(key, "chat", 0xFF25D366.toInt()))
+        GlowSession.bright = GlowSession.bright.onMessage(phone.now, phone.settings.brightFor.ms)
+    }
 
     /** A message lit the lock screen, nobody touched it: the lit LED over the lock screen, ready under it. */
     private fun readyUnderLed() {
@@ -70,7 +76,7 @@ class LockFlowTest {
         phone.pressPower()
         phone.advance(1_000)
 
-        logged("system: going to sleep", "wake", "system: sleep cancelled", "lit LED down")
+        logged("system: going to sleep", "diary: peek power", "wake", "system: sleep cancelled", "lit LED down")
         notLogged("system: SCREEN_OFF")
         assertTrue(phone.interactive)
         assertFalse(flow.ledInWindow.value)
@@ -185,6 +191,7 @@ class LockFlowTest {
         logged("lit LED down", "move to back")
         assertEquals(Face.AWAY, flow.face.value)
         assertFalse(phone.panelLocked)
+        assertFalse("the bright phase ends with the unlock", GlowSession.bright.lit(phone.now))
     }
 
     @Test
@@ -203,6 +210,7 @@ class LockFlowTest {
 
     @Test
     fun whereTheSleepDozesTheLedGoesOnTheAlwaysOnDisplay() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF) // no bright phase: straight onto it
         phone.expectsAod = true
         phone.dozes = true
         message()
@@ -232,6 +240,7 @@ class LockFlowTest {
      */
     @Test
     fun shownForNewNotificationsTheLedWaitsForTheAlwaysOnDisplay() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
         phone.expectsAod = true
         phone.dozes = true
         phone.dozesAfterOffMs = 100
@@ -247,8 +256,10 @@ class LockFlowTest {
         assertFalse(phone.interactive)
     }
 
+    /** With no bright phase, an always-on display that never comes leaves the LED dark: no lit LED in its place. */
     @Test
-    fun anAlwaysOnDisplayThatNeverComesLeavesItToTheListener() {
+    fun anAlwaysOnDisplayThatNeverComesLeavesTheLedDark() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
         phone.expectsAod = true
         phone.dozes = false
         message()
@@ -260,13 +271,18 @@ class LockFlowTest {
         phone.host { ensureLed() } // the listener's check, 4 s after SCREEN_OFF
         phone.advance(2_000)
 
-        logged("cover", "wake", "lit LED up")
-        assertTrue("the lit LED, in its window", flow.ledInWindow.value)
-        assertTrue(phone.interactive)
+        notLogged("wake")
+        assertFalse(phone.interactive)
+        assertFalse(flow.ledInWindow.value)
+        assertFalse("no black cover for the next wake", phone.coverUp)
     }
 
-    /** One UI's "Show for new notifications": the LED lives on its always-on display alone. */
+    /**
+     * One UI's "Show for new notifications", with no bright phase: the LED goes straight onto its
+     * always-on display, as it did before the bright phase (2026-10-17).
+     */
     private fun aodForNewNotifications() {
+        phone.settings = phone.settings.copy(brightFor = BrightFor.OFF)
         phone.aodOnly = true
         phone.expectsAod = true
         phone.dozes = true
@@ -367,7 +383,7 @@ class LockFlowTest {
     @Test
     fun shownForNewNotificationsABlackArrivalSleepsIntoTheAlwaysOnDisplay() {
         aodForNewNotifications()
-        phone.settings = GlowSettings(arrival = ArrivalMode.BLACK)
+        phone.settings = phone.settings.copy(arrival = ArrivalMode.BLACK)
         message()
         phone.launch(WakeMode.ARRIVAL, 2_000)
         assertEquals(Face.LED, flow.face.value)
@@ -377,6 +393,209 @@ class LockFlowTest {
 
         logged("sleep now", "system: SCREEN_OFF", "system: always-on display", "aod LED on")
         assertFalse(phone.interactive)
+        assertFalse("the black cover it slept under is gone from the always-on display", phone.coverUp)
+    }
+
+    // ---- The bright phase, then the always-on display or dark (2026-10-17) ----------------------
+
+    /**
+     * Bright for its minutes, then the phone sleeps into One UI's always-on display with the LED on
+     * it. Tested on the S23 first: One UI still shows it for the message after 10 minutes lit.
+     */
+    @Test
+    fun brightFirstThenTheAlwaysOnDisplay() {
+        aodForNewNotifications()
+        phone.settings = phone.settings.copy(brightFor = BrightFor.TEN)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertTrue("bright: the lit LED takes the lock screen over", flow.ledInWindow.value)
+
+        phone.advance(9 * MINUTE)
+        assertTrue("still bright at 9 minutes", flow.ledInWindow.value)
+        phone.log.clear()
+        phone.advance(2 * MINUTE)
+
+        logged("blackout", "lit LED down", "release panel", "sleep now", "system: going to sleep", "system: SCREEN_OFF", "system: always-on display", "aod LED on")
+        logged("diary: bright-end", "diary: aod-on")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+        assertFalse("no screen lock left", phone.panelLocked)
+        assertFalse("no black cover over the always-on display", phone.coverUp)
+    }
+
+    @Test
+    fun brightFirstThenDarkWithoutAnAlwaysOnDisplay() {
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertTrue(flow.ledInWindow.value)
+
+        phone.log.clear()
+        phone.advance(10 * MINUTE)
+        phone.host { ensureLed() } // the listener's check, 4 s after SCREEN_OFF
+        phone.advance(MINUTE)
+
+        logged("blackout", "lit LED down", "sleep now", "system: SCREEN_OFF")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+        assertFalse(phone.panelLocked)
+        assertFalse("the next wake shows the lock screen, not black", phone.coverUp)
+    }
+
+    @Test
+    fun thenOffLeavesOneUisAlwaysOnDisplayWithoutTheLed() {
+        aodForNewNotifications()
+        phone.settings = phone.settings.copy(brightFor = BrightFor.TEN, afterBright = AfterBright.OFF)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.advance(11 * MINUTE)
+
+        logged("sleep now", "system: always-on display")
+        notLogged("aod LED on")
+        assertFalse(phone.interactive)
+        assertFalse("One UI's always-on display shows, not a black cover", phone.coverUp)
+    }
+
+    /** A busy chat starts the bright phase over and over, up to 30 minutes in all ([BRIGHT_STREAK_MS]). */
+    @Test
+    fun aBusyChatIsBrightForThirtyMinutesInAll() {
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        for (i in 2..4) { // at 8, 16 and 24 minutes
+            phone.advance(8 * MINUTE - 4_000)
+            message("chat-$i")
+            phone.host { onNewMessage() }
+            phone.advance(4_000)
+            assertTrue("bright again after message $i", flow.ledInWindow.value)
+        }
+        phone.advance(5 * MINUTE)
+        assertTrue("still bright at 29 minutes", flow.ledInWindow.value)
+        phone.advance(2 * MINUTE)
+        assertFalse("asleep at 30", phone.interactive)
+
+        phone.log.clear()
+        message("chat-5")
+        phone.host { onNewMessage() }
+        phone.advance(4_000)
+        assertFalse("its arrival plays, but the streak's time is spent", flow.ledInWindow.value)
+        phone.pressPower() // the lock screen's own sleep
+        phone.advance(5_000)
+
+        logged("wake", "arrival effect")
+        notLogged("lit LED up")
+        assertFalse(phone.interactive)
+        assertFalse(phone.panelLocked)
+    }
+
+    /**
+     * Woken from the LED on the always-on display (a press, a lift) is a look like one on the lit
+     * LED: a new streak, so the next message has its whole bright time. It wasn't counted, and a
+     * busy chat ran out of bright time sooner (the power-press A/B on the S23, 2026-10-17).
+     */
+    @Test
+    fun wokenFromTheAlwaysOnDisplayStartsANewStreak() {
+        aodForNewNotifications()
+        phone.settings = phone.settings.copy(brightFor = BrightFor.TEN)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.advance(11 * MINUTE)
+        assertTrue("on the always-on display after the bright phase", phone.aodBreathing)
+
+        phone.log.clear()
+        phone.pressPower()
+        phone.advance(2_000)
+
+        logged("aod LED off", "diary: peek aod")
+        assertEquals("a new streak", BrightStreak(), GlowSession.bright)
+    }
+
+    /**
+     * One UI drops its always-on display in low light after ~10 minutes (measured on the S23,
+     * 2026-10-12), and the flow lit the screen in its place, all night in a dark room.
+     */
+    @Test
+    fun theAlwaysOnDisplayGoingNeverLightsTheScreen() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = true
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        assertTrue(phone.aodBreathing)
+
+        phone.log.clear()
+        phone.aodGoes()
+        phone.advance(3_000)
+        phone.host { ensureLed() }
+        phone.advance(5_000)
+
+        logged("aod LED off")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+    }
+
+    @Test
+    fun batterySaverKeepsTheLedOffTheScreen() {
+        phone.batterySaver = true
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertFalse("no takeover", flow.ledInWindow.value)
+
+        phone.pressPower() // the lock screen's own sleep
+        phone.advance(5_000)
+
+        notLogged("lit LED up")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+        assertFalse(phone.panelLocked)
+    }
+
+    /** Battery Saver switched on while the LED is lit: the bright phase ends then, not at its time. */
+    @Test
+    fun batterySaverComingOnEndsTheBrightPhase() {
+        readyUnderLed()
+        phone.batterySaver = true
+        flow.onBatterySaverChanged()
+        phone.advance(3_000)
+
+        logged("diary: bright-end", "blackout", "lit LED down", "sleep now", "system: SCREEN_OFF")
+        assertFalse(phone.interactive)
+        assertFalse(phone.panelLocked)
+    }
+
+    @Test
+    fun batterySaverGoingOffLeavesTheLedAlone() {
+        readyUnderLed()
+        flow.onBatterySaverChanged()
+        phone.advance(3_000)
+
+        assertTrue(flow.ledInWindow.value)
+    }
+
+    @Test
+    fun aLowBatteryKeepsTheLedOffTheScreen() {
+        phone.batteryPct = LOW_BATTERY_PCT - 1
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+
+        assertFalse(flow.ledInWindow.value)
+        assertFalse(phone.panelLocked)
+    }
+
+    /** With no bright phase, Just the LED still shows its dot for a breath before the phone sleeps. */
+    @Test
+    fun withNoBrightPhaseJustTheLedShowsABreathThenSleeps() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.OFF)
+        message()
+        phone.launch(WakeMode.LED, 1_000)
+        logged("lit LED up")
+
+        phone.advance(5_000)
+
+        logged("sleep now", "system: SCREEN_OFF")
+        assertFalse(phone.interactive)
+        assertFalse(phone.panelLocked)
+        assertFalse(phone.coverUp)
     }
 
     @Test
@@ -438,5 +657,9 @@ class LockFlowTest {
 
         logged("finish")
         assertFalse(phone.panelLocked)
+    }
+
+    private companion object {
+        const val MINUTE = 60_000L
     }
 }

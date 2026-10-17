@@ -72,14 +72,31 @@ class RelightTest {
         assertEquals("never a look past the cap", true, lockChecks(MAX_LOCK_WAIT_MS).isNotEmpty())
     }
 
+    private fun missing(
+        screenOn: Boolean = false,
+        waiting: Boolean = true,
+        resting: Boolean = false,
+        inCall: Boolean = false,
+        putAway: Boolean = false,
+        ending: Boolean = false,
+        lit: Boolean = true,
+        onAod: Boolean = false,
+    ) = ledMissing(screenOn, waiting, resting, inCall, putAway, ending, lit, onAod)
+
     @Test
     fun theWatchdogRelightsOnlyWhatShouldBeLit() {
-        assertTrue(ledMissing(screenOn = false, waiting = true, resting = false, inCall = false, putAway = false, ending = false))
-        assertFalse("the LED is up", ledMissing(screenOn = true, waiting = true, resting = false, inCall = false, putAway = false, ending = false))
-        assertFalse("all read", ledMissing(screenOn = false, waiting = false, resting = false, inCall = false, putAway = false, ending = false))
-        assertFalse("Do Not Disturb", ledMissing(screenOn = false, waiting = true, resting = true, inCall = false, putAway = false, ending = false))
-        assertFalse("in a call (lit after it)", ledMissing(screenOn = false, waiting = true, resting = false, inCall = true, putAway = false, ending = false))
-        assertFalse("put away", ledMissing(screenOn = false, waiting = true, resting = false, inCall = false, putAway = true, ending = false))
-        assertFalse("the last one just read", ledMissing(screenOn = false, waiting = true, resting = false, inCall = false, putAway = false, ending = true))
+        assertTrue(missing())
+        assertFalse("the LED is up", missing(screenOn = true))
+        assertFalse("all read", missing(waiting = false))
+        assertFalse("Do Not Disturb", missing(resting = true))
+        assertFalse("in a call (lit after it)", missing(inCall = true))
+        assertFalse("put away", missing(putAway = true))
+        assertFalse("the last one just read", missing(ending = true))
+    }
+
+    @Test
+    fun afterItsBrightPhaseTheLedIsMissingOnlyFromTheAlwaysOnDisplay() {
+        assertFalse("dark is right", missing(lit = false, onAod = false))
+        assertTrue("the always-on display shows without it", missing(lit = false, onAod = true))
     }
 }
