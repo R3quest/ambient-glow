@@ -8,6 +8,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -101,6 +102,16 @@ internal data class AodSwitches(val setting: Int, val forNew: Boolean) {
         else -> AodMode.ON
     }
 }
+
+/**
+ * Where the switches ([aodSwitches]) live, to watch: the dashboard's always-on display row follows
+ * them while it shows (the quick settings tile, Power saving switching it off).
+ */
+internal fun aodSwitchUris(): List<Uri> = listOf(
+    Settings.System.getUriFor(ONE_UI_AOD_MODE),
+    Settings.System.getUriFor(ONE_UI_AOD_NEW_NOTIFICATIONS),
+    Settings.Secure.getUriFor(DOZE_ALWAYS_ON),
+)
 
 /** The switches as set now, or null where the system's can't be read. */
 internal fun aodSwitches(resolver: ContentResolver): AodSwitches? = aodSwitchesOf(aodSetting(resolver), aodForNewNotifications(resolver))

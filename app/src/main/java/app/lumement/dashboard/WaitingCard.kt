@@ -4,22 +4,17 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,9 +29,6 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import app.lumement.AfterBright
 import app.lumement.AodMode
@@ -49,9 +41,7 @@ import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.LinkRow
 import app.lumement.ui.components.OptionBody
 import app.lumement.ui.components.OptionNote
-import app.lumement.ui.components.RowBleed
 import app.lumement.ui.components.SectionLabel
-import app.lumement.ui.components.rowBleed
 import app.lumement.ui.components.glowCard
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
@@ -61,9 +51,29 @@ import app.lumement.ui.theme.GlowShapes
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * Whether the LED can go onto One UI's always-on display once its bright minutes are over
+ * ([AfterBright.AOD]), and if not, the one thing missing: first the always-on display itself, then
+ * Lumement effects, whose window the LED is drawn in. On, but not shown for new notifications, it
+ * works and only costs the always-on display's own battery while nothing waits.
+ */
+internal enum class AodReadiness(@StringRes val title: Int, @StringRes val body: Int, val ready: Boolean) {
+    READY(R.string.then_ready_title, R.string.then_ready_body, ready = true),
+    ALWAYS_ON(R.string.then_always_on_title, R.string.then_always_on_body, ready = true),
+    AOD_OFF(R.string.then_aod_off_title, R.string.then_aod_off_body, ready = false),
+    NEEDS_SHIELD(R.string.then_needs_shield_title, R.string.then_needs_shield_body, ready = false),
+}
+
+internal fun aodReadiness(aod: AodMode, shieldOn: Boolean): AodReadiness = when {
+    aod == AodMode.OFF -> AodReadiness.AOD_OFF
+    !shieldOn -> AodReadiness.NEEDS_SHIELD
+    aod == AodMode.NEW_NOTIFICATIONS -> AodReadiness.READY
+    else -> AodReadiness.ALWAYS_ON
+}
+
+/**
  * What the LED does while a message waits: first how long it holds the screen on after a new
  * message ([BrightFor]), the one choice every phone has. Then, on One UI ([aod]; elsewhere the LED
- * goes out), where it goes after that ([AfterBright]), and the always-on display it goes onto.
+ * goes out), where it goes after that ([AfterBright]).
  */
 @Composable
 internal fun WaitingCard(
@@ -71,141 +81,85 @@ internal fun WaitingCard(
     aod: AodMode?,
     shieldOn: Boolean,
     onAod: () -> Unit,
+    onShield: () -> Unit,
     onBrightFor: (BrightFor) -> Unit,
     onAfterBright: (AfterBright) -> Unit,
 ) {
+    val noBright = settings.brightFor == BrightFor.OFF
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionLabel(stringResource(R.string.waiting_bright_label), GlowPalette.TextMuted)
             ChipRow(BrightFor.entries, settings.brightFor, onBrightFor)
-            OptionBody(settings.brightFor == BrightFor.OFF) { off ->
+            OptionBody(noBright) { off ->
                 stringResource(if (off) R.string.waiting_bright_off_body else R.string.waiting_bright_body)
             }
         }
         if (aod == null) {
             // No always-on display the LED is known to go onto: it goes out.
-            OptionNote(stringResource(R.string.waiting_then_off_body))
+            OptionNote(stringResource(outNote(noBright)))
         } else {
             CardDivider()
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel(stringResource(R.string.waiting_then_label), GlowPalette.TextMuted)
-                ChipRow(AfterBright.entries, settings.afterBright, onAfterBright)
-                OptionBody(settings.afterBright) { after ->
-                    stringResource(if (after == AfterBright.AOD) R.string.waiting_then_aod_body else R.string.waiting_then_off_body)
-                }
-            }
-            CardDivider()
-            AodRows(aod, shieldOn, onAod)
+            ThenSection(settings.afterBright, noBright, aodReadiness(aod, shieldOn), onAod, onShield, onAfterBright)
         }
     }
 }
 
 /**
- * One UI's always-on display, laid out as the dashboard's other cards are: its label, then a row
- * with its mode and what the LED does in it, lit in cyan when on, and a way to the Settings page
- * where it is changed. Apps can't switch it (Samsung's own AOD page needs a signature permission),
- * so no switch that wouldn't flip. The LED is drawn on it in Lumement effects' window
- * ([shieldOn]), which the screen card asks for while it is off.
- *
- * Under a divider, until it is set to Show for new notifications, what that mode would bring from
- * the one set now, all in quiet grey as it isn't needed: a tag that says it saves battery and is
- * optional, then the line, One UI's name for the mode a shade brighter, to look for there. It
- * leads to the same page.
+ * Where the LED goes once its bright minutes are over. On the always-on display, a row right under
+ * the choice says whether it will work, lit in cyan when it will and amber when something is
+ * missing, and leads to what's missing: One UI's Settings page (apps can't switch the always-on
+ * display: Samsung's own page needs a signature permission) or Lumement effects. Off, a line says
+ * the LED goes out, or that it never lights at all with no bright minutes either.
  */
 @Composable
-private fun AodRows(aod: AodMode, shieldOn: Boolean, onAod: () -> Unit) {
-    val aodOn = aod != AodMode.OFF
-    val action = stringResource(R.string.setup_aod_grant)
-    val tip = when (aod) {
-        AodMode.OFF -> R.string.waiting_tip_off
-        AodMode.ON -> R.string.waiting_tip_on
-        AodMode.NEW_NOTIFICATIONS -> null
-    }
-    // Kept while the tip folds away, so its text doesn't go before its space does.
-    var lastTip by remember { mutableIntStateOf(R.string.waiting_tip_off) }
-    SideEffect { if (tip != null) lastTip = tip }
+private fun ThenSection(
+    after: AfterBright,
+    noBright: Boolean,
+    readiness: AodReadiness,
+    onAod: () -> Unit,
+    onShield: () -> Unit,
+    onAfterBright: (AfterBright) -> Unit,
+) {
+    // Kept while the row folds away, so its text doesn't change before its space goes.
+    var shown by remember { mutableStateOf(readiness) }
+    SideEffect { if (after == AfterBright.AOD) shown = readiness }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionLabel(stringResource(R.string.waiting_aod_label), GlowPalette.TextMuted)
-        LinkRow(
-            title = stringResource(
-                when (aod) {
-                    AodMode.OFF -> R.string.waiting_aod_off
-                    AodMode.ON -> R.string.waiting_aod_on
-                    AodMode.NEW_NOTIFICATIONS -> R.string.waiting_aod_new
-                },
-            ),
-            summary = stringResource(
-                when {
-                    !aodOn -> R.string.waiting_led_screen
-                    !shieldOn -> R.string.waiting_led_needs_shield
-                    else -> R.string.waiting_led_aod
-                },
-            ),
-            action = action,
-            onClick = onAod,
-            leading = { StatusTile(aodOn) { tint, line -> aodPhone(tint, line) } },
-        )
-        Disclosure(visible = tip != null) {
-            Column {
-                CardDivider()
-                Column(
-                    Modifier
-                        .padding(top = 6.dp)
-                        .fillMaxWidth()
-                        .rowBleed()
-                        .clip(GlowShapes.Tile)
-                        .clickable(role = Role.Button, onClickLabel = action, onClick = onAod)
-                        // None below: the card's own padding ends it, as it starts it above the label.
-                        .padding(start = RowBleed, end = RowBleed, top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Canvas(Modifier.size(12.dp)) {
-                            val line = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                            battery(GlowPalette.TextMuted, line)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.waiting_tip_tag),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = GlowPalette.TextMuted,
-                        )
-                    }
-                    Tip(tip ?: lastTip)
-                }
+        SectionLabel(stringResource(R.string.waiting_then_label), GlowPalette.TextMuted)
+        ChipRow(AfterBright.entries, after, onAfterBright)
+        Disclosure(visible = after == AfterBright.AOD) {
+            Box(Modifier.padding(top = 2.dp)) {
+                LinkRow(
+                    title = stringResource(shown.title),
+                    summary = stringResource(shown.body),
+                    action = stringResource(if (shown == AodReadiness.NEEDS_SHIELD) R.string.access_shield_grant else R.string.setup_aod_grant),
+                    onClick = if (shown == AodReadiness.NEEDS_SHIELD) onShield else onAod,
+                    leading = { StatusTile(shown.ready) { tint, line -> aodPhone(tint, line) } },
+                )
             }
+        }
+        Disclosure(visible = after == AfterBright.OFF) {
+            OptionNote(stringResource(outNote(noBright)))
         }
     }
 }
 
-/** What the mode would bring, its One UI name a shade brighter. */
-@Composable
-private fun Tip(@StringRes text: Int) {
-    val mode = stringResource(R.string.waiting_tip_mode)
-    val tip = stringResource(text, mode)
-    val styled = remember(tip, mode) {
-        buildAnnotatedString {
-            append(tip)
-            val at = tip.indexOf(mode)
-            if (at >= 0) addStyle(SpanStyle(color = GlowPalette.TextPrimary), at, at + mode.length)
-        }
-    }
-    Text(text = styled, style = MaterialTheme.typography.bodySmall, color = GlowPalette.TextMuted)
-}
+/** Where the LED goes out after its bright minutes: or, with none, that it never lights at all. */
+@StringRes
+private fun outNote(noBright: Boolean): Int = if (noBright) R.string.waiting_then_never_body else R.string.waiting_then_off_body
 
 private val TILE = 36.dp
 private val TILE_GAP = 14.dp
 
-/** A row's mark in a small tile: lit in cyan, edged in it, when [on]; faint when off. */
+/** A row's mark in a small tile: lit in cyan when [ready], in amber when something is missing. */
 @Composable
-private fun StatusTile(on: Boolean, glyph: DrawScope.(tint: Color, line: Stroke) -> Unit) {
-    val tint = if (on) GlowPalette.Cyan else GlowPalette.TextFaint
+private fun StatusTile(ready: Boolean, glyph: DrawScope.(tint: Color, line: Stroke) -> Unit) {
+    val tint = if (ready) GlowPalette.Cyan else GlowPalette.Amber
     Box(
         Modifier
             .size(TILE)
             .clip(GlowShapes.Tile)
-            .background(if (on) GlowPalette.Cyan.copy(alpha = 0.08f) else GlowPalette.SurfaceRaised)
-            .border(1.dp, if (on) GlowPalette.Cyan.copy(alpha = 0.5f) else GlowPalette.OutlineSoft, GlowShapes.Tile),
+            .background(tint.copy(alpha = 0.08f))
+            .border(1.dp, tint.copy(alpha = 0.5f), GlowShapes.Tile),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(18.dp)) {

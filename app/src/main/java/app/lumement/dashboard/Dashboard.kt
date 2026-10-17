@@ -96,6 +96,7 @@ import app.lumement.GlassHazeTarget
 import app.lumement.GlowLauncher
 import app.lumement.GlowPrefs
 import app.lumement.GlowSettings
+import app.lumement.aodSwitchUris
 import app.lumement.GlowStyle
 import app.lumement.PremiumState
 import app.lumement.R
@@ -275,6 +276,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
 
     // Grants land in secure settings, on Samsung a moment after the service they turn on has
     // connected and brought the app back (GrantReturn): watch them, so the step turns when they do.
+    // The always-on display's switches too: its quick settings tile or Power saving can flip them
+    // with the dashboard still in front, and the Screen tab's row says what they mean for the LED.
     DisposableEffect(context) {
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) = refresh()
@@ -283,6 +286,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
         for (key in listOf(ENABLED_NOTIFICATION_LISTENERS, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)) {
             resolver.registerContentObserver(Settings.Secure.getUriFor(key), false, observer)
         }
+        for (uri in aodSwitchUris()) resolver.registerContentObserver(uri, false, observer)
         onDispose { resolver.unregisterContentObserver(observer) }
     }
 
@@ -532,6 +536,7 @@ private fun ScreenPage(
             aod = access.oneUiAod,
             shieldOn = access.shield,
             onAod = actions.aod,
+            onShield = actions.shield,
             onBrightFor = { choice -> edit(save = true) { it.copy(brightFor = choice) } },
             onAfterBright = { choice -> edit(save = true) { it.copy(afterBright = choice) } },
         )
