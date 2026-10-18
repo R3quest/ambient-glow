@@ -386,17 +386,34 @@ internal class LockFlow(
     fun destroy() {
         GlowLog.d { "act onDestroy" }
         destroyed = true
+        // Finished, and the next glow screen is up already ([finish]): GlowShield's windows, the
+        // arrival and the message's pop-up are its own now.
+        val replaced = GlowSession.host.let { it != null && it !== this }
         endLedWindow()
         port.cancelAfterCall()
         unstow()
         port.cancelTimers()
         GlowSession.detach(this)
-        shield.hide()
-        // Messages still waiting: the always-on display's window stays, for the LED at the next sleep.
-        if (GlowPending.isEmpty) shield.removeLed() else shield.removeLit()
-        shield.stopArrival()
-        port.dismissMessage()
+        if (!replaced) {
+            shield.hide()
+            // Messages still waiting: the always-on display's window stays, for the LED at the next sleep.
+            if (GlowPending.isEmpty) shield.removeLed() else shield.removeLit()
+            shield.stopArrival()
+            port.dismissMessage()
+        }
         listenForSleep(false)
+    }
+
+    /**
+     * The session is over: the LED goes, and the glow screen finishes, the listener's host no
+     * longer. Android destroys it a moment later (up to 10 s, once the next activity is idle). A
+     * message meanwhile went to it, which lit the phone and went, and no glow screen came up for
+     * it; now the listener launches a new one.
+     */
+    private fun finish() {
+        clearLed()
+        GlowSession.detach(this)
+        port.finishSession()
     }
 
     fun onTimer(timer: LockTimer) {
@@ -727,7 +744,7 @@ internal class LockFlow(
                 port.schedule(LockTimer.SLEEP_AFTER_BREATH, LED_BREATH_MS.toLong())
             }
         } else {
-            port.finishSession()
+            finish()
         }
     }
 
@@ -833,7 +850,7 @@ internal class LockFlow(
         settings.value = port.loadSettings()
         if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
-            port.finishSession()
+            finish()
             return
         }
         armBrightEnd()
@@ -899,7 +916,7 @@ internal class LockFlow(
         arrivalDue = false
         shield.stopArrival()
         if (ending.value) {
-            port.finishSession()
+            finish()
             return
         }
         coverSleep = false
@@ -1148,7 +1165,7 @@ internal class LockFlow(
         GlowLog.d { "act user dismiss face=${face.value}" }
         if (leaveIfUnlocked()) return
         if (ending.value) {
-            port.finishSession()
+            finish()
         } else if (face.value == Face.LED) {
             userLooked("tap")
             showLockScreen()
@@ -1393,7 +1410,7 @@ internal class LockFlow(
         arrivalDue = false
         shield.stopArrival()
         if (GlowPending.isEmpty) {
-            port.finishSession()
+            finish()
             return
         }
         listenForSleep(true)
@@ -1489,7 +1506,7 @@ internal class LockFlow(
         endLedWindow()
         port.cancelTimers()
         if (ending.value || GlowPending.isEmpty) {
-            port.finishSession()
+            finish()
             return
         }
         face.value = Face.AWAY

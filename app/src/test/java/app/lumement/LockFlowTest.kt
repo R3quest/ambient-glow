@@ -748,6 +748,65 @@ class LockFlowTest {
         assertFalse(phone.panelLocked)
     }
 
+    /** A new message as the listener hands it on ([NotificationWakerService.onNotificationPosted]): to the glow screen on top, or a launch. */
+    private fun messageArrives(key: String) {
+        message(key)
+        val host = GlowSession.host
+        if (host != null && !host.isAway) phone.then { host.onNewMessage() } else phone.startGlowScreen(WakeMode.WAKE)
+    }
+
+    /** Read as the listener has it: the glow screen on top is told. */
+    private fun read(key: String) {
+        GlowPending.remove(key)
+        phone.then { GlowSession.host?.onPendingChanged() }
+    }
+
+    /**
+     * Read on the dark phone, and a new message before Android had destroyed the finished glow
+     * screen (a chat clearing its notification and posting the next, or a message read just as
+     * another came): the listener handed it to the finishing glow screen, which lit the phone and
+     * went, and none came up for it. The LED stayed dark for that message (found by
+     * [LockFlowFuzzTest]).
+     */
+    @Test
+    fun aMessageJustAfterTheLastWasReadGetsAGlowScreenOfItsOwn() {
+        phone.destroyAfterMs = 600 // Android takes a moment to destroy a finished activity
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.pressPower() // dark when the message comes
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 10_000)
+        assertFalse("the lock screen timed out", phone.interactive)
+
+        read("chat-1")
+        assertTrue(phone.finished)
+        messageArrives("chat-2")
+        phone.advance(4_000)
+
+        assertTrue("a glow screen up for the new message", phone.glowScreenUp)
+        assertTrue("and the listener's host", GlowSession.host === flow)
+    }
+
+    /**
+     * Android destroys a finished activity once the next one is idle, up to 10 s later. The
+     * finished glow screen, destroyed after the next one came up, took GlowShield's windows with
+     * it: the new one's lit LED was gone from over the ready lock screen, which its locks held on.
+     */
+    @Test
+    fun aFinishedGlowScreenGoingLeavesTheNextOnesLedAlone() {
+        phone.destroyAfterMs = 5_000
+        readyUnderLed()
+        read("chat-1") // read elsewhere under the LED: asleep at once, finished at the screen-off
+        phone.advance(1_000)
+        assertTrue(phone.finished)
+
+        messageArrives("chat-2")
+        phone.advance(6_000)
+
+        assertTrue("the new glow screen's LED in its window", flow.ledInWindow.value)
+        assertTrue("and the window up", phone.litShown)
+    }
+
     private companion object {
         const val MINUTE = 60_000L
     }
