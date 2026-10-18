@@ -94,6 +94,7 @@ soak: ## Battery run on the unplugged phone (adb over Wi-Fi): MODE=lit|aod|idle|
 scripts-test: ## Self-test the measurement scripts' own logic
 	python3 -I scripts/diary.py --selftest
 	python3 -I scripts/scenario.py --selftest
+	scripts/soak_lib_test.sh
 
 # SCENARIO=one (a message, read), two (two, one read while the other waits, then it) or all.
 SCENARIO ?= all

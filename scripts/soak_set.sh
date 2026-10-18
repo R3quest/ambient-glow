@@ -8,8 +8,10 @@
 # - hybrid BRIGHT=TEN, 60 min: the shipped flow end to end, to check the parts add up.
 set -euo pipefail
 ADB=${ADB:-adb}
-sh() { "$ADB" shell "$@" | tr -d '\r'; }
 log() { echo "[$(date +%H:%M)] soak-set: $*"; }
+fail() { log "$*"; exit 1; }
+# shellcheck source=soak_lib.sh
+. "$(dirname "$0")/soak_lib.sh" # sh: adb shell with a timeout
 
 aod_was=$(sh settings get system aod_mode)
 new_was=$(sh settings get system aod_show_for_new_noti)

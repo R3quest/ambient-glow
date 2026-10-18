@@ -34,12 +34,12 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 TAG="soak-$STAMP"
 
 # Every helper reads adb's output to the end: a reader that stops early (grep -m1) breaks the pipe,
-# and with pipefail that ends the run.
-sh() { "$ADB" shell "$@" | tr -d '\r'; }
+# and with pipefail that ends the run. sh (adb shell with a timeout), counter, counter_read, step.
 fail() { echo "soak: $*" >&2; exit 1; }
+# shellcheck source=soak_lib.sh
+. "$(dirname "$0")/soak_lib.sh"
 wakefulness() { sh dumpsys power | awk -F= '/mWakefulness=/ && !seen {print $2; seen = 1}'; }
 held() { [ "$(sh dumpsys power | awk -v tag="'Lumement:$1'" '$2 == tag' | wc -l)" -gt 0 ]; }
-counter() { sh dumpsys battery | awk -F': ' '/Charge counter/ && !seen {print $2; seen = 1}'; }
 level() { sh dumpsys battery | awk -F': ' '/^  level/ && !seen {print $2; seen = 1}'; }
 # The display itself: OFF, ON, or DOZE / DOZE_SUSPEND (the always-on display). Wakefulness says
 # Dozing even with the always-on display off, so it can't tell.
@@ -118,22 +118,13 @@ ticks() {
     done
 }
 
-# Waits for the charge counter to step from [1], looking every [3] s, for up to [2] s.
-step() {
-    local from=$1 since
-    since=$(date +%s)
-    while [ "$(counter)" = "$from" ]; do
-        [ $(($(date +%s) - since)) -lt "$2" ] || fail "the charge counter hasn't moved from $from µAh in $2 s"
-        sleep "$3"
-    done
-}
-
 echo "soak: waiting for the charge counter's next step to start on"
-step "$(counter)" 3600 5
+c=$(counter_read)
+step "$c" 3600 5
 sh dumpsys batterystats --reset >/dev/null
 # A hybrid run's message arrives as it starts, so its bright phase and the handover are in it.
 [ "$MODE" = hybrid ] && post
-c0=$(counter)
+c0=$(counter_read)
 l0=$(level)
 t0=$(date +%s)
 mapfile -t k0 < <(ticks)
@@ -142,8 +133,9 @@ echo "soak: started at $(date +%H:%M), counter $c0 µAh; back in $MINUTES min"
 sleep $((MINUTES * 60))
 
 echo "soak: waiting for the charge counter's next step to end on"
-step "$(counter)" 3600 15
-c1=$(counter)
+c=$(counter_read)
+step "$c" 3600 15
+c1=$(counter_read)
 l1=$(level)
 t1=$(date +%s)
 mapfile -t k1 < <(ticks)
