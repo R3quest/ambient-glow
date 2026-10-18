@@ -66,10 +66,16 @@ object GlowPending {
         return entries.removeAll { it.key == key }.also { if (it) save() }
     }
 
-    /** [pkg] was muted: its waiting messages leave the LED at once. True if any did. */
+    /**
+     * [pkg] was muted: its waiting messages leave the LED at once, as if read, so the last of them
+     * going ends the streak ([GlowSession.allRead]). True if any did.
+     */
     fun removeApp(pkg: String): Boolean {
         if (message?.sbn?.packageName == pkg) message = null
-        return entries.removeAll { it.pkg == pkg }.also { if (it) save() }
+        if (!entries.removeAll { it.pkg == pkg }) return false
+        save()
+        if (isEmpty) GlowSession.allRead()
+        return true
     }
 
     /** [pkg] was given a new colour: its waiting messages blink in it from the next breath. */
@@ -366,9 +372,9 @@ object GlowSession {
     val screenTakers = mutableSetOf<String>()
 
     /**
-     * Nothing waits any more ([GlowPending] empty: read, dismissed, read unseen, or its app muted):
-     * the next message starts a new streak, and with no glow screen up to take the LED's windows
-     * down, they go here. Main thread only.
+     * Nothing waits any more ([GlowPending] empty: read, dismissed, read unseen, or its app muted,
+     * which [GlowPending.removeApp] sees to itself): the next message starts a new streak, and with
+     * no glow screen up to take the LED's windows down, they go here. Main thread only.
      */
     fun allRead() {
         bright = BrightStreak()

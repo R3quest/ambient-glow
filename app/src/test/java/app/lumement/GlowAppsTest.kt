@@ -157,6 +157,22 @@ class GlowAppsTest {
     }
 
     @Test
+    fun mutingTheLastAppThatWaitsEndsTheStreak() {
+        // As if its messages were read: the next message, from any app, gets a whole bright phase.
+        GlowPending.entries.clear()
+        GlowPending.put(PendingGlow(key = "1", pkg = "chat", color = whatsApp))
+        GlowPending.put(PendingGlow(key = "2", pkg = "mail", color = telegram))
+        val streak = BrightStreak().onMessage(now = 0L, brightForMs = BrightFor.TEN.ms)
+        GlowSession.bright = streak
+
+        assertTrue(GlowPending.removeApp("chat"))
+        assertEquals("mail still waits: the streak goes on", streak, GlowSession.bright)
+        assertTrue(GlowPending.removeApp("mail"))
+        assertEquals(BrightStreak(), GlowSession.bright)
+        GlowSession.bright = BrightStreak()
+    }
+
+    @Test
     fun anAppCanBeChosenForBeforeItsFirstMessageAndArrivesSo() {
         val prefs = FakePrefs()
         GlowApps.setMuted(prefs, "shop", true)
