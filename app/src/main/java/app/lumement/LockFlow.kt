@@ -759,7 +759,11 @@ internal class LockFlow(
     }
 
     override fun onPendingChanged() {
-        if (!GlowPending.isEmpty) return
+        if (!GlowPending.isEmpty) {
+            // The still LED shows every waiting app's colour at once: drawn again without the one read.
+            if (aodLit) shield.startAodLed(GlowPending::colors, 0)
+            return
+        }
         if (ledInWindow.value && port.interactive) {
             // Read elsewhere while the lock screen waits under the LED: don't pop it up. Black over
             // it and asleep at once; the glow screen finishes when the screen goes off.

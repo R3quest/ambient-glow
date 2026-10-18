@@ -172,8 +172,8 @@ internal fun ledOnAod(waiting: Boolean, resting: Boolean, putAway: Boolean, inCa
  * sleeps as it does with the always-on display alone. Breathing there cost the phone 42 mA more
  * than the always-on display alone (measured on the S23: 130 against 88): a breath needs the CPU
  * held to the next one and the panel taking frames. A draw wake lock lets the panel take the rise's
- * frames. Every [STILL_STEP_MS] it rises again a step over (burn-in) in the next waiting app's
- * colour, woken by an alarm that may fire while the phone idles.
+ * frames. It shows every waiting app's colour at once ([LedLook]). Every [STILL_STEP_MS] it rises
+ * again a step over (burn-in), woken by an alarm that may fire while the phone idles.
  */
 @RequiresApi(Build.VERSION_CODES.Q)
 internal class LedRound(
@@ -263,7 +263,7 @@ internal class LedRound(
         // On the always-on display the frame waits at its calmest; over the lit panel it quiets
         // down through the bright phase.
         val calm = if (dozing) 1f else GlowSession.bright.settledAt(SystemClock.elapsedRealtime())
-        surface.show(settings, geometry, palette[cycle % palette.size], cycle, calm)
+        surface.show(settings, geometry, palette[cycle % palette.size], cycle, calm, still = palette.takeIf { dozing })
         if (dozing) {
             rise()
         } else {
@@ -312,8 +312,8 @@ internal class LedRound(
         const val HOLD_FRAMES = 3L
 
         /**
-         * The still LED moves a step (burn-in) and to the next app's colour this often. An alarm
-         * allowed while idle fires at most once in 9 minutes for an app.
+         * The still LED moves a step (burn-in) this often. An alarm allowed while idle fires at
+         * most once in 9 minutes for an app.
          */
         const val STILL_STEP_MS = 10 * 60_000L
     }

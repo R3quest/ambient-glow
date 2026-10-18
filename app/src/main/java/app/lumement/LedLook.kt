@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -18,6 +20,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -175,6 +178,10 @@ private class Tones(color: Color) {
  * changes more than its alpha. Each material is its own [MaterialLook], built only with what it
  * draws. The frame is the Edge Frame of [frameOf] waiting, always in plain light ([FrameLook]),
  * whatever [material] says, quieting down as [calm] goes from 0 to 1.
+ *
+ * [still]: on the always-on display, every waiting app's colour (newest first) at once, as the
+ * panel holds one frame and can't be woken to show them in turn: the frame in their colours round
+ * the edge, the dot or ring in plain light ([StillLook]).
  */
 internal class LedLook(
     material: LedMaterial,
@@ -183,9 +190,12 @@ internal class LedLook(
     form: LedForm,
     frameOf: GlowSettings? = null,
     calm: Float = 0f,
+    still: List<Color>? = null,
 ) {
     private val look: MaterialLook = if (form == LedForm.FRAME) {
-        FrameLook(color, light, calm, frameOf?.let { frameTint(it, color) })
+        FrameLook(color, light, calm, frameOf?.let { frameTint(it, color) } ?: still?.takeIf { it.size > 1 }?.let(::appsSweep))
+    } else if (still != null) {
+        StillLook(still.ifEmpty { listOf(color) }, light, form == LedForm.RING)
     } else {
         val onCamera = form == LedForm.RING
         when (material) {
@@ -227,6 +237,13 @@ internal fun frameTint(settings: GlowSettings, color: Color): Brush? =
         movingSweep(Offset.Zero, *stops).apply { rotateTo(edgeTintRestDegrees(settings.edgeColor), Offset.Zero) }
     }
 
+/** [colors] round the origin in equal parts, the first from the top, clockwise, edge to edge. */
+private fun appsSweep(colors: List<Color>): Brush {
+    val part = 1f / colors.size
+    val stops = colors.flatMapIndexed { i, c -> listOf(i * part to c, (i + 1) * part to c) }
+    return movingSweep(Offset.Zero, *stops.toTypedArray()).apply { rotateTo(STILL_FROM_DEGREES, Offset.Zero) }
+}
+
 /** What every material is built from: the light's size, the app's colour and its tones, and neon's halo. */
 private abstract class MaterialLook(protected val color: Color, light: LedLight, protected val onCamera: Boolean) {
     protected val core = light.core
@@ -242,21 +259,25 @@ private abstract class MaterialLook(protected val color: Color, light: LedLight,
     protected val ringSpan = Size(2f * ring, 2f * ring)
 
     /** Neon's halo, which the coal's ring, the bead and the gem glow in too. */
-    protected val halo: Brush by lazy(LazyThreadSafetyMode.NONE) {
-        if (onCamera) {
+    protected val halo: Brush by lazy(LazyThreadSafetyMode.NONE) { haloOf(color) }
+
+    /** The halo in [tint]. */
+    protected fun haloOf(tint: Color): Brush {
+        val clear = tint.copy(alpha = 0f)
+        return if (onCamera) {
             Brush.radialGradient(
                 0f to clear,
                 lens / bloom to clear,
-                ring / bloom to color.copy(alpha = 0.65f),
-                (ring + (bloom - ring) * 0.35f) / bloom to color.copy(alpha = 0.22f),
+                ring / bloom to tint.copy(alpha = 0.65f),
+                (ring + (bloom - ring) * 0.35f) / bloom to tint.copy(alpha = 0.22f),
                 1f to clear,
                 center = Offset.Zero,
                 radius = bloom,
             )
         } else {
             Brush.radialGradient(
-                0f to color.copy(alpha = 0.65f),
-                0.35f to color.copy(alpha = 0.22f),
+                0f to tint.copy(alpha = 0.65f),
+                0.35f to tint.copy(alpha = 0.22f),
                 1f to clear,
                 center = Offset.Zero,
                 radius = bloom,
@@ -288,6 +309,65 @@ private class NeonLook(color: Color, light: LedLight, onCamera: Boolean) : Mater
         }
     }
 }
+
+/**
+ * The dot or ring on the always-on display, where One UI runs the panel at ~10 nits (measured on
+ * the S23, 2026-10-18) and the LED is one still frame: plain light whatever the material, its core
+ * whiter than the lit LED's, each of [colors] a slice of the dot or an arc of the ring, the first
+ * from the top, clockwise, their halo one light blending from each into the next. It is drawn
+ * larger too ([AOD_CORE_EXTRA], [LedSurface.show]).
+ */
+private class StillLook(private val colors: List<Color>, light: LedLight, onCamera: Boolean) : MaterialLook(colors.first(), light, onCamera) {
+    private val sweep = 360f / colors.size
+    private val stillHalo: Brush = if (colors.size == 1) halo else blendedHalo()
+    private val hots = colors.map { lerp(it, Color.White, STILL_HOT_WHITE) }
+    private val stillHotStroke = Stroke(line * STILL_HOT_LINE)
+    private val coreBox = Offset(-core, -core)
+    private val coreSpan = Size(2f * core, 2f * core)
+    private val hotRadius = core * STILL_HOT_CORE
+    private val hotBox = Offset(-hotRadius, -hotRadius)
+    private val hotSpan = Size(2f * hotRadius, 2f * hotRadius)
+
+    override val moves: Boolean get() = false
+
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
+        drawCircle(stillHalo, bloom, Offset.Zero, alpha = alpha)
+        for (i in colors.indices) {
+            val from = STILL_FROM_DEGREES + i * sweep
+            if (onCamera) {
+                drawArc(colors[i], from, sweep, useCenter = false, topLeft = ringBox, size = ringSpan, alpha = alpha, style = ringStroke)
+                drawArc(hots[i], from, sweep, useCenter = false, topLeft = ringBox, size = ringSpan, alpha = alpha, style = stillHotStroke)
+            } else {
+                drawArc(colors[i], from, sweep, useCenter = true, topLeft = coreBox, size = coreSpan, alpha = alpha)
+                drawArc(hots[i], from, sweep, useCenter = true, topLeft = hotBox, size = hotSpan, alpha = alpha)
+            }
+        }
+    }
+
+    /** Each colour at the middle of its arc, blending into the next, under the halo's falloff ([haloOf] in white). */
+    private fun blendedHalo(): Brush {
+        val n = colors.size
+        val seam = lerp(colors.last(), colors.first(), 0.5f)
+        val stops = listOf(0f to seam) + colors.mapIndexed { i, c -> (i + 0.5f) / n to c } + listOf(1f to seam)
+        val hues = movingSweep(Offset.Zero, *stops.toTypedArray()).apply { rotateTo(STILL_FROM_DEGREES, Offset.Zero) }
+        val falloff = haloOf(Color.White) as ShaderBrush
+        return object : ShaderBrush() {
+            override fun createShader(size: Size): Shader =
+                android.graphics.ComposeShader(hues.createShader(size), falloff.createShader(size), android.graphics.PorterDuff.Mode.DST_IN)
+        }
+    }
+}
+
+/** The always-on display's dot and ring: this much larger than the lit LED. */
+internal val AOD_CORE_EXTRA = 2.5.dp
+
+/** Where the still LED's first colour starts: the top (a sweep's 0 is 3 o'clock). */
+private const val STILL_FROM_DEGREES = -90f
+
+/** The still LED's hot core: its colour under this much white (the lit LED's 0.45), its share of the ring's line and of the dot. */
+private const val STILL_HOT_WHITE = 0.7f
+private const val STILL_HOT_LINE = 0.55f
+private const val STILL_HOT_CORE = 0.6f
 
 // ---------------------------------------------------------------------------------------------
 // The frame LED: the Edge Frame waiting, in plain light. A line round the whole screen is a lot of

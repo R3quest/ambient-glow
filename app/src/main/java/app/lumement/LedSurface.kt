@@ -70,9 +70,10 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
     /**
      * The LED in [color] where the screen shows it at breath [cycle], its burn-in step included,
      * with [settings] as the screen shows them and [geometry] fitted. Dark until [breathe]. The
-     * frame quiets down as [calm] goes from 0 to 1 ([BrightStreak.settledAt]).
+     * frame quiets down as [calm] goes from 0 to 1 ([BrightStreak.settledAt]). [still]: on the
+     * always-on display, every waiting app's colour at once, the dot and ring larger ([LedLook]).
      */
-    fun show(settings: GlowSettings, geometry: ScreenGeometry, color: Int, cycle: Int, calm: Float) {
+    fun show(settings: GlowSettings, geometry: ScreenGeometry, color: Int, cycle: Int, calm: Float, still: List<Int>? = null) {
         val density = context.resources.displayMetrics.density
         val size = Size(view.width.toFloat(), view.height.toFloat())
         val form = settings.ledForm
@@ -80,11 +81,11 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         val light = if (form == LedForm.FRAME) {
             ledFrameLight(settings, size, geometry.frameCornerPx(density), inset = step, dp = density)
         } else {
-            val core = settings.dotSize.radius.value * density
+            val core = (settings.dotSize.radius.value + if (still != null) AOD_CORE_EXTRA.value else 0f) * density
             ledLight(core, form == LedForm.RING, geometry.lensRadius(density), ringGrowPx = step, ringGap = LED_RING_GAP.value * density)
         }
         lightAt = ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density) + ledShiftAt(form, cycle)
-        look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, form, settings, calm)
+        look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, form, settings, calm, still?.map(::Color))
         setLevel(0f)
         // Neon: once, at its peak; the breath is the alpha. A material that moves: each step.
         if (look?.moves == false) paint(1f, LED_RISE_MS) else paint(0f, 0f)

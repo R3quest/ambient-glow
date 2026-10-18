@@ -271,6 +271,35 @@ class LockFlowTest {
         assertFalse(phone.covering)
     }
 
+    /** The still LED shows every waiting app's colour: one read elsewhere, it is drawn again without it, still asleep. */
+    @Test
+    fun oneReadOnTheAlwaysOnDisplayDrawsTheLedAgain() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = true
+        message()
+        message("chat-2")
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        logged("aod LED on")
+
+        phone.log.clear()
+        read("chat-1")
+        phone.advance(1_000)
+
+        logged("aod LED on")
+        assertTrue(phone.aodBreathing)
+        assertFalse(phone.interactive)
+        notLogged("wake")
+    }
+
+    /**
+     * One UI's "Show for new notifications" (2026-10-12): the display goes off first and the
+     * always-on display comes ~0.1 s after SCREEN_OFF. The flow relit the lit LED at that
+     * SCREEN_OFF, and the always-on display, with the panel holding the LED for next to nothing,
+     * never got its turn.
+     */
     @Test
     fun shownForNewNotificationsTheLedWaitsForTheAlwaysOnDisplay() {
         phone.settings = GlowSettings(brightFor = BrightFor.OFF)
