@@ -170,7 +170,8 @@ class Phone:
     def run(self, *args, timeout=60, retry=True):
         for attempt in (1, 2):
             try:
-                r = subprocess.run([self.adb, *args], capture_output=True, text=True, timeout=timeout)
+                # stdin closed: adb shell would otherwise read the terminal, eating what is typed.
+                r = subprocess.run([self.adb, *args], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
             except FileNotFoundError:
                 raise Fail(f"no adb at {self.adb}: set ADB=…")
             except subprocess.TimeoutExpired:
@@ -187,8 +188,11 @@ class Phone:
 
     def now(self):
         """The phone's clock: (epoch seconds, "MM-dd HH:mm:ss.000" for logcat -T)."""
-        epoch, day, clock = self.shell("date '+%s %m-%d %H:%M:%S'").split()
-        return int(epoch), f"{day} {clock}.000"
+        out = self.shell("date '+%s %m-%d %H:%M:%S'")
+        m = re.fullmatch(r"(\d+) (\d\d-\d\d \d\d:\d\d:\d\d)", out.strip())
+        if not m:
+            raise Fail(f"the phone's clock reads '{out.strip()}'")
+        return int(m.group(1)), f"{m.group(2)}.000"
 
     def pid(self):
         out = self.shell(f"pidof {PKG}").split()
