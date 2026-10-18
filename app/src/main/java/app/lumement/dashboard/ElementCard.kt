@@ -65,25 +65,25 @@ private const val DIMMED = 0.45f
  * and Earth's colour chips show. A premium element says where [premium] stands under it.
  */
 @Composable
-internal fun ElementCard(settings: GlowSettings, accent: Color, premium: PremiumModel, onEffect: (GlowSettings) -> Unit) {
+internal fun ElementCard(settings: GlowSettings, accent: Color, premium: PremiumModel, onEffect: ((GlowSettings) -> GlowSettings) -> Unit) {
     val element = settings.element
     val presence = animateFloatAsState(if (settings.spawn) 1f else DIMMED, GlowMotion.stateChange(), label = "dim")
     // Each disclosure carries its own gap, so the card doesn't jump as it opens or closes.
     Column(Modifier.glowCard()) {
-        SectionLabel(stringResource(R.string.element), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.element), GlowPalette.TextMuted, heading = true)
         Spacer(Modifier.height(12.dp))
         ToggleRow(
             title = stringResource(R.string.effect_spawn_title),
             body = stringResource(R.string.effect_spawn_body),
             checked = settings.spawn,
-            onChange = { onEffect(settings.copy(spawn = it)) },
+            onChange = { picked -> onEffect { it.copy(spawn = picked) } },
         )
         Spacer(Modifier.height(12.dp))
         CardDivider()
         Spacer(Modifier.height(16.dp))
         Column(Modifier.graphicsLayer { alpha = presence.value }) {
             ElementPicker(element, enabled = settings.spawn) { picked ->
-                onEffect(settings.copy(element = picked))
+                onEffect { it.copy(element = picked) }
             }
             Spacer(Modifier.height(10.dp))
             val over = premium.state == PremiumState.Over

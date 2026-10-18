@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +42,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -161,15 +164,24 @@ private fun chipTextStyle(compact: Boolean): TextStyle = if (compact) {
     MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
 }
 
-/** A chip's label, tinted from muted to primary as [lit] goes 0 → 1; read in draw. */
+/** Least a chip's label shrinks to, at large font sizes, before it is cut short. */
+private val CHIP_LABEL_MIN = 8.sp
+
+/**
+ * A chip's label, tinted from muted to primary as [lit] goes 0 → 1; read in draw. Chips are equal
+ * widths, so where large text no longer fits one the label steps down until it does (never
+ * below [CHIP_LABEL_MIN]) rather than losing its end.
+ */
 @Composable
 internal fun ChipLabel(text: String, lit: () -> Float, compact: Boolean = false) {
+    val style = chipTextStyle(compact)
     BasicText(
         text = text,
-        style = chipTextStyle(compact),
+        style = style,
         color = { lerp(GlowPalette.TextMuted, GlowPalette.TextPrimary, lit()) },
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        autoSize = TextAutoSize.StepBased(minFontSize = CHIP_LABEL_MIN, maxFontSize = style.fontSize),
     )
 }
 
@@ -199,7 +211,10 @@ internal fun Modifier.selectionSurface(shape: Shape, on: State<Float>, selectedS
     }
 }
 
-/** A single chip that crossfades when chosen; equal-width rows use [SelectionRow] instead. */
+/**
+ * A single chip that crossfades when chosen; equal-width rows use [SelectionRow] instead. A
+ * [description] is what TalkBack says in place of a [label] abbreviated to fit ("CAM L").
+ */
 @Composable
 internal fun BladeChip(
     label: String,
@@ -207,6 +222,7 @@ internal fun BladeChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    description: String? = null,
     leading: @Composable () -> Unit = {},
 ) {
     val on = animateFloatAsState(
@@ -220,6 +236,8 @@ internal fun BladeChip(
             .clip(GlowShapes.Pill)
             .selectionSurface(GlowShapes.Pill, on, selectedStroke = 1.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            // Inside the selection, so it keeps its role and state and only the words change.
+            .then(if (description != null) Modifier.clearAndSetSemantics { contentDescription = description } else Modifier)
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

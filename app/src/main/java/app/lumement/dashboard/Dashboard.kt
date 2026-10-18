@@ -46,6 +46,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,6 +55,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -82,10 +84,15 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -179,6 +186,9 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val inSetup = !access.ready || finishing
     val tabs = DashboardTab.entries
     val pager = rememberPagerState(pageCount = { tabs.size })
+    // The tabs on screen, even in part: while the LED is dragged (the settings change every frame)
+    // one kept composed beside them waits, and catches up once the drag settles, still off screen.
+    val inView by remember(pager) { derivedStateOf { pager.layoutInfo.visiblePagesInfo.mapTo(HashSet()) { it.index } } }
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
@@ -307,6 +317,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
             showcasing = false
             ledShowing = false
             ledLeaving = false
+            // A drag cut off by leaving settles with the app away, which showLed ignores.
+            ledHolding = false
         }
     }
 
@@ -426,10 +438,11 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                 beyondViewportPageCount = 1,
                             ) { page ->
+                                val pageSettings = heldAway(settings, pageFollows(page, inView, ledHolding))
                                 PageColumn(Modifier.fillMaxSize()) {
                                     when (tabs[page]) {
                                         DashboardTab.SCREEN -> ScreenPage(
-                                            settings = settings,
+                                            settings = pageSettings,
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
@@ -438,7 +451,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             edit = edit,
                                         )
                                         DashboardTab.EFFECT -> EffectPage(
-                                            settings = settings,
+                                            settings = pageSettings,
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
@@ -454,7 +467,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             onOpenLedLook = openLedLook,
                                         )
                                         DashboardTab.LED -> LedPage(
-                                            settings = settings,
+                                            settings = pageSettings,
                                             edit = edit,
                                             revealLook = revealLedLook,
                                             onLookRevealed = { revealLedLook = false },
@@ -507,6 +520,22 @@ internal fun Dashboard(reported: ScreenGeometry) {
             }
         }
     }
+}
+
+/**
+ * Whether [page] follows each change to the settings: always, but while the LED is dragged
+ * ([ledHolding]) only if it is on screen. A pick on one tab then plays out on the next off screen,
+ * not as it slides in.
+ */
+internal fun pageFollows(page: Int, inView: Set<Int>, ledHolding: Boolean): Boolean = !ledHolding || page in inView
+
+/** [value] while [shown]; otherwise the one it last showed, so what reads it can skip. */
+@Composable
+private fun <T> heldAway(value: T, shown: Boolean): T {
+    // Not state: being in view again is what recomposes it, with the newest value.
+    val last = remember { mutableListOf(value) }
+    if (shown) last[0] = value
+    return last[0]
 }
 
 @Composable
@@ -584,8 +613,9 @@ private fun EffectPage(
     onMoveLed: () -> Unit,
     onOpenLedLook: () -> Unit,
 ) {
-    val onEffect = { next: GlowSettings ->
-        edit(save = true) { next }
+    // Each pick is a change, applied to the settings as they are when it lands.
+    val onEffect = { change: (GlowSettings) -> GlowSettings ->
+        edit(save = true, change)
         onShowcase()
     }
     val effectOn = settings.arrival.playsEffect
@@ -599,7 +629,7 @@ private fun EffectPage(
                         sample = sample,
                         previewHeld = previewHeld,
                         loop = loop,
-                        onStyle = { style -> onEffect(settings.copy(style = style)) },
+                        onStyle = { style -> onEffect { it.copy(style = style) } },
                         onSample = onSample,
                         onMoveLed = onMoveLed,
                     )
@@ -652,8 +682,8 @@ private fun LedPage(
         )
         LedLookCard(
             settings = settings,
-            onLook = { look ->
-                edit(save = true) { look }
+            onLook = { change ->
+                edit(save = true, change)
                 onLed(false)
             },
             reveal = revealLook,
@@ -677,7 +707,7 @@ internal fun BrandHeader(modifier: Modifier = Modifier, action: (@Composable () 
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).semantics { heading() },
         )
         if (action != null) Box(Modifier.height(0.dp).wrapContentHeight(unbounded = true)) { action() }
     }
@@ -725,21 +755,27 @@ private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, onSelect: (I
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // The label lights as the blade reaches it, read in draw like the blade.
+                    // The label lights as the blade reaches it, read in draw like the blade. Large
+                    // text steps down to fit the tab rather than run past it.
+                    val style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                     BasicText(
                         text = stringResource(tab.label),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        style = style,
                         color = {
                             val position = pager.currentPage + pager.currentPageOffsetFraction
                             lerp(GlowPalette.TextPrimary, GlowPalette.TextFaint, abs(position - index).coerceIn(0f, 1f))
                         },
                         maxLines = 1,
+                        autoSize = TextAutoSize.StepBased(minFontSize = TAB_LABEL_MIN, maxFontSize = style.fontSize),
                     )
                 }
             }
         }
     }
 }
+
+/** Least a tab's label shrinks to at large font sizes. */
+private val TAB_LABEL_MIN = 9.sp
 
 private const val COUNTDOWN_SECONDS = (GlowLauncher.TEST_DELAY_MS / 1_000L).toInt()
 
@@ -842,11 +878,14 @@ private fun Padlock() {
 @Composable
 private fun TestHint(test: LockedTest, modifier: Modifier = Modifier) {
     Disclosure(visible = test.blocked || test.countdown > 0) {
+        // Said as it comes, too: with TalkBack the tap gives no other sign of what to do next.
         Text(
             text = stringResource(if (test.blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
             style = MaterialTheme.typography.bodySmall,
             color = if (test.blocked) GlowPalette.Amber else GlowPalette.TextMuted,
-            modifier = modifier.padding(bottom = 14.dp),
+            modifier = modifier
+                .padding(bottom = 14.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
         )
     }
 }

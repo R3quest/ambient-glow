@@ -41,20 +41,20 @@ import kotlin.math.sin
  * for frost to show, so neither blur nor area is offered there. The pictures light in [accent].
  */
 @Composable
-internal fun WaterOptions(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
+internal fun WaterOptions(settings: GlowSettings, accent: Color, onEffect: ((GlowSettings) -> GlowSettings) -> Unit) {
     val onBlack = settings.arrival.onBlack
     Column {
         Disclosure(visible = !onBlack) {
             Box(Modifier.padding(bottom = 14.dp)) {
                 OptionGroup(stringResource(R.string.glass_blur)) {
-                    GlyphTiles(GlassBlur.entries, settings.glassBlur, { onEffect(settings.copy(glassBlur = it)) }, ::WaterLines) { blur, lit, lines ->
+                    GlyphTiles(GlassBlur.entries, settings.glassBlur, { picked -> onEffect { it.copy(glassBlur = picked) } }, ::WaterLines) { blur, lit, lines ->
                         blurGlyph(blur, ink(lit, accent), lines.plain)
                     }
                 }
             }
         }
         OptionGroup(stringResource(R.string.glass_frost)) {
-            GlyphTiles(GlassFrost.entries, settings.glassFrost, { onEffect(settings.copy(glassFrost = it)) }, ::WaterLines) { frost, lit, lines ->
+            GlyphTiles(GlassFrost.entries, settings.glassFrost, { picked -> onEffect { it.copy(glassFrost = picked) } }, ::WaterLines) { frost, lit, lines ->
                 frostGlyph(frost, ink(lit, accent), lines)
             }
         }
@@ -66,7 +66,7 @@ internal fun WaterOptions(settings: GlowSettings, accent: Color, onEffect: (Glow
         Disclosure(visible = !onBlack && (settings.glassBlur != GlassBlur.OFF || settings.glassFrost != GlassFrost.OFF)) {
             Box(Modifier.padding(top = 14.dp)) {
                 OptionGroup(stringResource(R.string.glass_area)) {
-                    GlyphTiles(GlassArea.entries, settings.glassArea, { onEffect(settings.copy(glassArea = it)) }, ::WaterLines) { area, lit, lines ->
+                    GlyphTiles(GlassArea.entries, settings.glassArea, { picked -> onEffect { it.copy(glassArea = picked) } }, ::WaterLines) { area, lit, lines ->
                         areaGlyph(area, ink(lit, accent), lines)
                     }
                     // The fallback only concerns a blur that follows the wave; frost is drawn, so it always can.
