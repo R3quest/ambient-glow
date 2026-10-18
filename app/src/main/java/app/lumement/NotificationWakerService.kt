@@ -256,8 +256,10 @@ class NotificationWakerService : NotificationListenerService() {
         if (quietUpdate) return
 
         val settings = GlowPrefs.load(this)
-        // A new message: the LED's bright phase starts over, within the streak's time ([BrightStreak]).
-        GlowSession.bright = GlowSession.bright.onMessage(SystemClock.elapsedRealtime(), settings.brightFor.ms)
+        // A new message: the LED's bright phase starts over, within the streak's time ([BrightStreak]);
+        // the phone in use, a new streak ([brightAfterMessage]).
+        val inUse = power.isInteractive && !keyguard.isKeyguardLocked
+        GlowSession.bright = brightAfterMessage(GlowSession.bright, SystemClock.elapsedRealtime(), settings.brightFor.ms, inUse)
         LedDiary.note(this, "message", "waiting=${GlowPending.entries.size}")
         val arrival = arrivalFor(settings.arrival, GlowSession.resting)
         // Premium's trial starts with the first message it plays for: its element, or an app's own colour.
@@ -277,7 +279,7 @@ class NotificationWakerService : NotificationListenerService() {
             return
         }
         // Unlocked and in use: the heads-up is enough; the LED waits for screen-off.
-        if (power.isInteractive && !keyguard.isKeyguardLocked) return
+        if (inUse) return
         if (audio.inCall) return
         if (SystemClock.elapsedRealtime() - lastWakeAt < WAKE_DEBOUNCE_MS) return
         // Put the glow screen on top of the lock screen (lighting the panel if it is off), or

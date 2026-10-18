@@ -286,6 +286,16 @@ internal fun restsUnder(interruptionFilter: Int): Boolean = when (interruptionFi
 internal fun arrivalFor(chosen: ArrivalMode, resting: Boolean): ArrivalMode = if (resting) ArrivalMode.LOCK_SCREEN else chosen
 
 /**
+ * The unread streak after a message at [now] ([BrightStreak.onMessage]). One that comes while the
+ * phone is in use ([inUse]: awake and unlocked) finds the user looking at it, as a look at the lock
+ * screen does ([BrightStreak.looked]), so the streak starts over: an hour in use with messages
+ * coming in would otherwise spend the streak's whole bright time on a lit screen, and the phone
+ * put down after it would get none for what still waits.
+ */
+internal fun brightAfterMessage(streak: BrightStreak, now: Long, brightForMs: Long, inUse: Boolean): BrightStreak =
+    (if (inUse) streak.looked(now) else streak).onMessage(now, brightForMs)
+
+/**
  * In-process link between the listener and a live glow screen (both on the main thread of
  * one process). While the glow screen is on top of the lock screen it handles every lock-flow
  * change itself; the listener only takes over when there is no glow screen on top.
