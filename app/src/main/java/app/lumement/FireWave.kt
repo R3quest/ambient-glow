@@ -204,7 +204,10 @@ private fun starburst(origin: Offset, radius: Float): Path = Path().apply {
     }
 }
 
-/** One band of a gradient fire at wave scale [s], turned [turn] degrees: the lit ring only. */
+/**
+ * One band of a gradient wave (every element's) at wave scale [s], turned [turn] degrees: the lit
+ * ring only, a stroke over the lit part of the gradient, so the clear middle is never painted.
+ */
 internal fun DrawScope.drawBand(brush: Brush, s: Float, turn: Float, origin: Offset, radius: Float, band: Stroke, alpha: Float) {
     rotate(turn, origin) {
         scale(s, origin) { drawCircle(brush, radius, origin, alpha = alpha, style = band) }

@@ -36,6 +36,6 @@ internal fun askForReview(activity: Activity) {
     val reviews = ReviewManagerFactory.create(activity)
     reviews.requestReviewFlow().addOnCompleteListener { request ->
         GlowLog.d { "review request ok=${request.isSuccessful}" }
-        if (request.isSuccessful && !activity.isFinishing) reviews.launchReviewFlow(activity, request.result)
+        if (request.isSuccessful && !activity.isFinishing && !activity.isDestroyed) reviews.launchReviewFlow(activity, request.result)
     }
 }
