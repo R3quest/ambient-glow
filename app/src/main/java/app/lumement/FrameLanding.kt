@@ -23,18 +23,32 @@ import kotlin.math.min
 
 // ---------------------------------------------------------------------------------------------
 // Arrivals that end in the frame LED. There is no one spot for a token to fly to, so nothing
-// flies: the Edge Frame's own light settles into it (the comet heads let go, the whole edge lights
-// again and thins to the LED's line), and the beacon's light runs out of the camera both ways round
-// the edge, laying the frame as it goes, the two lights meeting at the bottom. Either way the frame
-// is at the peak of the LED's first breath as it lands and goes out on its exhale, so the next
-// breath rises in the same place. Like every effect curve, a pure function of the effect's clock.
+// flies: light runs out of the camera both ways round the edge, laying the frame as it goes, the
+// two lights meeting at the bottom. The beacon's leaves the camera as its ember fades; the Edge
+// Frame's comet heads, home at the camera, turn round there and run back out as the frame's light
+// ([frameRunsFromCamera]). Pulse has no heads to gather: its whole frame settles into the LED
+// instead. Either way the frame is at the peak of the LED's first breath as it lands and goes out
+// on its exhale, so the next breath rises in the same place. Like every effect curve, a pure
+// function of the effect's clock.
 // ---------------------------------------------------------------------------------------------
 
 /**
  * How far the Edge Frame has settled into the LED, 0..1: from the heads' landing on the camera
  * ([LANDING_MS]) to the LED's peak ([HANDOFF_LANDED_MS]), where the hand-off's token would land.
+ * Its own frame fades out over it.
  */
 internal fun frameSettleAt(ms: Float): Float = smoothstep(LANDING_MS, HANDOFF_LANDED_MS, ms)
+
+/**
+ * The Edge Frame's light runs back out of the camera into the frame LED, as the beacon's does: its
+ * comet heads (Comet, Twin) come home to the camera and the light turns round there. Pulse, with
+ * no heads, settles where it is ([LedFrameSettle]).
+ */
+internal fun frameRunsFromCamera(settings: GlowSettings): Boolean =
+    settings.style == GlowStyle.EDGE_FRAME && settings.ledOnEdge && settings.edgeMotion != EdgeMotion.PULSE
+
+/** The Edge Frame's run leaves the camera as the heads land on it. */
+internal const val EDGE_RUN_FROM_MS = LANDING_MS
 
 /** The beacon's lights meet at the bottom as its ember is gone, as the beacon ends: the frame laid, at the LED's peak. */
 internal const val FRAME_LAID_MS = ARRIVAL_MS.toFloat()
@@ -49,11 +63,20 @@ internal const val FRAME_RUN_END_MS = FRAME_LAID_MS + LED_FALL_MS
 /** Leaves the camera gathering pace, and slows as the two lights come together. */
 private val RunEasing = CubicBezierEasing(0.5f, 0f, 0.3f, 1f)
 
-/** How far round its half of the frame each light has run, 0..1. */
-internal fun frameRunAt(ms: Float): Float = RunEasing.transform(((ms - FRAME_RUN_FROM_MS) / FRAME_RUN_MS).coerceIn(0f, 1f))
+/** How far round its half of the frame each light has run, 0..1, for a run leaving the camera at [from]. */
+internal fun frameRunAt(ms: Float, from: Float = FRAME_RUN_FROM_MS): Float = RunEasing.transform(((ms - from) / FRAME_RUN_MS).coerceIn(0f, 1f))
 
-/** The laid frame's level: full as the lights meet (the LED's peak), then the LED's own exhale ([ledBreathAt]). */
-internal fun frameRunFadeAt(ms: Float): Float = if (ms <= FRAME_LAID_MS) 1f else ledBreathAt(LED_RISE_MS + ms - FRAME_LAID_MS)
+/**
+ * The laid frame's level, for a run leaving the camera at [from]: full as the lights meet (the
+ * LED's peak), then the LED's own exhale ([ledBreathAt]).
+ */
+internal fun frameRunFadeAt(ms: Float, from: Float = FRAME_RUN_FROM_MS): Float {
+    val laid = from + FRAME_RUN_MS
+    return if (ms <= laid) 1f else ledBreathAt(LED_RISE_MS + ms - laid)
+}
+
+/** When a run leaving the camera at [from] has gone out on the LED's exhale, and its arrival ends ([arrivalMsFor]). */
+internal fun frameRunEndMs(from: Float): Float = from + FRAME_RUN_MS + LED_FALL_MS
 
 /** As they meet, the laid line becomes the whole LED, its glow and all, over this last share of the run. */
 private const val FRAME_RUN_WHOLE_FROM = 0.85f
@@ -88,13 +111,14 @@ internal fun LedFrameSettle(settings: GlowSettings, color: Color, geometry: Scre
 }
 
 /**
- * After the beacon round the camera, its light runs out round the edge into the frame LED: two
- * lights leave the top edge above the camera, one each way, laying the LED's line behind them,
- * and meet at the bottom ([frameRunAt]), where the line becomes the whole LED. Then it goes out on
- * the LED's exhale.
+ * Light running out of the camera round the edge into the frame LED, leaving at [startMs]: after the
+ * beacon round the camera ([FRAME_RUN_FROM_MS]), or as the Edge Frame's heads come home to it
+ * ([EDGE_RUN_FROM_MS]). Two lights leave the top edge above the camera, one each way, laying the
+ * LED's line behind them, and meet at the bottom ([frameRunAt]), where the line becomes the whole
+ * LED. Then it goes out on the LED's exhale.
  */
 @Composable
-internal fun LedFrameRun(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
+internal fun LedFrameRun(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float, startMs: Float = FRAME_RUN_FROM_MS) {
     Spacer(
         Modifier
             .fillMaxSize()
@@ -104,10 +128,11 @@ internal fun LedFrameRun(settings: GlowSettings, color: Color, geometry: ScreenG
                 // The laid line is the LED's own line, in its colours; as it closes the whole LED
                 // (its glow and all) takes over. Both are built about the origin, as the LED is.
                 val look = LedLook(LedMaterial.NEON, color, light, LedForm.FRAME, settings)
-                val from = geometry.lens(size.width, density, scale).center.x - led.center.x
+                // Where the camera is along the top edge, about the LED's centre: the lights leave from there.
+                val cameraX = geometry.lens(size.width, density, scale).center.x - led.center.x
                 val halves = arrayOf(
-                    PathMeasure().apply { setPath(frameHalf(light, Offset.Zero, from, clockwise = true), false) },
-                    PathMeasure().apply { setPath(frameHalf(light, Offset.Zero, from, clockwise = false), false) },
+                    PathMeasure().apply { setPath(frameHalf(light, Offset.Zero, cameraX, clockwise = true), false) },
+                    PathMeasure().apply { setPath(frameHalf(light, Offset.Zero, cameraX, clockwise = false), false) },
                 )
                 val laid = Path()
                 // Each light's head: a hot point in a glow of its colour, scaled to size as it is drawn.
@@ -121,9 +146,9 @@ internal fun LedFrameRun(settings: GlowSettings, color: Color, geometry: ScreenG
                 )
                 onDrawBehind {
                     val ms = time()
-                    val run = frameRunAt(ms)
+                    val run = frameRunAt(ms, startMs)
                     if (run <= 0f) return@onDrawBehind
-                    val level = frameRunFadeAt(ms)
+                    val level = frameRunFadeAt(ms, startMs)
                     if (level <= 0f) return@onDrawBehind
                     val whole = smoothstep(FRAME_RUN_WHOLE_FROM, 1f, run)
                     if (whole < 1f) {

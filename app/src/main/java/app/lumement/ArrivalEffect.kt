@@ -69,6 +69,7 @@ internal const val ARRIVAL_MS = 2_300
  * to ([GlowShield.dimIn]).
  */
 internal fun arrivalMsFor(settings: GlowSettings): Int = when {
+    frameRunsFromCamera(settings) -> frameRunEndMs(EDGE_RUN_FROM_MS).toInt()
     settings.style == GlowStyle.EDGE_FRAME -> HANDOFF_END_MS.toInt()
     settings.ledOnEdge -> FRAME_RUN_END_MS.toInt()
     else -> ARRIVAL_MS
@@ -402,7 +403,9 @@ fun ArrivalEffect(
         when (settings.style) {
             GlowStyle.EDGE_FRAME -> {
                 EdgeArrival(settings, glow, geometry, scale, time)
-                if (settings.ledOnEdge) {
+                if (frameRunsFromCamera(settings)) {
+                    LedFrameRun(settings, glow, geometry, scale, time, startMs = EDGE_RUN_FROM_MS)
+                } else if (settings.ledOnEdge) {
                     LedFrameSettle(settings, glow, geometry, scale, time)
                 } else {
                     LedHandOff(settings, glow, geometry, scale, time)
@@ -817,8 +820,9 @@ internal fun DrawScope.drawSpawnFlash(flash: Brush, origin: Offset, scale: Float
 private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
     val spawn = settings.spawn
     val motion = settings.edgeMotion
-    // Ends in the frame LED: the heads let go, the whole edge lights again and settles into it,
-    // rather than draining into the camera.
+    // Ends in the frame LED rather than draining into the camera: it fades as the LED takes over,
+    // its heads home at the camera, where the LED's light runs back out ([LedFrameRun]); Pulse's
+    // whole frame settles where it is ([LedFrameSettle]).
     val settles = settings.ledOnEdge
     Spacer(
         Modifier
@@ -995,11 +999,10 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                         // The mask holds 1 - brightness and is laid on with DstOut, so drawing it
                         // at partial alpha blends from the fully lit frame into the comets; drawn
                         // twice at the end, the tails draw into the heads.
-                        val letGo = if (settles) 1f - frameSettleAt(ms) else 1f
-                        val strength = motionAt(ms, spawn) * letGo
+                        val strength = motionAt(ms, spawn)
                         if (strength > 0f) {
                             val p = headAt(ms, spawn)
-                            val tailIn = smoothstep(TAIL_IN_AT_MS, TAIL_IN_AT_MS + TAIL_IN_MS, ms) * letGo
+                            val tailIn = smoothstep(TAIL_IN_AT_MS, TAIL_IN_AT_MS + TAIL_IN_MS, ms)
                             if (heads != null) {
                                 heads.moveTo(p)
                                 cutToComets(heads, bandCorner, band, strength, tailIn)

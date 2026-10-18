@@ -34,9 +34,15 @@ class HandOffTest {
 
     @Test
     fun everyArrivalEndsAsItsLedExhales() {
-        // The Edge Frame's ends on the LED's first exhale whatever its shape; the beacon's runs on only into the frame.
-        for (form in LedForm.entries) {
+        // The Edge Frame's ends on the LED's first exhale: after the token for the dot and the ring,
+        // after Pulse settling into the frame, after the light running back out for Comet and Twin.
+        for (form in listOf(LedForm.DOT, LedForm.RING)) {
             assertEquals("$form", HANDOFF_END_MS.toInt(), arrivalMsFor(GlowSettings(style = GlowStyle.EDGE_FRAME, ledForm = form)))
+        }
+        val frame = GlowSettings(style = GlowStyle.EDGE_FRAME, ledForm = LedForm.FRAME)
+        assertEquals(HANDOFF_END_MS.toInt(), arrivalMsFor(frame.copy(edgeMotion = EdgeMotion.PULSE)))
+        for (motion in listOf(EdgeMotion.COMET, EdgeMotion.TWIN)) {
+            assertEquals("$motion", frameRunEndMs(EDGE_RUN_FROM_MS).toInt(), arrivalMsFor(frame.copy(edgeMotion = motion)))
         }
         assertEquals(ARRIVAL_MS, arrivalMsFor(GlowSettings(style = GlowStyle.BEACON, ledForm = LedForm.DOT)))
         assertEquals(ARRIVAL_MS, arrivalMsFor(GlowSettings(style = GlowStyle.BEACON, ledForm = LedForm.RING)))

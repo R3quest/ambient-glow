@@ -163,12 +163,33 @@ class FrameLedTest {
     }
 
     @Test
+    fun theEdgeFramesHeadsTurnRoundAtTheCameraAndRunBackOutAsTheLed() {
+        val frame = GlowSettings(style = GlowStyle.EDGE_FRAME, ledForm = LedForm.FRAME)
+        assertTrue(frameRunsFromCamera(frame.copy(edgeMotion = EdgeMotion.COMET)))
+        assertTrue(frameRunsFromCamera(frame.copy(edgeMotion = EdgeMotion.TWIN)))
+        // Pulse has no heads to gather: it settles where it is. Neither the beacon nor a dot runs.
+        assertFalse(frameRunsFromCamera(frame.copy(edgeMotion = EdgeMotion.PULSE)))
+        assertFalse(frameRunsFromCamera(frame.copy(style = GlowStyle.BEACON)))
+        assertFalse(frameRunsFromCamera(frame.copy(ledForm = LedForm.DOT)))
+        // It leaves as the heads land on the camera and lays the frame as the beacon's does.
+        assertEquals(LANDING_MS, EDGE_RUN_FROM_MS, 0f)
+        assertEquals(0f, frameRunAt(EDGE_RUN_FROM_MS, EDGE_RUN_FROM_MS), 0f)
+        assertEquals(1f, frameRunAt(EDGE_RUN_FROM_MS + FRAME_RUN_MS, EDGE_RUN_FROM_MS), 1e-5f)
+        assertEquals(1f, frameRunFadeAt(EDGE_RUN_FROM_MS + FRAME_RUN_MS, EDGE_RUN_FROM_MS), 0f)
+        val end = frameRunEndMs(EDGE_RUN_FROM_MS)
+        assertEquals(0f, frameRunFadeAt(end, EDGE_RUN_FROM_MS), 0f)
+        assertTrue(frameRunFadeAt(end - 8f, EDGE_RUN_FROM_MS) < 0.01f)
+        // The beacon's run keeps its own timing.
+        assertEquals(FRAME_RUN_END_MS, frameRunEndMs(FRAME_RUN_FROM_MS), 0f)
+    }
+
+    @Test
     fun theEdgeFrameSettlesIntoItAsTheTokenWouldHaveLanded() {
         assertEquals(0f, frameSettleAt(LANDING_MS - 1f), 0f)
         assertEquals(0f, frameSettleAt(LANDING_MS), 0f)
         assertEquals(1f, frameSettleAt(HANDOFF_LANDED_MS), 0f)
         assertNeverFalls(0f, HANDOFF_END_MS, ::frameSettleAt)
-        assertEquals(HANDOFF_END_MS.toInt(), arrivalMsFor(GlowSettings(style = GlowStyle.EDGE_FRAME, ledForm = LedForm.FRAME)))
+        assertEquals(HANDOFF_END_MS.toInt(), arrivalMsFor(GlowSettings(style = GlowStyle.EDGE_FRAME, ledForm = LedForm.FRAME, edgeMotion = EdgeMotion.PULSE)))
         // The LED rises as the frame settles, peaks where the token would have landed, and goes out with no step.
         val level = { ms: Float -> frameSettleAt(ms) * handOffFadeAt(ms) }
         assertNeverFalls(0f, HANDOFF_LANDED_MS, level)
