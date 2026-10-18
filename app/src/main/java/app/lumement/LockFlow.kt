@@ -355,6 +355,10 @@ internal class LockFlow(
             port.hideBars()
             // Ending: the screen is meant to time out; holding it on here would keep it lit for good.
             if (!ending.value) acquireKeepOn()
+            // Settled already, woken back into it (left in front in a call: a press and the call's
+            // proximity are the same to us): the phase's end from here, a breath with none left.
+            // Its end came while dark, so nothing else would let go of the screen.
+            if (!settling.value) armBrightEnd()
         }
         inFront = true
         updateLedWindow()

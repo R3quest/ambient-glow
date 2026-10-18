@@ -801,6 +801,35 @@ class LockFlowTest {
         assertEquals(Face.LED, flow.face.value)
     }
 
+    /**
+     * The LED's face left in front in a call (a power press, or the call's proximity: the same to
+     * us), and Battery Saver on meanwhile: woken by the user, from sleep or in the sleep's fade,
+     * the face took the screen lock at resume, and with no bright phase nothing let go of it
+     * (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun theLedsFaceWokenInACallWithNoBrightPhaseLetsTheScreenSleep() {
+        for (inTheFade in listOf(false, true)) {
+            clean()
+            phone.shieldOn = false // the LED's face, not its window
+            message()
+            phone.launch(WakeMode.WAKE, 4_000)
+            assertEquals(Face.LED, flow.face.value)
+            phone.inCall = true
+            phone.pressPower()
+            phone.advance(if (inTheFade) 300 else 2_000)
+            assertFalse(phone.interactive)
+            assertEquals(Face.LED, flow.face.value)
+            phone.batterySaverTurns(true)
+
+            phone.pressPower()
+            phone.advance(MINUTE)
+
+            assertFalse("inTheFade=$inTheFade: no screen held on in Battery Saver", phone.panelLocked)
+            assertFalse("inTheFade=$inTheFade: asleep", phone.interactive)
+        }
+    }
+
     @Test
     fun theLockScreenTimingOutBringsTheLedBackLit() {
         phone.shieldOn = false
