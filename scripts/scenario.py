@@ -169,9 +169,23 @@ def kept_waiting(prefs):
     return keys
 
 
+def listed_keys(listing):
+    """The keys in `cmd notification list` (user|pkg|id|tag|uid), one per entry. A tag may hold a
+    newline (WhatsApp's end in one), which carries its key over onto the next line: a line that
+    doesn't start a key (its user, a number, then |) goes on the key before it."""
+    keys = []
+    for line in listing.splitlines():
+        line = line.rstrip("\r")
+        if keys and not re.match(r"-?\d+\|", line):
+            keys[-1] += "\n" + line
+        elif line.strip():
+            keys.append(line.strip())
+    return [key for key in keys if len(key.split("|")) >= 5]
+
+
 def shown_keys(listing):
     """Every key in `cmd notification list` (user|pkg|id|tag|uid)."""
-    return {line.strip() for line in listing.splitlines() if len(line.strip().split("|")) == 5}
+    return set(listed_keys(listing))
 
 
 def waiting_now(prefs, listing, diary):
@@ -189,10 +203,10 @@ def waiting_now(prefs, listing, diary):
 
 def shell_key(listing, tag):
     """The key of adb's test message [tag] in `cmd notification list` (user|pkg|id|tag|uid)."""
-    for line in listing.splitlines():
-        parts = line.strip().split("|")
+    for key in listed_keys(listing):
+        parts = key.split("|")
         if len(parts) == 5 and parts[1] == SHELL_PKG and parts[3] == tag:
-            return line.strip()
+            return key
     return None
 
 
@@ -520,6 +534,13 @@ def selftest():
     listing = "-1|com.android.systemui|2114586824|charging_state|10041\n0|com.android.shell|2020|lumement-scenario-1-1|2000\n"
     assert shell_key(listing, "lumement-scenario-1-1") == "0|com.android.shell|2020|lumement-scenario-1-1|2000"
     assert shell_key(listing, "lumement-scenario-1-2") is None
+    # WhatsApp's tag ends in a newline, so its key runs onto a second line of the listing.
+    split = "0|com.whatsapp|1|S8RvAQ5I0Tos=\n|10241\n-1|android|27|null|1000\n0|com.linkedin.android|15|null|10052\n"
+    assert shown_keys(split) == {"0|com.whatsapp|1|S8RvAQ5I0Tos=\n|10241", "-1|android|27|null|1000",
+                                 "0|com.linkedin.android|15|null|10052"}, shown_keys(split)
+    wa_key = base64.urlsafe_b64encode(b"0|com.whatsapp|1|S8RvAQ5I0Tos=\n|10241").decode().rstrip("=")
+    split_prefs = f'<map><string name="pending">{wa_key},Y29t,-1,1</string></map>'
+    assert waiting_now(split_prefs, split, 0) == 1
 
     # The flow end to end on a scripted phone: clean, a lock left behind, the LED gone too soon.
     out = sys.stdout
