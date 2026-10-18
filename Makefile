@@ -29,7 +29,7 @@ SDK_PACKAGES := "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 .DEFAULT_GOAL := help
 .PHONY: help debug release bundle lint test check permissions install install-release \
         install-premium release-premium install-trial-over launch uninstall devices apks clean stop sdk \
-        soak soak-set wifi-adb diary scripts-test
+        soak soak-set wifi-adb diary scripts-test scenario
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -93,6 +93,13 @@ soak: ## Battery run on the unplugged phone (adb over Wi-Fi): MODE=lit|aod|idle|
 
 scripts-test: ## Self-test the measurement scripts' own logic
 	python3 -I scripts/diary.py --selftest
+	python3 -I scripts/scenario.py --selftest
+
+# SCENARIO=one (a message, read), two (two, one read while the other waits, then it) or all.
+SCENARIO ?= all
+
+scenario: ## Messages through the real flow (debug build, phone flat): no wake lock left, display off, no crash
+	ADB="$(ADB)" python3 -I scripts/scenario.py $(SCENARIO)
 
 diary: ## Pull the LED diary from the phone (debug build) and say what it means for the defaults
 	@mkdir -p app/build/diary
