@@ -944,6 +944,8 @@ internal class LockFlow(
         if (aodLit) return // the LED is on the always-on display
         port.cancel(LockTimer.TAKEOVER)
         port.cancel(LockTimer.TAKEOVER_DIM)
+        // The lock screen handed back has gone dark: woken again (in a call, say), it is the user's.
+        autoTakeover = false
         port.cancel(LockTimer.VERIFY_WAKE)
         arrivalDue = false
         shield.stopArrival()

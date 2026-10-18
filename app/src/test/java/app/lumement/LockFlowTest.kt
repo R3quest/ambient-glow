@@ -693,6 +693,32 @@ class LockFlowTest {
         assertFalse("the lock screen, not black", phone.coverUp)
     }
 
+    /**
+     * The lock screen a message lit, with its hand-back to the LED, gone dark in a call: woken by
+     * the user in the call, the hand-back was still armed, and 2.5 s later the LED took the lock
+     * screen they were looking at (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun theLockScreenWokenInACallIsNotHandedBackToTheLed() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LOCK_SCREEN)
+        phone.pressPower() // dark when the message comes
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 1_000)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        phone.callTurns(true)
+        phone.pressPower() // the call's proximity: dark, the lock screen left in front
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(LockFlow.TAKEOVER_MS + 1_000)
+
+        assertTrue(phone.interactive)
+        assertEquals("the user's lock screen, not handed back", Face.LOCK_SCREEN, flow.face.value)
+        assertFalse(phone.coverUp)
+    }
+
     @Test
     fun withoutTheShieldTheLedFaceCoversAndPowerOpensTheLockScreen() {
         phone.shieldOn = false
