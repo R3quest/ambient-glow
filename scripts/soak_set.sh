@@ -8,14 +8,21 @@
 # - hybrid BRIGHT=TEN, 60 min: the shipped flow end to end, to check the parts add up.
 set -euo pipefail
 ADB=${ADB:-adb}
-sh() { "$ADB" shell "$@" | tr -d '\r'; }
 log() { echo "[$(date +%H:%M)] soak-set: $*"; }
+fail() { log "$*"; exit 1; }
+# shellcheck source=soak_lib.sh
+. "$(dirname "$0")/soak_lib.sh" # sh: adb shell with a timeout
 
 aod_was=$(sh settings get system aod_mode)
 new_was=$(sh settings get system aod_show_for_new_noti)
+# A setting the phone never had reads "null": put back as missing, not as the word.
+put_back() {
+    if [ "$2" = null ]; then sh settings delete system "$1" >/dev/null; else sh settings put system "$1" "$2"; fi ||
+        log "couldn't put $1 back to $2: set it in Settings"
+}
 restore() {
-    sh settings put system aod_mode "$aod_was"
-    sh settings put system aod_show_for_new_noti "$new_was"
+    put_back aod_mode "$aod_was"
+    put_back aod_show_for_new_noti "$new_was"
     log "the always-on display put back (aod_mode $aod_was, for new notifications $new_was)"
 }
 trap restore EXIT

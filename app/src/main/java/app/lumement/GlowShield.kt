@@ -226,6 +226,8 @@ class GlowShield : AccessibilityService() {
         hideLedWindow()
         addLedWindow()
         val surface = ledSurface ?: return false
+        // The service lives for days: the screen's resolution may have changed since the last.
+        panelModes.reset()
         ledDowns = 0
         ledTouch = onTouch
         ledTap = onTap

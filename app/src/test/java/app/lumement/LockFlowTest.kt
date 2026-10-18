@@ -338,6 +338,40 @@ class LockFlowTest {
     }
 
     /**
+     * A message while the phone was in use, then the phone put to sleep in its bright phase: away,
+     * the glow screen didn't relight it, and the listener put the LED onto the always-on display.
+     * One UI ended that display (a dark room), and the listener's check, the bright phase still
+     * on, lit the screen in its place (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun theAlwaysOnDisplayGoingInTheBrightPhaseLeavesThePhoneDark() {
+        phone.dozes = true
+        phone.expectsAod = true
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.unlock()
+        assertTrue(flow.isAway)
+        phone.keyguardLocked = true // locks again as it sleeps
+        message("chat-2") // read nowhere, the phone in use: the listener leaves it to the glow screen
+        phone.pressPower()
+        phone.advance(1_000)
+        assertFalse(phone.interactive)
+        phone.startGlowScreen(WakeMode.AOD) // the listener's relight, asleep on the always-on display
+        phone.advance(1_000)
+        assertTrue("on the always-on display", phone.aodBreathing)
+
+        phone.log.clear()
+        phone.aodGoes() // One UI ends it (low light, its own timeout)
+        phone.advance(2_500)
+        phone.host { ensureLed() } // the listener's check
+        phone.advance(5_000)
+
+        logged("aod LED off")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+    }
+
+    /**
      * A missed fingerprint on the dark phone (2026-10-13): One UI shows a short doze screen of its
      * own, which isn't the always-on display shown for the message. The LED had gone onto it.
      */
@@ -598,6 +632,127 @@ class LockFlowTest {
         assertFalse(phone.coverUp)
     }
 
+    /**
+     * Just the LED, in Battery Saver or below 20 %: its dot for a breath, then asleep, as with no
+     * bright phase. The phase's end was set by its time alone, so the LED's face held the screen
+     * on for all of its minutes (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun justTheLedOnALowBatteryShowsABreathThenSleeps() {
+        for (saver in listOf(false, true)) {
+            clean()
+            phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.TEN)
+            if (saver) phone.batterySaver = true else phone.batteryPct = LOW_BATTERY_PCT - 1
+            message()
+            phone.launch(WakeMode.LED, 1_000)
+            logged("lit LED up")
+
+            phone.advance(5_000)
+
+            logged("sleep now", "system: SCREEN_OFF")
+            assertFalse("saver=$saver", phone.interactive)
+            assertFalse("saver=$saver", phone.panelLocked)
+            assertTrue("broken on the way:\n${phone.broken.joinToString("\n")}", phone.broken.isEmpty())
+        }
+    }
+
+    /**
+     * Read elsewhere under the LED, the phone put to sleep at once under a black cover, and power
+     * pressed in the sleep's fade: the sleep was cancelled, and the lit lock screen stayed black
+     * under the cover until its timeout (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun powerInTheFadeOfOurOwnSleepShowsTheLockScreen() {
+        readyUnderLed()
+        GlowPending.remove("chat-1")
+        phone.host { onPendingChanged() }
+        phone.advance(100) // asleep at once, fading
+        assertFalse(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(1_000)
+
+        logged("sleep now", "system: going to sleep", "system: sleep cancelled")
+        assertTrue(phone.interactive)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertFalse("the lock screen, not black", phone.coverUp)
+    }
+
+    /**
+     * Asleep under the black cover, waiting for an always-on display that never came (the message
+     * seen, or the display's switch changed since the last sleep), and woken before the listener's
+     * check took the cover down: a black lock screen (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun wokenWhileTheLedWaitsForAnAlwaysOnDisplayShowsTheLockScreen() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = false
+        message()
+        phone.launch(WakeMode.LED, 1_000)
+        phone.advance(4_000) // a breath, then asleep under the cover
+        logged("blackout", "sleep now", "system: SCREEN_OFF")
+        assertTrue("the cover waits for the doze", phone.coverUp)
+
+        phone.pressPower() // before the listener's check, 4 s after SCREEN_OFF
+        phone.advance(1_000)
+
+        assertTrue(phone.interactive)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertFalse("the lock screen, not black", phone.coverUp)
+    }
+
+    /**
+     * In a call, the LED slept under the black cover (a message, with no bright phase): the
+     * screen-off, waiting for the call to end, left the cover up, and a wake during the call (the
+     * phone away from the ear, power) showed a black lock screen (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun wokenInACallAfterTheLedSleptShowsTheLockScreen() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.OFF)
+        message()
+        phone.launch(WakeMode.LED, 4_000) // a breath, then asleep
+        assertFalse(phone.interactive)
+        phone.callTurns(true)
+        message("chat-2")
+        phone.then { flow.onNewMessage() }
+        phone.advance(4_000)
+        assertFalse(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(1_000)
+
+        assertTrue(phone.interactive)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertFalse("the lock screen, not black", phone.coverUp)
+    }
+
+    /**
+     * The lock screen a message lit, with its hand-back to the LED, gone dark in a call: woken by
+     * the user in the call, the hand-back was still armed, and 2.5 s later the LED took the lock
+     * screen they were looking at (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun theLockScreenWokenInACallIsNotHandedBackToTheLed() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LOCK_SCREEN)
+        phone.pressPower() // dark when the message comes
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 1_000)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        phone.callTurns(true)
+        phone.pressPower() // the call's proximity: dark, the lock screen left in front
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(LockFlow.TAKEOVER_MS + 1_000)
+
+        assertTrue(phone.interactive)
+        assertEquals("the user's lock screen, not handed back", Face.LOCK_SCREEN, flow.face.value)
+        assertFalse(phone.coverUp)
+    }
+
     @Test
     fun withoutTheShieldTheLedFaceCoversAndPowerOpensTheLockScreen() {
         phone.shieldOn = false
@@ -680,6 +835,35 @@ class LockFlowTest {
         assertEquals(Face.LED, flow.face.value)
     }
 
+    /**
+     * The LED's face left in front in a call (a power press, or the call's proximity: the same to
+     * us), and Battery Saver on meanwhile: woken by the user, from sleep or in the sleep's fade,
+     * the face took the screen lock at resume, and with no bright phase nothing let go of it
+     * (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun theLedsFaceWokenInACallWithNoBrightPhaseLetsTheScreenSleep() {
+        for (inTheFade in listOf(false, true)) {
+            clean()
+            phone.shieldOn = false // the LED's face, not its window
+            message()
+            phone.launch(WakeMode.WAKE, 4_000)
+            assertEquals(Face.LED, flow.face.value)
+            phone.inCall = true
+            phone.pressPower()
+            phone.advance(if (inTheFade) 300 else 2_000)
+            assertFalse(phone.interactive)
+            assertEquals(Face.LED, flow.face.value)
+            phone.batterySaverTurns(true)
+
+            phone.pressPower()
+            phone.advance(MINUTE)
+
+            assertFalse("inTheFade=$inTheFade: no screen held on in Battery Saver", phone.panelLocked)
+            assertFalse("inTheFade=$inTheFade: asleep", phone.interactive)
+        }
+    }
+
     @Test
     fun theLockScreenTimingOutBringsTheLedBackLit() {
         phone.shieldOn = false
@@ -716,12 +900,182 @@ class LockFlowTest {
         // The invariant check in detach() covers the face and the window together.
     }
 
+    /**
+     * Put away in a pocket with the LED lit, asleep with the LED's face in front, and its bright
+     * phase over meanwhile (its end waited while put away). Taken out and woken by hand before the
+     * stow watch had looked, the LED's face took the screen lock at resume and nothing let go of
+     * it: the screen stayed lit until the user did something, in Battery Saver too (found by
+     * [LockFlowFuzzTest]).
+     */
+    @Test
+    fun wokenByHandAfterTheBrightPhaseWhilePutAwayTheLockScreenShows() {
+        phone.pressPower() // dark when the message comes: its wake starts the screen's timeout
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertTrue(flow.ledInWindow.value)
+        phone.cover(true) // into a pocket
+        phone.advance(COVERED_MS + 40_000)
+        assertFalse("put away, asleep at the screen's timeout", phone.interactive)
+        assertEquals("the LED's face in front in the dark, for when it is taken out", Face.LED, flow.face.value)
+        phone.advance(11 * MINUTE) // the bright phase ends while it is put away
+
+        phone.cover(false)
+        phone.pressPower()
+        phone.advance(2_000)
+        assertTrue(phone.interactive)
+        assertEquals("they have it in hand: the lock screen as ever", Face.LOCK_SCREEN, flow.face.value)
+        phone.advance(MINUTE)
+
+        assertFalse("no screen held on after the bright phase", phone.panelLocked)
+        assertFalse("asleep at the lock screen's own timeout", phone.interactive)
+    }
+
+    /**
+     * Put away in a pocket with the LED lit, and power pressed twice there, the second press in the
+     * sleep's fade: the sleep was cancelled, so no SCREEN_ON said the user had it in hand. The
+     * LED's face took the screen lock at resume, put away nothing let go of it, and the phone
+     * stayed awake in the pocket, its panel off, until taken out (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun powerInTheFadeWhilePutAwayLetsThePhoneSleep() {
+        phone.pressPower() // dark when the message comes: its wake starts the screen's timeout
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.cover(true) // into a pocket
+        phone.advance(COVERED_MS + 1_000)
+        assertTrue("put away", flow.isPutAway)
+        assertTrue(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(300) // asleep, fading
+        assertFalse(phone.interactive)
+        phone.pressPower() // pressed again in the fade: the sleep cancelled
+        phone.advance(11 * MINUTE)
+
+        assertFalse("no screen held on in the pocket", phone.panelLocked)
+        assertFalse("asleep in the pocket", phone.interactive)
+    }
+
     @Test
     fun aLaunchWithNothingWaitingFinishesAtOnce() {
         phone.launch(WakeMode.LED, 500)
 
         logged("finish")
         assertFalse(phone.panelLocked)
+    }
+
+    /** A new message as the listener hands it on ([NotificationWakerService.onNotificationPosted]): to the glow screen on top, or a launch. */
+    private fun messageArrives(key: String) {
+        message(key)
+        val host = GlowSession.host
+        if (host != null && !host.isAway) phone.then { host.onNewMessage() } else phone.startGlowScreen(WakeMode.WAKE)
+    }
+
+    /** Read as the listener has it: the glow screen on top is told. */
+    private fun read(key: String) {
+        GlowPending.remove(key)
+        phone.then { GlowSession.host?.onPendingChanged() }
+    }
+
+    /**
+     * Read on the dark phone, and a new message before Android had destroyed the finished glow
+     * screen (a chat clearing its notification and posting the next, or a message read just as
+     * another came): the listener handed it to the finishing glow screen, which lit the phone and
+     * went, and none came up for it. The LED stayed dark for that message (found by
+     * [LockFlowFuzzTest]).
+     */
+    @Test
+    fun aMessageJustAfterTheLastWasReadGetsAGlowScreenOfItsOwn() {
+        phone.destroyAfterMs = 600 // Android takes a moment to destroy a finished activity
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.pressPower() // dark when the message comes
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 10_000)
+        assertFalse("the lock screen timed out", phone.interactive)
+
+        read("chat-1")
+        assertTrue(phone.finished)
+        messageArrives("chat-2")
+        phone.advance(4_000)
+
+        assertTrue("a glow screen up for the new message", phone.glowScreenUp)
+        assertTrue("and the listener's host", GlowSession.host === flow)
+    }
+
+    /**
+     * Android destroys a finished activity once the next one is idle, up to 10 s later. The
+     * finished glow screen, destroyed after the next one came up, took GlowShield's windows with
+     * it: the new one's lit LED was gone from over the ready lock screen, which its locks held on.
+     */
+    @Test
+    fun aFinishedGlowScreenGoingLeavesTheNextOnesLedAlone() {
+        phone.destroyAfterMs = 5_000
+        readyUnderLed()
+        read("chat-1") // read elsewhere under the LED: asleep at once, finished at the screen-off
+        phone.advance(1_000)
+        assertTrue(phone.finished)
+
+        messageArrives("chat-2")
+        phone.advance(6_000)
+
+        assertTrue("the new glow screen's LED in its window", flow.ledInWindow.value)
+        assertTrue("and the window up", phone.litShown)
+    }
+
+    /**
+     * Read on the dark phone, and a new message as One UI dozed the panel, before Android had
+     * destroyed the finished glow screen: still listening to the display, the finished one put the
+     * LED onto the always-on display for the new message, which the new glow screen never knew of,
+     * and it breathed on under the new one's black cover (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun aFinishedGlowScreenPutsNoLedOnTheAlwaysOnDisplay() {
+        phone.destroyAfterMs = 5_000
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.pressPower() // dark when the message comes
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 10_000)
+        assertFalse("the lock screen timed out", phone.interactive)
+        read("chat-1")
+        assertTrue(phone.finished)
+        phone.log.clear()
+
+        phone.dozeScreen()
+        messageArrives("chat-2")
+        phone.advance(4_000)
+
+        notLogged("aod LED on")
+    }
+
+    /**
+     * The last message read with the phone dark in a call, and a new one in it: the finished glow
+     * screen's call watch was still armed, and as the call ended it relit the phone for a message
+     * it no longer hears of. Lighting the LED for the new one after the call is the listener's.
+     */
+    @Test
+    fun aFinishedGlowScreenDoesNotRelightAfterTheCall() {
+        phone.destroyAfterMs = 5_000
+        phone.shieldOn = false // the LED's face, left in front in the call
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.callTurns(true)
+        phone.pressPower() // the call's proximity: dark
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+        read("chat-1")
+        assertTrue(phone.finished)
+        message("chat-2") // in the call, with no glow screen up: the listener's, not this finished one's
+
+        phone.log.clear()
+        phone.callTurns(false)
+        phone.advance(1_000)
+
+        notLogged("wake")
+        assertFalse(phone.interactive)
     }
 
     private companion object {

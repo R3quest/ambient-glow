@@ -129,4 +129,12 @@ class PendingStoreTest {
         assertEquals(listOf(chat), GlowPending.entries.toList())
         assertEquals(listOf(chat), decodePending(prefs.getString("pending", null)))
     }
+
+    @Test
+    fun allReadEndsTheStreak() {
+        // However the last message went (read, dismissed, pruned, its app muted), the next one starts a new streak.
+        GlowSession.bright = BrightStreak().onMessage(now = 0L, brightForMs = BrightFor.TEN.ms)
+        GlowSession.allRead()
+        assertEquals(BrightStreak(), GlowSession.bright)
+    }
 }

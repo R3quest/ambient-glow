@@ -3,6 +3,8 @@ package app.lumement.dashboard
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
@@ -33,6 +35,31 @@ import app.lumement.PremiumState
 
 /** Premium's one-time product in Play Console. */
 private const val PRODUCT_ID = "premium"
+
+/** How long Play has to answer before the dashboard says it can't sell premium right now. */
+private const val PLAY_PATIENCE_MS = 10_000L
+
+/**
+ * Where asking Google Play for premium stands: still [ASKING] (connecting, or the price on its
+ * way), [SELLING] at a price, or [CLOSED]: Play can't sell it now (no Play Store, not signed in,
+ * no answer in [PLAY_PATIENCE_MS]). Asked again on the next resume.
+ */
+internal enum class PlayShop { ASKING, SELLING, CLOSED }
+
+/** What the Premium page offers in place of its buy button. */
+internal enum class PremiumOffer { OWNED, BUY, ASKING, UNAVAILABLE }
+
+/**
+ * The Premium page's offer: the buy button once Play has a [price] (and there is an activity to
+ * show Play's sheet over, [canBuy]); while Play is still being asked, a quiet wait, not the
+ * apology that it can't sell, which is for when it has said so or not answered.
+ */
+internal fun premiumOffer(state: PremiumState, price: String?, shop: PlayShop, canBuy: Boolean): PremiumOffer = when {
+    state == PremiumState.Owned -> PremiumOffer.OWNED
+    price != null && canBuy -> PremiumOffer.BUY
+    shop == PlayShop.ASKING && canBuy -> PremiumOffer.ASKING
+    else -> PremiumOffer.UNAVAILABLE
+}
 
 /**
  * Premium as the dashboard shows it: where it stands ([Premium]), its price, and buying it. Only
@@ -72,7 +99,16 @@ internal class PremiumModel(
     var price by mutableStateOf<String?>(null)
         private set
 
+    /** Where asking Play stands; [price] is set once it is [PlayShop.SELLING]. */
+    var shop by mutableStateOf(PlayShop.ASKING)
+        private set
+
     private var product: ProductDetails? = null
+
+    // A connection that never answers would leave the page waiting for good: after a while it says
+    // Play can't sell premium now. Cancelled on any answer, and when the dashboard goes.
+    private val patience = Handler(Looper.getMainLooper())
+    private val giveUp = Runnable { if (shop == PlayShop.ASKING) shop = PlayShop.CLOSED }
 
     private val client: BillingClient? = if (BuildConfig.PREMIUM) {
         null
@@ -87,6 +123,7 @@ internal class PremiumModel(
 
     fun detach() {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        patience.removeCallbacks(giveUp)
         client?.endConnection()
     }
 
@@ -95,22 +132,51 @@ internal class PremiumModel(
         version++
         val client = client ?: return
         when (client.connectionState) {
-            BillingClient.ConnectionState.CONNECTED -> restore()
-            BillingClient.ConnectionState.DISCONNECTED -> client.startConnection(connection)
+            BillingClient.ConnectionState.CONNECTED -> {
+                // Up, but its price never came (Play said no before): asked again.
+                if (product == null && shop == PlayShop.CLOSED) {
+                    ask()
+                    queryProduct()
+                }
+                restore()
+            }
+            BillingClient.ConnectionState.DISCONNECTED -> {
+                // Without a price yet, asked again: the page waits rather than says it can't.
+                if (product == null) ask()
+                client.startConnection(connection)
+            }
             else -> Unit // connecting: it restores when it is up
         }
+    }
+
+    private fun ask() {
+        shop = PlayShop.ASKING
+        patience.removeCallbacks(giveUp)
+        patience.postDelayed(giveUp, PLAY_PATIENCE_MS)
+    }
+
+    /** Play has answered about selling premium: at [price], or (null) not now. */
+    private fun answered(price: String?) {
+        patience.removeCallbacks(giveUp)
+        this.price = price
+        shop = if (price != null) PlayShop.SELLING else PlayShop.CLOSED
     }
 
     // Dropped (the Play Store updated, say): connected again on the next resume.
     private val connection = object : BillingClientStateListener {
         override fun onBillingSetupFinished(result: BillingResult) {
             GlowLog.d { "billing setup ${result.responseCode} ${result.debugMessage}" }
-            if (result.responseCode != BillingResponseCode.OK) return
+            if (result.responseCode != BillingResponseCode.OK) {
+                if (product == null) answered(null)
+                return
+            }
             if (product == null) queryProduct()
             restore()
         }
 
-        override fun onBillingServiceDisconnected() = Unit
+        override fun onBillingServiceDisconnected() {
+            if (product == null) answered(null)
+        }
     }
 
     /** Opens Play's purchase sheet over [activity]; nothing to do until Play has a price. */
@@ -146,9 +212,12 @@ internal class PremiumModel(
             .build()
         client?.queryProductDetailsAsync(params) { result, details ->
             GlowLog.d { "billing product ${result.responseCode} found=${details.productDetailsList.size}" }
-            if (result.responseCode != BillingResponseCode.OK) return@queryProductDetailsAsync
+            if (result.responseCode != BillingResponseCode.OK) {
+                answered(null)
+                return@queryProductDetailsAsync
+            }
             product = details.productDetailsList.firstOrNull()
-            price = product?.oneTimePurchaseOfferDetailsList?.firstOrNull()?.formattedPrice
+            answered(product?.oneTimePurchaseOfferDetailsList?.firstOrNull()?.formattedPrice)
         }
     }
 

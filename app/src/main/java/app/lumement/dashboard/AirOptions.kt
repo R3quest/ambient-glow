@@ -65,37 +65,37 @@ private const val SWATCH_REST = 0.5f
  * offered there.
  */
 @Composable
-internal fun AirOptions(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
+internal fun AirOptions(settings: GlowSettings, accent: Color, onEffect: ((GlowSettings) -> GlowSettings) -> Unit) {
     val wind = remember(settings.airColor, accent) { airPalette(settings.airColor, accent) }
     // Each group carries its gap above it, so the blur's comes and goes with it.
     Column {
         OptionGroup(stringResource(R.string.air_gust)) {
-            GlyphTiles(AirGust.entries, settings.airGust, { onEffect(settings.copy(airGust = it)) }, ::AirLines) { gust, lit, lines ->
+            GlyphTiles(AirGust.entries, settings.airGust, { picked -> onEffect { it.copy(airGust = picked) } }, ::AirLines) { gust, lit, lines ->
                 gustGlyph(gust, wind, lit, lines)
             }
         }
         Spacer(Modifier.height(GROUP_GAP))
         OptionGroup(stringResource(R.string.air_flow)) {
-            GlyphTiles(AirFlow.entries, settings.airFlow, { onEffect(settings.copy(airFlow = it)) }, ::AirLines) { flow, lit, lines ->
+            GlyphTiles(AirFlow.entries, settings.airFlow, { picked -> onEffect { it.copy(airFlow = picked) } }, ::AirLines) { flow, lit, lines ->
                 flowGlyph(flow, wind, lit, lines)
             }
             OptionBody(settings.airFlow) { stringResource(it.body) }
         }
         Spacer(Modifier.height(GROUP_GAP))
         OptionGroup(stringResource(R.string.air_color)) {
-            AirColorPicker(settings.airColor, accent) { onEffect(settings.copy(airColor = it)) }
+            AirColorPicker(settings.airColor, accent) { picked -> onEffect { it.copy(airColor = picked) } }
             OptionBody(settings.airColor) { stringResource(it.body) }
         }
         Spacer(Modifier.height(GROUP_GAP))
         OptionGroup(stringResource(R.string.air_carry)) {
-            GlyphTiles(AirCarry.entries, settings.airCarry, { onEffect(settings.copy(airCarry = it)) }, ::AirLines) { carry, lit, lines ->
+            GlyphTiles(AirCarry.entries, settings.airCarry, { picked -> onEffect { it.copy(airCarry = picked) } }, ::AirLines) { carry, lit, lines ->
                 carryGlyph(carry, wind, lit, lines)
             }
         }
         Disclosure(visible = !settings.arrival.onBlack) {
             Box(Modifier.padding(top = GROUP_GAP)) {
                 OptionGroup(stringResource(R.string.air_blur)) {
-                    GlyphTiles(GlassBlur.entries, settings.airBlur, { onEffect(settings.copy(airBlur = it)) }, ::AirLines) { blur, lit, lines ->
+                    GlyphTiles(GlassBlur.entries, settings.airBlur, { picked -> onEffect { it.copy(airBlur = picked) } }, ::AirLines) { blur, lit, lines ->
                         smearGlyph(blur, ink(lit, wind.glow), lines.plain)
                     }
                     OptionBody(settings.airBlur) { blur ->

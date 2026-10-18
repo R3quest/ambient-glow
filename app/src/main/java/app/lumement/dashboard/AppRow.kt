@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -355,8 +356,9 @@ private fun AppIcon(icon: ImageBitmap?, label: String, color: Color, modifier: M
         Image(bitmap = icon, contentDescription = null, modifier = modifier)
         return
     }
+    // The row names the app; its initial here is only a picture of it, so TalkBack leaves it out.
     Box(
-        modifier = modifier.clip(CircleShape).background(color.copy(alpha = 0.18f)),
+        modifier = modifier.clip(CircleShape).background(color.copy(alpha = 0.18f)).clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
         Text(

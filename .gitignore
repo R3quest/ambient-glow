@@ -16,9 +16,13 @@
 *.hprof
 *.log
 
-# Signing keys and secrets
+# Signing keys and secrets (docs/release.md): the upload keystore, its passwords, and the
+# encrypted key Play's app signing upload makes (PEPK)
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pepk
 keystore.properties
 
 # Editors

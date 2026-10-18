@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,12 +76,15 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -93,7 +97,10 @@ import app.lumement.ui.theme.GlowShapes
 // Dashboard building blocks: headings, cards, rows, folds, buttons, steppers, sliders.
 // ---------------------------------------------------------------------------------------------
 
-/** A numbered heading with one line of context, then its cards. */
+/**
+ * A numbered heading with one line of context, then its cards. The number only orders what the
+ * eye sees, so TalkBack hears the title, as a heading to move by, and the line.
+ */
 @Composable
 internal fun SettingsGroup(
     index: String,
@@ -107,7 +114,7 @@ internal fun SettingsGroup(
                 text = index,
                 style = MaterialTheme.typography.labelMedium,
                 color = GlowPalette.TextFaint,
-                modifier = Modifier.padding(top = 3.dp),
+                modifier = Modifier.padding(top = 3.dp).clearAndSetSemantics {},
             )
             Spacer(Modifier.width(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -115,6 +122,7 @@ internal fun SettingsGroup(
                     text = stringResource(title),
                     style = MaterialTheme.typography.titleMedium,
                     color = GlowPalette.TextPrimary,
+                    modifier = Modifier.semantics { heading() },
                 )
                 Text(
                     text = stringResource(body),
@@ -344,9 +352,15 @@ internal fun Chevron(tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
+/** A small caps label: over a control it names, or, as a [heading], a card's title. */
 @Composable
-internal fun SectionLabel(text: String, color: Color = GlowPalette.TextFaint) {
-    Text(text = text, style = MaterialTheme.typography.labelSmall, color = color)
+internal fun SectionLabel(text: String, color: Color = GlowPalette.TextFaint, heading: Boolean = false) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        modifier = if (heading) Modifier.semantics { heading() } else Modifier,
+    )
 }
 
 /**
@@ -360,11 +374,13 @@ internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            // Taller only when large text wraps the label.
+            .heightIn(min = 50.dp)
             .clip(GlowShapes.Button)
             .background(if (enabled) GlowPalette.Cyan.copy(alpha = 0.08f) else GlowPalette.Surface)
             .border(1.5.dp, if (enabled) GlowPalette.Cyan else GlowPalette.Outline, GlowShapes.Button)
-            .clickable(role = Role.Button, enabled = enabled, onClick = onClick),
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(
@@ -394,7 +410,8 @@ internal fun GhostButton(text: String, emphasized: Boolean, onClick: () -> Unit,
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text.uppercase(), style = MaterialTheme.typography.labelMedium, color = tint, maxLines = 1)
+        // One line, but at large font sizes it wraps rather than lose its end.
+        Text(text = text.uppercase(), style = MaterialTheme.typography.labelMedium, color = tint, textAlign = TextAlign.Center)
     }
 }
 

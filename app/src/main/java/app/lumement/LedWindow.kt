@@ -41,7 +41,10 @@ internal class PanelModes(private val display: () -> Display?, private val fadeH
     val idle: Int get() = ids().first
     val fade: Int get() = ids().second
 
-    /** Forget the modes, e.g. after a resolution change. */
+    /**
+     * Forget the modes, e.g. after a resolution change: a mode is one resolution's, and asked for
+     * at another, the system may switch the screen back to that resolution for it.
+     */
     fun reset() {
         cached = null
     }

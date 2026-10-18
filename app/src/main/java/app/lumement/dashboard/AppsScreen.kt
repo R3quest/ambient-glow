@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -65,6 +66,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -191,9 +194,10 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
+    val title = stringResource(R.string.group_apps_title)
+    Box(Modifier.fillMaxSize().semantics { paneTitle = title }) {
         Column(Modifier.fillMaxSize()) {
-            PageHeader(stringResource(R.string.group_apps_title), onBack)
+            PageHeader(title, onBack)
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().imePadding(),
                 contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 20.dp, bottom = 24.dp),
@@ -313,6 +317,7 @@ internal fun PageHeader(title: String, onBack: () -> Unit) {
             text = title,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
+            modifier = Modifier.semantics { heading() },
         )
     }
 }
@@ -450,7 +455,8 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, onDone: () -> 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    // Taller only when large text needs it.
+                    .heightIn(min = 44.dp)
                     .clip(GlowShapes.Tile)
                     .background(GlowPalette.Void)
                     .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Tile)

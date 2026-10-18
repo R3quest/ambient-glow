@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
@@ -184,6 +185,18 @@ internal fun dotSpots(camera: ScreenCamera, window: IntSize, dotSize: DotSize, d
     )
 }
 
+/**
+ * The LED at [size]. A spot's place depends on the dot's size, whose glow keeps it clear of the
+ * screen's edge, so a dot on one of [before]'s spots (the old size's) moves onto the same spot
+ * among [after]'s (the new size's), and stays on it; anywhere else it keeps its place.
+ */
+internal fun resized(settings: GlowSettings, size: DotSize, before: List<DotSpot>, after: List<DotSpot>): GlowSettings {
+    val sized = settings.copy(dotSize = size)
+    val spot = before.firstOrNull { it.matches(settings.dotX, settings.dotY) } ?: return sized
+    val same = after.firstOrNull { it.label == spot.label && it.camera == spot.camera } ?: return sized
+    return sized.copy(dotX = same.x, dotY = same.y)
+}
+
 /** The screen in thirds, top row first, for an LED that sits on no spot. */
 private val PLACE_GRID = arrayOf(
     intArrayOf(R.string.led_place_top_left, R.string.led_place_top_centre, R.string.led_place_top_right),
@@ -314,7 +327,7 @@ internal fun LedCard(
     val frame = settings.ledOnEdge
 
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_led), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.section_led), GlowPalette.TextMuted, heading = true)
 
         // Tiles, a glyph over its name, so "Edge Frame" has the width.
         OptionGroup(stringResource(R.string.led_form)) {
@@ -526,12 +539,17 @@ internal fun LedCard(
 @Composable
 internal fun LedLookCard(
     settings: GlowSettings,
-    onLook: (GlowSettings) -> Unit,
+    onLook: ((GlowSettings) -> GlowSettings) -> Unit,
     reveal: Boolean = false,
     onRevealed: () -> Unit = {},
 ) {
     val view = remember { BringIntoViewRequester() }
     val revealed by rememberUpdatedState(onRevealed)
+    // A new size moves a dot left on a spot onto that spot as the new size places it.
+    val spots = rememberDotSpots(settings.dotSize)
+    val camera = LocalCamera.current
+    val window = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
     LaunchedEffect(reveal) {
         if (!reveal) return@LaunchedEffect
         try {
@@ -541,7 +559,7 @@ internal fun LedLookCard(
         }
     }
     Column(Modifier.bringIntoViewRequester(view).glowCard()) {
-        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.TextMuted, heading = true)
         // The dot's and the ring's size, or the frame's look; each carries its own gap.
         Disclosure(visible = !settings.ledOnEdge) {
             Box(Modifier.padding(top = 16.dp)) {
@@ -549,7 +567,10 @@ internal fun LedLookCard(
                     SelectionRow(
                         count = DotSize.entries.size,
                         selected = settings.dotSize.ordinal,
-                        onSelect = { onLook(settings.copy(dotSize = DotSize.entries[it])) },
+                        onSelect = {
+                            val size = DotSize.entries[it]
+                            onLook { resized(it, size, spots, dotSpots(camera, window, size, density)) }
+                        },
                     ) { index, lit ->
                         val size = DotSize.entries[index]
                         Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
@@ -564,14 +585,14 @@ internal fun LedLookCard(
             Column(Modifier.padding(top = 16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     OptionGroup(stringResource(R.string.edge_color)) {
-                        ChipRow(EdgeColor.entries, settings.edgeColor) { onLook(settings.copy(edgeColor = it)) }
+                        ChipRow(EdgeColor.entries, settings.edgeColor) { picked -> onLook { it.copy(edgeColor = picked) } }
                         OptionBody(settings.edgeColor) { stringResource(frameLedColorBody(it)) }
                     }
                     OptionGroup(stringResource(R.string.edge_width)) {
-                        ChipRow(EdgeWidth.entries, settings.edgeWidth) { onLook(settings.copy(edgeWidth = it)) }
+                        ChipRow(EdgeWidth.entries, settings.edgeWidth) { picked -> onLook { it.copy(edgeWidth = picked) } }
                     }
                     OptionGroup(stringResource(R.string.edge_glow)) {
-                        ChipRow(EdgeGlow.entries, settings.edgeGlow) { onLook(settings.copy(edgeGlow = it)) }
+                        ChipRow(EdgeGlow.entries, settings.edgeGlow) { picked -> onLook { it.copy(edgeGlow = picked) } }
                     }
                 }
             }
@@ -765,7 +786,9 @@ private fun FitRow(label: String, valuePx: Int, minus: String, plus: String, onS
             style = MaterialTheme.typography.labelMedium,
             color = GlowPalette.TextPrimary,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(72.dp),
+            // Wider with large text, so the value stays on one line.
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 72.dp),
         )
         StepButton(plus = true, description = plus, onStep = { onStep(1) })
     }
@@ -783,6 +806,8 @@ private fun SpotRow(spots: List<DotSpot>, dotX: Float, dotY: Float, onPick: (Dot
                 selected = spot.matches(dotX, dotY),
                 onClick = { onPick(spot) },
                 compact = true,
+                // Said in full: the chip's "CAM L" is short for it.
+                description = stringResource(spot.phrase),
                 modifier = Modifier.weight(1f),
             )
         }

@@ -53,25 +53,25 @@ private const val SWATCH_REST = 0.5f
  * fire chosen. Colour and wake aren't plain from their names: what the picked one does, under it.
  */
 @Composable
-internal fun FireOptions(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
+internal fun FireOptions(settings: GlowSettings, accent: Color, onEffect: ((GlowSettings) -> GlowSettings) -> Unit) {
     val fire = remember(settings.fireColor, accent) { FireInk(firePalette(settings.fireColor, accent)) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         OptionGroup(stringResource(R.string.fire_flames)) {
-            GlyphTiles(FireFlames.entries, settings.fireFlames, { onEffect(settings.copy(fireFlames = it)) }, ::FireLines) { flames, lit, lines ->
+            GlyphTiles(FireFlames.entries, settings.fireFlames, { picked -> onEffect { it.copy(fireFlames = picked) } }, ::FireLines) { flames, lit, lines ->
                 flamesGlyph(flames, fire, lit, lines)
             }
         }
         OptionGroup(stringResource(R.string.fire_color)) {
-            FireColorPicker(settings.fireColor, accent) { onEffect(settings.copy(fireColor = it)) }
+            FireColorPicker(settings.fireColor, accent) { picked -> onEffect { it.copy(fireColor = picked) } }
             OptionBody(settings.fireColor) { stringResource(it.body) }
         }
         OptionGroup(stringResource(R.string.fire_sparks)) {
-            GlyphTiles(FireSparks.entries, settings.fireSparks, { onEffect(settings.copy(fireSparks = it)) }, ::FireLines) { sparks, lit, lines ->
+            GlyphTiles(FireSparks.entries, settings.fireSparks, { picked -> onEffect { it.copy(fireSparks = picked) } }, ::FireLines) { sparks, lit, lines ->
                 sparksGlyph(sparks, fire, lit, lines)
             }
         }
         OptionGroup(stringResource(R.string.fire_wake)) {
-            GlyphTiles(FireWake.entries, settings.fireWake, { onEffect(settings.copy(fireWake = it)) }, ::FireLines) { wake, lit, lines ->
+            GlyphTiles(FireWake.entries, settings.fireWake, { picked -> onEffect { it.copy(fireWake = picked) } }, ::FireLines) { wake, lit, lines ->
                 wakeGlyph(wake, fire, lit, lines)
             }
             // On black there is no screen under the char: say what Burn comes to there.

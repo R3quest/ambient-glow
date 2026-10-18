@@ -23,6 +23,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.lumement.PremiumState
@@ -123,6 +124,7 @@ internal fun PremiumOverCard(premium: PremiumModel, modifier: Modifier = Modifie
                 text = stringResource(R.string.premium_over_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = GlowPalette.TextPrimary,
+                modifier = Modifier.semantics { heading() },
             )
         }
         Text(

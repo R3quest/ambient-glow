@@ -8,7 +8,8 @@
 # - each process's CPU time from /proc: Lumement, SurfaceFlinger, system_server, SystemUI, as % of
 #   one core;
 # - batterystats, reset at the start: Lumement's wake locks over the run.
-# One line per run goes to measurements/soak.tsv (committed); the raw dumps to app/build/soak/.
+# One line per run goes to measurements/soak.tsv (committed); the raw dumps to measurements/raw/
+# (kept locally, gitignored: they list every app on the phone).
 #
 # The modes, each with the LED's bright phase (Bright LED) and what follows it (Then) set for it
 # through the soak build's own receiver (SoakSettings), and put back as they were afterwards:
@@ -29,17 +30,17 @@ AFTER=${AFTER:-AOD}
 ADB=${ADB:-adb}
 PKG=app.lumement
 TSV=measurements/soak.tsv
-RAW=app/build/soak
+RAW=measurements/raw
 STAMP=$(date +%Y%m%d-%H%M%S)
 TAG="soak-$STAMP"
 
 # Every helper reads adb's output to the end: a reader that stops early (grep -m1) breaks the pipe,
-# and with pipefail that ends the run.
-sh() { "$ADB" shell "$@" | tr -d '\r'; }
+# and with pipefail that ends the run. sh (adb shell with a timeout), sh_once, counter, counter_read, step.
 fail() { echo "soak: $*" >&2; exit 1; }
+# shellcheck source=soak_lib.sh
+. "$(dirname "$0")/soak_lib.sh"
 wakefulness() { sh dumpsys power | awk -F= '/mWakefulness=/ && !seen {print $2; seen = 1}'; }
 held() { [ "$(sh dumpsys power | awk -v tag="'Lumement:$1'" '$2 == tag' | wc -l)" -gt 0 ]; }
-counter() { sh dumpsys battery | awk -F': ' '/Charge counter/ && !seen {print $2; seen = 1}'; }
 level() { sh dumpsys battery | awk -F': ' '/^  level/ && !seen {print $2; seen = 1}'; }
 # The display itself: OFF, ON, or DOZE / DOZE_SUSPEND (the always-on display). Wakefulness says
 # Dozing even with the always-on display off, so it can't tell.
@@ -49,6 +50,7 @@ dozing() { case "$1" in DOZE | DOZE_SUSPEND) return 0 ;; *) return 1 ;; esac; }
 soakset() { sh am broadcast -n "$PKG/.SoakSettings" "$@" | sed -n 's/.*data="\(.*\)".*/\1/p'; }
 
 case "$MODE" in lit | aod | idle | hybrid) ;; *) fail "MODE is lit, aod, idle or hybrid, not $MODE" ;; esac
+[[ "$MINUTES" =~ ^[1-9][0-9]*$ ]] || fail "MINUTES is a whole number of minutes, not $MINUTES"
 mkdir -p "$RAW" "$(dirname "$TSV")"
 
 # ---- The phone as a run needs it ----------------------------------------------------------------
@@ -57,7 +59,8 @@ grep -qE "(AC|USB|Wireless) powered: true" <<<"$battery" && fail "the phone is c
 aod=$(sh settings get system aod_mode)
 
 post() {
-    sh cmd notification post -S messaging --conversation Soak --message "Soak:$TAG" -t Soak "$TAG" soak >/dev/null
+    sh_once cmd notification post -S messaging --conversation Soak --message "Soak:$TAG" -t Soak "$TAG" soak >/dev/null ||
+        fail "the test message's post didn't go through, or may have: the run stops rather than post it twice"
 }
 unpost() {
     sh cmd notification snooze --for 315360000000 "'0|com.android.shell|2020|$TAG|2000'" >/dev/null 2>&1 || true
@@ -74,7 +77,8 @@ trap cleanup EXIT
 echo "soak: $MODE for $MINUTES min, battery $(level) %"
 case "$MODE" in
     lit)
-        [ "$aod" = "0" ] || fail "the always-on display is on (aod_mode $aod): the LED would go onto it. Turn it off in Settings for a lit run"
+        # "null": never switched on on this phone, so off.
+        [ "$aod" = "0" ] || [ "$aod" = "null" ] || fail "the always-on display is on (aod_mode $aod): the LED would go onto it. Turn it off in Settings for a lit run"
         [ "$MINUTES" -le 10 ] || fail "a lit run is 10 minutes at most: the LED's longest bright phase is 15, and the waits for the charge counter's steps come around the run"
         soakset --es bright_for FIFTEEN >/dev/null
         post
@@ -94,13 +98,13 @@ case "$MODE" in
         log=$(soakset --es bright_for "$BRIGHT" --es after_bright "$AFTER")
         echo "soak: $log"
         held led && fail "the lit LED is up: messages are waiting; read them first"
-        [ "$(wakefulness)" = "Awake" ] && sh input keyevent KEYCODE_SLEEP
+        [ "$(wakefulness)" = "Awake" ] && sh_once input keyevent KEYCODE_SLEEP
         sleep 10
         [ "$(wakefulness)" != "Awake" ] || fail "the phone is still awake"
         ;;
     idle)
         held led && fail "the lit LED is up: messages are waiting; read them first"
-        [ "$(wakefulness)" = "Awake" ] && sh input keyevent KEYCODE_POWER
+        [ "$(wakefulness)" = "Awake" ] && sh_once input keyevent KEYCODE_POWER
         sleep 10
         [ "$(wakefulness)" != "Awake" ] || fail "the phone is still awake"
         ;;
@@ -109,7 +113,8 @@ esac
 # ---- The run ------------------------------------------------------------------------------------
 procs=("$PKG" surfaceflinger system_server com.android.systemui)
 pids=()
-for p in "${procs[@]}"; do pids+=("$(sh pidof "$p" | awk '{print $1}')"); done
+# One that isn't running has no pid (pidof fails): "-" in the log, rather than the run ending here.
+for p in "${procs[@]}"; do pids+=("$(sh pidof "$p" | awk '{print $1}' || true)"); done
 
 # utime + stime, in clock ticks (100 a second), of each pid; "-" for one that is gone.
 ticks() {
@@ -118,22 +123,13 @@ ticks() {
     done
 }
 
-# Waits for the charge counter to step from [1], looking every [3] s, for up to [2] s.
-step() {
-    local from=$1 since
-    since=$(date +%s)
-    while [ "$(counter)" = "$from" ]; do
-        [ $(($(date +%s) - since)) -lt "$2" ] || fail "the charge counter hasn't moved from $from µAh in $2 s"
-        sleep "$3"
-    done
-}
-
 echo "soak: waiting for the charge counter's next step to start on"
-step "$(counter)" 3600 5
+c=$(counter_read)
+step "$c" 3600 5
 sh dumpsys batterystats --reset >/dev/null
 # A hybrid run's message arrives as it starts, so its bright phase and the handover are in it.
 [ "$MODE" = hybrid ] && post
-c0=$(counter)
+c0=$(counter_read)
 l0=$(level)
 t0=$(date +%s)
 mapfile -t k0 < <(ticks)
@@ -142,8 +138,9 @@ echo "soak: started at $(date +%H:%M), counter $c0 µAh; back in $MINUTES min"
 sleep $((MINUTES * 60))
 
 echo "soak: waiting for the charge counter's next step to end on"
-step "$(counter)" 3600 15
-c1=$(counter)
+c=$(counter_read)
+step "$c" 3600 15
+c1=$(counter_read)
 l1=$(level)
 t1=$(date +%s)
 mapfile -t k1 < <(ticks)
