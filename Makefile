@@ -101,10 +101,12 @@ SCENARIO ?= all
 scenario: ## Messages through the real flow (debug build, phone flat): no wake lock left, display off, no crash
 	ADB="$(ADB)" python3 -I scripts/scenario.py $(SCENARIO)
 
+# make scenario notes its windows on the phone, and the diary leaves its test messages out.
 diary: ## Pull the LED diary from the phone (debug build) and say what it means for the defaults
 	@mkdir -p app/build/diary
 	$(ADB) exec-out run-as $(PACKAGE) cat files/led-diary.txt > app/build/diary/led-diary.txt
-	@python3 -I scripts/diary.py app/build/diary/led-diary.txt
+	$(ADB) shell 'cat /data/local/tmp/lumement-scenarios.txt 2>/dev/null; true' | tr -d '\r' > app/build/diary/scenarios.txt
+	@python3 -I scripts/diary.py app/build/diary/led-diary.txt --skip app/build/diary/scenarios.txt
 
 soak-set: ## The defaults' battery set, ~4.5 h unplugged and left alone: idle, lit, the AOD tail, the hybrid
 	$(GRADLE) assembleSoak
