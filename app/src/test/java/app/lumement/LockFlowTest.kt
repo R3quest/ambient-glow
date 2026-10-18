@@ -622,6 +622,52 @@ class LockFlowTest {
         }
     }
 
+    /**
+     * Read elsewhere under the LED, the phone put to sleep at once under a black cover, and power
+     * pressed in the sleep's fade: the sleep was cancelled, and the lit lock screen stayed black
+     * under the cover until its timeout (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun powerInTheFadeOfOurOwnSleepShowsTheLockScreen() {
+        readyUnderLed()
+        GlowPending.remove("chat-1")
+        phone.host { onPendingChanged() }
+        phone.advance(100) // asleep at once, fading
+        assertFalse(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(1_000)
+
+        logged("sleep now", "system: going to sleep", "system: sleep cancelled")
+        assertTrue(phone.interactive)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertFalse("the lock screen, not black", phone.coverUp)
+    }
+
+    /**
+     * Asleep under the black cover, waiting for an always-on display that never came (the message
+     * seen, or the display's switch changed since the last sleep), and woken before the listener's
+     * check took the cover down: a black lock screen (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun wokenWhileTheLedWaitsForAnAlwaysOnDisplayShowsTheLockScreen() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = false
+        message()
+        phone.launch(WakeMode.LED, 1_000)
+        phone.advance(4_000) // a breath, then asleep under the cover
+        logged("blackout", "sleep now", "system: SCREEN_OFF")
+        assertTrue("the cover waits for the doze", phone.coverUp)
+
+        phone.pressPower() // before the listener's check, 4 s after SCREEN_OFF
+        phone.advance(1_000)
+
+        assertTrue(phone.interactive)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertFalse("the lock screen, not black", phone.coverUp)
+    }
+
     @Test
     fun withoutTheShieldTheLedFaceCoversAndPowerOpensTheLockScreen() {
         phone.shieldOn = false

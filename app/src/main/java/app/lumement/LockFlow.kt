@@ -1054,6 +1054,9 @@ internal class LockFlow(
             ledArmedForSleep = false
             revealingAfterPower = false
             sleepSettling = false
+            if (!wasInteractive) {
+                wokenUnderCover()
+            }
         }
         if (wasInteractive && ledTurnedOff()) {
             GlowLog.d { "act display changed: going to sleep with the LED in front" }
@@ -1297,6 +1300,7 @@ internal class LockFlow(
     private fun sleepFromUnderLed() {
         shield.blackout()
         endLedWindow()
+        coverSleep = true // the lock screen in front now, under the cover: nobody is looking at it
         if (shield.sleepNow()) GlowLog.d { "act asleep at once, under the cover" }
     }
 
@@ -1520,6 +1524,19 @@ internal class LockFlow(
         shield.blackout()
         showLockScreen(underCover = true)
         if (unused && shield.sleepNow()) GlowLog.d { "act asleep at once, under the cover" }
+    }
+
+    /**
+     * Woken by the user from a sleep under the black cover ([sleepUnderCover], [sleepFromUnderLed]):
+     * in its fade (the sleep cancelled, so no SCREEN_ON), or while it waited for an always-on
+     * display that never came. The lock screen is in front and the user is looking at it: the
+     * cover goes, or it shows black until its own timeout.
+     */
+    private fun wokenUnderCover() {
+        if (!coverSleep || face.value != Face.LOCK_SCREEN) return
+        GlowLog.d { "act woken under the cover: the lock screen shows" }
+        coverSleep = false
+        shield.hide()
     }
 
     /** The effect on the black panel has handed over to the dot: drop to the dot's frame rate. */
