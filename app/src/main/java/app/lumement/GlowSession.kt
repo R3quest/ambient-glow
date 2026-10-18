@@ -66,10 +66,16 @@ object GlowPending {
         return entries.removeAll { it.key == key }.also { if (it) save() }
     }
 
-    /** [pkg] was muted: its waiting messages leave the LED at once. True if any did. */
+    /**
+     * [pkg] was muted: its waiting messages leave the LED at once, as if read, so the last of them
+     * going ends the streak ([GlowSession.allRead]). True if any did.
+     */
     fun removeApp(pkg: String): Boolean {
         if (message?.sbn?.packageName == pkg) message = null
-        return entries.removeAll { it.pkg == pkg }.also { if (it) save() }
+        if (!entries.removeAll { it.pkg == pkg }) return false
+        save()
+        if (isEmpty) GlowSession.allRead()
+        return true
     }
 
     /** [pkg] was given a new colour: its waiting messages blink in it from the next breath. */
@@ -286,6 +292,16 @@ internal fun restsUnder(interruptionFilter: Int): Boolean = when (interruptionFi
 internal fun arrivalFor(chosen: ArrivalMode, resting: Boolean): ArrivalMode = if (resting) ArrivalMode.LOCK_SCREEN else chosen
 
 /**
+ * The unread streak after a message at [now] ([BrightStreak.onMessage]). One that comes while the
+ * phone is in use ([inUse]: awake and unlocked) finds the user looking at it, as a look at the lock
+ * screen does ([BrightStreak.looked]), so the streak starts over: an hour in use with messages
+ * coming in would otherwise spend the streak's whole bright time on a lit screen, and the phone
+ * put down after it would get none for what still waits.
+ */
+internal fun brightAfterMessage(streak: BrightStreak, now: Long, brightForMs: Long, inUse: Boolean): BrightStreak =
+    (if (inUse) streak.looked(now) else streak).onMessage(now, brightForMs)
+
+/**
  * In-process link between the listener and a live glow screen (both on the main thread of
  * one process). While the glow screen is on top of the lock screen it handles every lock-flow
  * change itself; the listener only takes over when there is no glow screen on top.
@@ -354,6 +370,16 @@ object GlowSession {
 
     /** Keys of other apps' posts showing now that want the screen ([takesScreen]). Set by the listener, main thread only. */
     val screenTakers = mutableSetOf<String>()
+
+    /**
+     * Nothing waits any more ([GlowPending] empty: read, dismissed, read unseen, or its app muted,
+     * which [GlowPending.removeApp] sees to itself): the next message starts a new streak, and with
+     * no glow screen up to take the LED's windows down, they go here. Main thread only.
+     */
+    fun allRead() {
+        bright = BrightStreak()
+        if (host == null) GlowShield.removeLed()
+    }
 
     fun attach(host: Host) {
         this.host = host

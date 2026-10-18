@@ -205,6 +205,10 @@ object GlowLauncher {
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_ALL)
                 .setShortcutId(null)
                 .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setBubbleMetadata(null) }
+                // Only its pop-up: its app's full-screen intent, posted on our heads-up channel
+                // with our grant, would open that app over the lock screen, which its own post
+                // (on a channel that doesn't peek) never could.
+                .setFullScreenIntent(null, false)
                 .setOnlyAlertOnce(false)
                 .setLocalOnly(true)
                 .setTimeoutAfter(MESSAGE_TIMEOUT_MS)
