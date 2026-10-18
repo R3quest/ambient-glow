@@ -191,20 +191,20 @@ internal fun styleBody(style: GlowStyle, frame: Boolean, camera: Boolean): Int =
  * its width and glow, and the row says so.
  */
 @Composable
-internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit, onOpenLedLook: () -> Unit) {
+internal fun EdgeFrameCard(settings: GlowSettings, onEffect: ((GlowSettings) -> GlowSettings) -> Unit, onOpenLedLook: () -> Unit) {
     val shaders = elementFramesSupported
     val elemental = settings.elementalEdge && shaders
     Column(Modifier.glowCard(vertical = 10.dp)) {
         Fold(title = stringResource(R.string.fold_edge), summary = edgePhrasing(settings, shaders).text()) {
             Column {
                 OptionGroup(stringResource(R.string.edge_material)) {
-                    MaterialPicker(settings) { onEffect(settings.copy(edgeMaterial = it)) }
+                    MaterialPicker(settings) { picked -> onEffect { it.copy(edgeMaterial = picked) } }
                     OptionBody(materialBody(settings, shaders)) { body -> body.map { stringResource(it) }.joinToString(" ") }
                 }
                 // Motion and colour aren't plain from their names: what the picked one does, under it.
                 Spacer(Modifier.height(14.dp))
                 OptionGroup(stringResource(R.string.edge_motion)) {
-                    MotionPicker(settings) { onEffect(settings.copy(edgeMotion = it)) }
+                    MotionPicker(settings) { picked -> onEffect { it.copy(edgeMotion = picked) } }
                     OptionBody(settings.edgeMotion) { stringResource(it.body) }
                 }
                 // Each carries its own gap, so nothing jumps as they come and go.
@@ -229,18 +229,18 @@ internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> U
                         Disclosure(visible = !elemental) {
                             Box(Modifier.padding(top = 14.dp)) {
                                 OptionGroup(stringResource(R.string.edge_color)) {
-                                    ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
+                                    ChipRow(EdgeColor.entries, settings.edgeColor) { picked -> onEffect { it.copy(edgeColor = picked) } }
                                     OptionBody(settings.edgeColor) { stringResource(it.body) }
                                 }
                             }
                         }
                         Spacer(Modifier.height(14.dp))
                         OptionGroup(stringResource(R.string.edge_width)) {
-                            ChipRow(EdgeWidth.entries, settings.edgeWidth) { onEffect(settings.copy(edgeWidth = it)) }
+                            ChipRow(EdgeWidth.entries, settings.edgeWidth) { picked -> onEffect { it.copy(edgeWidth = picked) } }
                         }
                         Spacer(Modifier.height(14.dp))
                         OptionGroup(stringResource(R.string.edge_glow)) {
-                            ChipRow(EdgeGlow.entries, settings.edgeGlow) { onEffect(settings.copy(edgeGlow = it)) }
+                            ChipRow(EdgeGlow.entries, settings.edgeGlow) { picked -> onEffect { it.copy(edgeGlow = picked) } }
                         }
                     }
                 }

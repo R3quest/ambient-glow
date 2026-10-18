@@ -539,7 +539,7 @@ internal fun LedCard(
 @Composable
 internal fun LedLookCard(
     settings: GlowSettings,
-    onLook: (GlowSettings) -> Unit,
+    onLook: ((GlowSettings) -> GlowSettings) -> Unit,
     reveal: Boolean = false,
     onRevealed: () -> Unit = {},
 ) {
@@ -569,7 +569,7 @@ internal fun LedLookCard(
                         selected = settings.dotSize.ordinal,
                         onSelect = {
                             val size = DotSize.entries[it]
-                            onLook(resized(settings, size, spots, dotSpots(camera, window, size, density)))
+                            onLook { resized(it, size, spots, dotSpots(camera, window, size, density)) }
                         },
                     ) { index, lit ->
                         val size = DotSize.entries[index]
@@ -585,14 +585,14 @@ internal fun LedLookCard(
             Column(Modifier.padding(top = 16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     OptionGroup(stringResource(R.string.edge_color)) {
-                        ChipRow(EdgeColor.entries, settings.edgeColor) { onLook(settings.copy(edgeColor = it)) }
+                        ChipRow(EdgeColor.entries, settings.edgeColor) { picked -> onLook { it.copy(edgeColor = picked) } }
                         OptionBody(settings.edgeColor) { stringResource(frameLedColorBody(it)) }
                     }
                     OptionGroup(stringResource(R.string.edge_width)) {
-                        ChipRow(EdgeWidth.entries, settings.edgeWidth) { onLook(settings.copy(edgeWidth = it)) }
+                        ChipRow(EdgeWidth.entries, settings.edgeWidth) { picked -> onLook { it.copy(edgeWidth = picked) } }
                     }
                     OptionGroup(stringResource(R.string.edge_glow)) {
-                        ChipRow(EdgeGlow.entries, settings.edgeGlow) { onLook(settings.copy(edgeGlow = it)) }
+                        ChipRow(EdgeGlow.entries, settings.edgeGlow) { picked -> onLook { it.copy(edgeGlow = picked) } }
                     }
                 }
             }

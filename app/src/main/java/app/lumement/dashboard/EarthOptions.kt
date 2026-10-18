@@ -51,27 +51,27 @@ private const val SWATCH_REST = 0.5f
  * earth chosen. The ground and colour aren't plain from their names: what the picked one does, under it.
  */
 @Composable
-internal fun EarthOptions(settings: GlowSettings, accent: Color, onEffect: (GlowSettings) -> Unit) {
+internal fun EarthOptions(settings: GlowSettings, accent: Color, onEffect: ((GlowSettings) -> GlowSettings) -> Unit) {
     val earth = remember(settings.earthColor, accent) { earthPalette(settings.earthColor, accent) }
     val smoke = remember(earth) { earth.smoke() }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         OptionGroup(stringResource(R.string.earth_force)) {
-            GlyphTiles(EarthForce.entries, settings.earthForce, { onEffect(settings.copy(earthForce = it)) }, ::EarthLines) { force, lit, lines ->
+            GlyphTiles(EarthForce.entries, settings.earthForce, { picked -> onEffect { it.copy(earthForce = picked) } }, ::EarthLines) { force, lit, lines ->
                 forceGlyph(force, earth, lit, lines)
             }
         }
         OptionGroup(stringResource(R.string.earth_form)) {
-            GlyphTiles(EarthForm.entries, settings.earthForm, { onEffect(settings.copy(earthForm = it)) }, ::EarthLines) { form, lit, lines ->
+            GlyphTiles(EarthForm.entries, settings.earthForm, { picked -> onEffect { it.copy(earthForm = picked) } }, ::EarthLines) { form, lit, lines ->
                 formGlyph(form, earth, lit, lines)
             }
             OptionBody(settings.earthForm) { stringResource(it.body) }
         }
         OptionGroup(stringResource(R.string.earth_color)) {
-            EarthColorPicker(settings.earthColor, accent) { onEffect(settings.copy(earthColor = it)) }
+            EarthColorPicker(settings.earthColor, accent) { picked -> onEffect { it.copy(earthColor = picked) } }
             OptionBody(settings.earthColor) { stringResource(it.body) }
         }
         OptionGroup(stringResource(R.string.earth_debris)) {
-            GlyphTiles(EarthDebris.entries, settings.earthDebris, { onEffect(settings.copy(earthDebris = it)) }, ::EarthLines) { debris, lit, lines ->
+            GlyphTiles(EarthDebris.entries, settings.earthDebris, { picked -> onEffect { it.copy(earthDebris = picked) } }, ::EarthLines) { debris, lit, lines ->
                 debrisGlyph(debris, earth, smoke, lit, lines)
             }
         }

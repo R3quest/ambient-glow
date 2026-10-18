@@ -613,8 +613,9 @@ private fun EffectPage(
     onMoveLed: () -> Unit,
     onOpenLedLook: () -> Unit,
 ) {
-    val onEffect = { next: GlowSettings ->
-        edit(save = true) { next }
+    // Each pick is a change, applied to the settings as they are when it lands.
+    val onEffect = { change: (GlowSettings) -> GlowSettings ->
+        edit(save = true, change)
         onShowcase()
     }
     val effectOn = settings.arrival.playsEffect
@@ -628,7 +629,7 @@ private fun EffectPage(
                         sample = sample,
                         previewHeld = previewHeld,
                         loop = loop,
-                        onStyle = { style -> onEffect(settings.copy(style = style)) },
+                        onStyle = { style -> onEffect { it.copy(style = style) } },
                         onSample = onSample,
                         onMoveLed = onMoveLed,
                     )
@@ -681,8 +682,8 @@ private fun LedPage(
         )
         LedLookCard(
             settings = settings,
-            onLook = { look ->
-                edit(save = true) { look }
+            onLook = { change ->
+                edit(save = true, change)
                 onLed(false)
             },
             reveal = revealLook,
