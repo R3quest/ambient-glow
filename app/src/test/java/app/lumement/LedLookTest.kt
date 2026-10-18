@@ -96,4 +96,16 @@ class LedLookTest {
         // Less than a turn a breath: a drift you can follow, not a spin.
         assertTrue(wispTurnAt(LED_BREATH_MS) > -360f)
     }
+
+    /** On the always-on display's ~10 nits a dim app colour is lifted, its hue kept; a light one stays. */
+    @Test
+    fun theAlwaysOnDisplayLiftsDimColoursOnly() {
+        val blue = androidx.compose.ui.graphics.Color(0xFF1A73E8)
+        val lifted = stillTone(blue)
+        assertTrue(toOklch(lifted)[0] > toOklch(blue)[0] + 0.1f)
+        assertTrue("hue kept", abs(toOklch(lifted)[2] - toOklch(blue)[2]) < 3f)
+
+        val pale = androidx.compose.ui.graphics.Color(0xFFFFD0A0)
+        assertEquals(pale, stillTone(pale))
+    }
 }

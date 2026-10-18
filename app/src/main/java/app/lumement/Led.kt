@@ -240,12 +240,12 @@ internal val EdgeGlow.ledReach: Dp get() = reach * FRAME_GLOW_SHARE
 
 /**
  * The frame LED round a screen of [size] whose corners have [corner] radius, its line and glow
- * from [settings]' Edge Frame ([ledLine], [ledReach]) at [dp] px a dp; [inset] is its burn-in
- * step in from the edge ([FRAME_SHIFTS]). Its core is what a ring of that line would have, for
- * whatever is sized by it.
+ * from [settings]' Edge Frame ([ledLine], [ledReach]; [full]: the effect's own line, for the
+ * always-on display's ~10 nits) at [dp] px a dp; [inset] is its burn-in step in from the edge
+ * ([FRAME_SHIFTS]). Its core is what a ring of that line would have, for whatever is sized by it.
  */
-internal fun ledFrameLight(settings: GlowSettings, size: Size, corner: Float, inset: Float, dp: Float): LedLight {
-    val line = settings.edgeWidth.ledLine.value * dp
+internal fun ledFrameLight(settings: GlowSettings, size: Size, corner: Float, inset: Float, dp: Float, full: Boolean = false): LedLight {
+    val line = (if (full) settings.edgeWidth.stroke else settings.edgeWidth.ledLine).value * dp
     val edge = inset + line / 2f
     return LedLight(
         core = line / LED_RING_STROKE_FACTOR,
