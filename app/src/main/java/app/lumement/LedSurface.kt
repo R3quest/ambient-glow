@@ -48,6 +48,12 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
     private val step = Runnable { step() }
     private val riseStep = Runnable { rise() }
 
+    // What paint draws with, kept: a material that moves paints every step of every breath.
+    private val drawScope = CanvasDrawScope()
+    private var drawDensity = Density(context.resources.displayMetrics.density)
+    private var native: android.graphics.Canvas? = null
+    private var wrapped: Canvas? = null
+
     /** The surface exists, so it can be drawn. */
     var ready = false
         private set
@@ -63,22 +69,22 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
 
     /**
      * The LED in [color] where the screen shows it at breath [cycle], its burn-in step included,
-     * with [settings] as the screen shows them and [geometry] fitted. Dark until [breathe].
+     * with [settings] as the screen shows them and [geometry] fitted. Dark until [breathe]. The
+     * frame quiets down as [calm] goes from 0 to 1 ([BrightStreak.settledAt]).
      */
-    fun show(settings: GlowSettings, geometry: ScreenGeometry, color: Int, cycle: Int) {
+    fun show(settings: GlowSettings, geometry: ScreenGeometry, color: Int, cycle: Int, calm: Float) {
         val density = context.resources.displayMetrics.density
         val size = Size(view.width.toFloat(), view.height.toFloat())
-        val onCamera = settings.ledOnCamera
-        val light = ledLight(
-            core = settings.dotSize.radius.value * density,
-            onCamera = onCamera,
-            lens = geometry.lensRadius(density),
-            ringGrowPx = if (onCamera) RING_SHIFTS[cycle % RING_SHIFTS.size] else 0f,
-            ringGap = LED_RING_GAP.value * density,
-        )
-        val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
-        lightAt = ledCenter(onCamera, geometry, settings.dotX, settings.dotY, light, size, density) + shift
-        look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, onCamera)
+        val form = settings.ledForm
+        val step = ledStepPx(form, cycle)
+        val light = if (form == LedForm.FRAME) {
+            ledFrameLight(settings, size, geometry.frameCornerPx(density), inset = step, dp = density)
+        } else {
+            val core = settings.dotSize.radius.value * density
+            ledLight(core, form == LedForm.RING, geometry.lensRadius(density), ringGrowPx = step, ringGap = LED_RING_GAP.value * density)
+        }
+        lightAt = ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density) + ledShiftAt(form, cycle)
+        look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, form, settings, calm)
         setLevel(0f)
         // Neon: once, at its peak; the breath is the alpha. A material that moves: each step.
         if (look?.moves == false) paint(1f, LED_RISE_MS) else paint(0f, 0f)
@@ -193,7 +199,13 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
             val drawn = look ?: return
             val size = Size(view.width.toFloat(), view.height.toFloat())
             val density = context.resources.displayMetrics.density
-            CanvasDrawScope().draw(Density(density), LayoutDirection.Ltr, Canvas(canvas), size) {
+            if (drawDensity.density != density) drawDensity = Density(density)
+            // The surface hands back the same canvas step after step, so its wrapper is kept too.
+            val target = wrapped?.takeIf { canvas === native } ?: Canvas(canvas).also {
+                native = canvas
+                wrapped = it
+            }
+            drawScope.draw(drawDensity, LayoutDirection.Ltr, target, size) {
                 drawn.draw(this, lightAt, alpha, ms)
             }
         } finally {

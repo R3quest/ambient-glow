@@ -12,11 +12,11 @@
     <string name="bridge_text">Lighting your screen</string>
 
 
-    <string name="section_dot">LED DOT</string>
+    <string name="section_led">SHAPE AND PLACE</string>
     <string name="group_arrival_title">The effect</string>
     <string name="group_arrival_body">What plays the moment a message arrives, in the app\'s colour.</string>
     <string name="group_led_title">Waiting LED</string>
-    <string name="group_led_body">Afterwards the screen goes black and only this dot blinks, one blink per waiting app, until you read or dismiss the messages.</string>
+    <string name="group_led_body">Afterwards the screen goes black and only the LED blinks, one blink per waiting app, until you read or dismiss the messages.</string>
     <string name="effect_style">STYLE</string>
     <string name="effect_spawn_title">Lens Bloom</string>
     <string name="effect_spawn_body">A wave of light bursts out of the camera and lights the glow as it passes.</string>
@@ -63,7 +63,7 @@
     <string name="premium_over_dismiss">Not now</string>
     <string name="element_soon">Coming soon: it plays as the bare wave for now.</string>
     <string name="effects_off_title">Effects are off</string>
-    <string name="effects_off_body">With Just the LED, new messages skip the effect and go straight to the dot. Pick a screen that plays an effect to style it here.</string>
+    <string name="effects_off_body">With Just the LED, new messages skip the effect and go straight to the LED. Pick a screen that plays an effect to style it here.</string>
     <string name="effects_off_action">Choose a screen</string>
     <string name="glass_blur">BLUR UNDERNEATH</string>
     <string name="glass_blur_off">OFF</string>
@@ -222,7 +222,7 @@
     <string name="arrival_lock_screen_body">The lock screen lights up with all your notifications and the effect plays over it.</string>
     <string name="arrival_black_body">The screen comes on black and plays only the effect.</string>
     <string name="arrival_led_only">Just the LED</string>
-    <string name="arrival_led_only_body">No effect: the screen comes on black and only the LED dot lights. The least battery of all.</string>
+    <string name="arrival_led_only_body">No effect: the screen comes on black and only the LED lights. The least battery of all.</string>
     <string name="arrival_message_body">Black screen, the effect, and a pop-up of only the new message. Your lock-screen privacy settings decide how much shows.</string>
 
 
@@ -262,10 +262,15 @@
     <string name="style_edge_title">Edge Frame</string>
     <string name="style_beacon_body">Lights up right where your LED waits, then becomes it.</string>
     <string name="style_edge_body">Light runs round the edge of the screen, then flies into your LED.</string>
+    <string name="style_beacon_body_frame">Lights up round the camera, then runs out round the edge into your LED.</string>
+    <string name="style_beacon_body_frame_no_camera">Lights up at the top of the screen, then runs out round the edge into your LED.</string>
+    <string name="style_edge_body_frame">Light runs round the edge of the screen, then settles into your LED.</string>
     <string name="effect_led_title">Waiting LED</string>
     <string name="effect_led_action">Move the LED</string>
+    <string name="effect_led_action_frame">Change the LED</string>
 
     <string name="led_place_ring">Round the camera</string>
+    <string name="led_place_frame">Round the screen\'s edge</string>
     <string name="led_place_cam_left">Just left of the camera</string>
     <string name="led_place_cam_right">Just right of the camera</string>
     <string name="led_place_top_left">Top left</string>
@@ -280,15 +285,33 @@
 
     <string name="dot_body">Only these pixels light up. Drag the dot or tap where it should go; it snaps to the spots below and the ruler marks. The real LED shows on this screen as you change it.</string>
     <string name="dot_beacon_note">The LED Beacon lights up here when a message arrives.</string>
+    <string name="led_form">SHAPE</string>
+    <string name="led_form_dot">DOT</string>
+    <string name="led_form_ring">RING</string>
+    <string name="led_form_frame">EDGE FRAME</string>
+    <string name="led_frame_body">A thin line of light all the way round the screen\'s edge: the Edge Frame, waiting. Its colour, width and glow are set below. The real LED shows on this screen as you change it.</string>
+    <string name="led_frame_beacon_note">The LED Beacon lights round the camera when a message arrives, then runs out round the edge into the frame.</string>
+    <string name="led_frame_beacon_note_no_camera">The LED Beacon lights up at the top of the screen when a message arrives, then runs out round the edge into the frame.</string>
+    <string name="led_frame_preview_label">Edge Frame LED preview.</string>
+    <string name="edge_shared_title">Colour, width and glow</string>
+    <string name="edge_shared_summary">Shared with your LED: %1$s Set in the LED tab.</string>
+    <string name="edge_shared_title_element">Width and glow</string>
+    <string name="edge_shared_summary_element">Shared with your LED, which waits %1$s Set in the LED tab.</string>
+    <string name="edge_shared_action">Open the LED\'s look</string>
+    <string name="frame_led_summary">%1$s; %2$s, %3$s.</string>
+    <string name="edge_material_neon_body_frame">A line of light, in the colours set with your LED below. Your waiting LED is the same light, quieter.</string>
+    <string name="edge_material_fire_body_frame">A burning fuse: white-hot where the light runs, cooling to embers behind it, with flames licking in off the edge.</string>
+    <string name="edge_material_water_body_frame">Liquid light in a glass tube: it ripples, swells into a wave where the light runs, and glints along its surface.</string>
+    <string name="edge_material_air_body_frame">A slipstream: no solid line, only wind racing round the edge, carrying what the gust picks up.</string>
+    <string name="edge_material_earth_body_frame">A crack mended in light: the edge splits open, cracks branch in as it lights, and a sheen runs along the seam.</string>
+    <string name="edge_material_settles_frame">Then it settles into your waiting LED, a quiet line in the LED\'s own colours.</string>
     <string name="dot_size">SIZE</string>
     <string name="dot_size_xs">XS</string>
     <string name="dot_size_s">S</string>
     <string name="dot_size_m">M</string>
     <string name="dot_size_l">L</string>
     <string name="dot_spots_camera_line">CAMERA LINE</string>
-    <string name="dot_spots_lens">ON THE CAMERA</string>
     <string name="dot_spots_top_line">TOP OF THE SCREEN</string>
-    <string name="dot_spot_ring">RING AROUND THE CAMERA</string>
     <string name="dot_ring_thickness">RING THICKNESS</string>
     <string name="dot_step_left">Move left</string>
     <string name="dot_step_right">Move right</string>
@@ -398,6 +421,7 @@
     <string name="edge_color_app_phrase">in the app\'s colour</string>
     <string name="edge_color_duo_phrase">in two blended hues</string>
     <string name="edge_color_spectrum_phrase">in a turning rainbow</string>
+    <string name="edge_color_spectrum_led_phrase">in rainbow colours</string>
     <string name="edge_width_hair_phrase">hairline</string>
     <string name="edge_width_thin_phrase">thin line</string>
     <string name="edge_width_bold_phrase">bold line</string>
@@ -411,6 +435,8 @@
     <string name="edge_color_app_body">The colour of the app that sent the message.</string>
     <string name="edge_color_duo_body">The app\'s colour flowing into a neighbouring hue and back.</string>
     <string name="edge_color_spectrum_body">A turning rainbow that starts at the app\'s colour.</string>
+    <string name="edge_color_duo_body_led">The app\'s colour blending into a neighbouring hue round the edge.</string>
+    <string name="edge_color_spectrum_body_led">A rainbow round the edge, starting at the app\'s colour.</string>
     <string name="edge_material_neon_body">A line of light, in the colours you pick below. Its last spark flies to your LED.</string>
     <string name="edge_material_fire_body">A burning fuse: white-hot where the light runs, cooling to embers behind it, with flames licking in off the edge. Its last ember flies to your LED, which smoulders on as a live coal.</string>
     <string name="edge_material_water_body">Liquid light in a glass tube: it ripples, swells into a wave where the light runs, and glints along its surface. A last drop falls into your LED, which waits as a bead of water and ripples as it blinks.</string>

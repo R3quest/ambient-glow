@@ -68,6 +68,16 @@ object GlowMotion {
     /** How far a screen drifts on [page]: 1/PAGE_DRIFT of its width. */
     private const val PAGE_DRIFT = 10
 
+    /**
+     * One light turning into another in place (the LED's shape): the old one dims quickly as the new
+     * one rises, overlapping, so the light never goes out between them. The new one eases in, as a
+     * light comes up, rather than popping on. Read in draw.
+     */
+    fun <T> lightIn(): TweenSpec<T> = tween(LIGHT_IN_MS, easing = FastOutSlowInEasing)
+    fun <T> lightOut(): TweenSpec<T> = tween(LIGHT_OUT_MS, easing = FastOutLinearInEasing)
+    private const val LIGHT_IN_MS = 320
+    private const val LIGHT_OUT_MS = 180
+
     /** A state turning (selection, tint, dim): eased both ways, read in draw where it can be. */
     fun <T> stateChange(): TweenSpec<T> = tween(STATE_MS, easing = FastOutSlowInEasing)
 

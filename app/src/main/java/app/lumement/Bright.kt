@@ -25,8 +25,10 @@ internal const val LOW_BATTERY_PCT = 20
 /**
  * The unread streak's bright phases: the one under way started at [from] and ends at [until]
  * (elapsed ms); [spentMs] is the bright time the streak's earlier phases used. [until] 0: none.
+ * [messageAt]: when the newest message arrived (elapsed ms), which started the phase under way;
+ * a look keeps it.
  */
-internal data class BrightStreak(val from: Long = 0L, val until: Long = 0L, val spentMs: Long = 0L) {
+internal data class BrightStreak(val from: Long = 0L, val until: Long = 0L, val spentMs: Long = 0L, val messageAt: Long = 0L) {
 
     /** In the bright phase at [now] (elapsed ms). */
     fun lit(now: Long): Boolean = now < until
@@ -38,15 +40,23 @@ internal data class BrightStreak(val from: Long = 0L, val until: Long = 0L, val 
     fun onMessage(now: Long, brightForMs: Long, streakMs: Long = BRIGHT_STREAK_MS): BrightStreak {
         val spent = spentMs + (minOf(now, until) - from).coerceAtLeast(0L)
         val left = (streakMs - spent).coerceAtLeast(0L)
-        return BrightStreak(from = now, until = now + minOf(brightForMs, left), spentMs = spent)
+        return BrightStreak(from = now, until = now + minOf(brightForMs, left), spentMs = spent, messageAt = now)
     }
+
+    /**
+     * How far the phase under way has run at [now], 0 as its message arrives to 1 as it ends, and 1
+     * with none: the frame LED quiets down over it ([LedLook]), so the newest message is the most
+     * vivid and a long wait the calmest. A look doesn't start it over; a new message does.
+     */
+    fun settledAt(now: Long): Float =
+        if (until <= messageAt) 1f else ((now - messageAt).toFloat() / (until - messageAt)).coerceIn(0f, 1f)
 
     /**
      * The user looked at the lock screen (a press, a tap, a lift): a new streak, so the next
      * message has its whole time again. The phase under way runs out as it would have: until then
      * the LED still comes back when the lock screen sleeps.
      */
-    fun looked(now: Long): BrightStreak = if (lit(now)) BrightStreak(from = now, until = until) else BrightStreak()
+    fun looked(now: Long): BrightStreak = if (lit(now)) BrightStreak(from = now, until = until, messageAt = messageAt) else BrightStreak()
 }
 
 /**

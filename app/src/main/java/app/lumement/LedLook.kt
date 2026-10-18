@@ -1,5 +1,6 @@
 package app.lumement
 
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -8,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -18,6 +20,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
@@ -41,20 +44,21 @@ internal enum class LedMaterial { NEON, COAL, BEAD, WISP, GEM }
 
 /**
  * The LED's material: its element's after an Edge Frame made of one ([handOffToken]), else neon,
- * as it is when no effect plays at all: there is nothing for it to carry on.
+ * as it is when no effect plays at all: there is nothing for it to carry on. The frame LED is
+ * always neon: an element, or light running round it, would repaint the whole edge every step of
+ * every blink at the LED's low frame rate, and lag.
  */
-internal fun ledMaterial(settings: GlowSettings, shaders: Boolean): LedMaterial =
-    if (settings.style != GlowStyle.EDGE_FRAME || !settings.arrival.playsEffect) {
-        LedMaterial.NEON
-    } else {
-        when (handOffToken(settings, shaders)) {
-            HandOffToken.SPARK -> LedMaterial.NEON
-            HandOffToken.EMBER -> LedMaterial.COAL
-            HandOffToken.DROP -> LedMaterial.BEAD
-            HandOffToken.WISP -> LedMaterial.WISP
-            HandOffToken.GEM -> LedMaterial.GEM
-        }
+internal fun ledMaterial(settings: GlowSettings, shaders: Boolean): LedMaterial = when {
+    settings.ledOnEdge || settings.style != GlowStyle.EDGE_FRAME || !settings.arrival.playsEffect -> LedMaterial.NEON
+    else -> when (handOffToken(settings, shaders)) {
+        HandOffToken.SPARK -> LedMaterial.NEON
+        HandOffToken.EMBER -> LedMaterial.COAL
+        HandOffToken.DROP -> LedMaterial.BEAD
+        HandOffToken.WISP -> LedMaterial.WISP
+        HandOffToken.GEM -> LedMaterial.GEM
     }
+}
+
 
 /**
  * Coal: how much of the glow round it shows at [ms] into a breath. The coal holds steady; its
@@ -165,28 +169,63 @@ private class Tones(color: Color) {
 }
 
 /**
- * The LED in [material] and [color], sized by [light], built about the origin: the dot, or with
- * [onCamera] the ring round the lens. [draw] puts it at a centre; everything stays inside
- * [LedLight.bloom], so [LedDot]'s layer holds it. [moves]: a frame changes more than its alpha.
- * Each material is its own [MaterialLook], built only with what it draws.
+ * The LED in [material] and [color], sized by [light], built about the origin: the dot, the ring
+ * round the lens, or the frame round the screen ([form]). [draw] puts it at a centre; everything
+ * stays inside [LedLight.bloom], so [LedDot]'s layer holds it. [moves]: one step of its breath
+ * changes more than its alpha. Each material is its own [MaterialLook], built only with what it
+ * draws. The frame is the Edge Frame of [frameOf] waiting, always in plain light ([FrameLook]),
+ * whatever [material] says, quieting down as [calm] goes from 0 to 1.
  */
-internal class LedLook(val material: LedMaterial, color: Color, light: LedLight, onCamera: Boolean) {
-    val moves: Boolean = material != LedMaterial.NEON
-
-    private val look: MaterialLook = when (material) {
-        LedMaterial.NEON -> NeonLook(color, light, onCamera)
-        LedMaterial.COAL -> CoalLook(color, light, onCamera)
-        LedMaterial.BEAD -> BeadLook(color, light, onCamera)
-        LedMaterial.WISP -> WispLook(color, light, onCamera)
-        LedMaterial.GEM -> GemLook(color, light, onCamera)
+internal class LedLook(
+    material: LedMaterial,
+    color: Color,
+    light: LedLight,
+    form: LedForm,
+    frameOf: GlowSettings? = null,
+    calm: Float = 0f,
+) {
+    private val look: MaterialLook = if (form == LedForm.FRAME) {
+        FrameLook(color, light, calm, frameOf?.let { frameTint(it, color) })
+    } else {
+        val onCamera = form == LedForm.RING
+        when (material) {
+            LedMaterial.NEON -> NeonLook(color, light, onCamera)
+            LedMaterial.COAL -> CoalLook(color, light, onCamera)
+            LedMaterial.BEAD -> BeadLook(color, light, onCamera)
+            LedMaterial.WISP -> WispLook(color, light, onCamera)
+            LedMaterial.GEM -> GemLook(color, light, onCamera)
+        }
     }
+
+    val moves: Boolean = look.moves
 
     /** At [center] and [alpha], [ms] into its breath; [accents] off leaves out the one-off moments (sparks, ripples, glint). */
     fun draw(scope: DrawScope, center: Offset, alpha: Float, ms: Float, accents: Boolean = true) {
         if (alpha <= 0f) return
         scope.translate(center.x, center.y) { with(look) { draw(alpha, ms, accents) } }
     }
+
+    /**
+     * Part of the frame's line at [center] and [alpha]: [path] (about the origin, as the look is
+     * built) stroked as the frame strokes its line and hot core, in its colours, without its glow.
+     * The beacon's lights lay it round the edge ([LedFrameRun]). Nothing for the dot or the ring.
+     */
+    fun drawFrameLine(scope: DrawScope, center: Offset, path: Path, alpha: Float) {
+        val frame = look as? FrameLook ?: return
+        if (alpha <= 0f) return
+        scope.translate(center.x, center.y) { with(frame) { strokeLine(path, alpha) } }
+    }
 }
+
+/**
+ * The frame LED's colours round the screen in [settings]' Edge Frame colour ([edgeTintStops]),
+ * turned as the effect's come to rest ([edgeTintRestDegrees]), so the Edge Frame settles into the
+ * same colours; null for the app's [color]. About the origin, where [LedLook] builds.
+ */
+internal fun frameTint(settings: GlowSettings, color: Color): Brush? =
+    edgeTintStops(settings.edgeColor, color)?.let { stops ->
+        movingSweep(Offset.Zero, *stops).apply { rotateTo(edgeTintRestDegrees(settings.edgeColor), Offset.Zero) }
+    }
 
 /** What every material is built from: the light's size, the app's colour and its tones, and neon's halo. */
 private abstract class MaterialLook(protected val color: Color, light: LedLight, protected val onCamera: Boolean) {
@@ -225,6 +264,9 @@ private abstract class MaterialLook(protected val color: Color, light: LedLight,
         }
     }
 
+    /** It changes more than its alpha through a breath, so it is drawn every step, not once. */
+    open val moves: Boolean get() = true
+
     /** About the origin, [ms] into the breath, at [alpha]. */
     abstract fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean)
 }
@@ -232,6 +274,8 @@ private abstract class MaterialLook(protected val color: Color, light: LedLight,
 /** A plain light: a bright core (or ring) with a hot centre, in a soft bloom. */
 private class NeonLook(color: Color, light: LedLight, onCamera: Boolean) : MaterialLook(color, light, onCamera) {
     private val hot = lerp(color, Color.White, 0.45f)
+
+    override val moves: Boolean get() = false
 
     override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
         drawCircle(halo, bloom, Offset.Zero, alpha = alpha)
@@ -241,6 +285,80 @@ private class NeonLook(color: Color, light: LedLight, onCamera: Boolean) : Mater
         } else {
             drawCircle(color, core, Offset.Zero, alpha = alpha)
             drawCircle(hot, core * 0.5f, Offset.Zero, alpha = alpha)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The frame LED: the Edge Frame waiting, in plain light. A line round the whole screen is a lot of
+// light next to a 3 dp dot, so it is kept quiet: a soft line, a faint hot core and a short glow,
+// in the Edge Frame's colours. It is most vivid as a message arrives and quiets down over the
+// bright phase ([BrightStreak.settledAt], as [calm] goes from 0 to 1). It is drawn once a blink
+// and breathed by its surface's alpha, as the dot is: an element, or light running round it,
+// would repaint the whole edge every step at the LED's low frame rate, and lag.
+// ---------------------------------------------------------------------------------------------
+
+/** How bright the frame is at its quietest, as a share of a new message's ([calm] 1). */
+private const val FRAME_CALM_LEVEL = 0.55f
+
+/** The line and its hot core, under full light, so the edge glows rather than shines. */
+private const val FRAME_LINE_ALPHA = 0.85f
+private const val FRAME_HOT_ALPHA = 0.5f
+
+/** The frame's glow: at least this many rings, at most this many, and how bright it is at the line. */
+private const val FRAME_GLOW_MIN_RINGS = 3
+private const val FRAME_GLOW_MAX_RINGS = 16
+private const val FRAME_GLOW_PEAK = 0.3f
+
+/** With Duo or Spectrum, the hot core is its colours under this much white. */
+private const val FRAME_HOT_WHITE = 0.45f
+
+/**
+ * The frame: a line of light round the screen's edge with a hot core along it, its glow spilling
+ * inward ([EdgeGlowRings], as the Edge Frame effect's glow is, so it reads as the same light); in
+ * the Edge Frame's colours ([tint]: Duo, Spectrum), or the app's.
+ */
+private class FrameLook(color: Color, light: LedLight, calm: Float, private val tint: Brush?) : MaterialLook(color, light, onCamera = false) {
+    private val level = 1f - (1f - FRAME_CALM_LEVEL) * calm
+    private val paint: Brush = tint ?: SolidColor(color)
+    private val hot = lerp(color, Color.White, 0.45f)
+    private val frame = light.frame
+    private val topLeft = Offset(-frame.width / 2f, -frame.height / 2f)
+    private val corner = CornerRadius(light.corner)
+
+    // The glow's rings, from the line's inner edge in to [bloom]; with the glow off, none.
+    private val rings = run {
+        val count = if (bloom <= 0f) 0 else max(FRAME_GLOW_MIN_RINGS, ceil(bloom / max(1f, line / 2f)).toInt()).coerceAtMost(FRAME_GLOW_MAX_RINGS)
+        EdgeGlowRings(topLeft, frame, corner.x, from = line / 2f, step = if (count == 0) 1f else bloom / count, count = count)
+    }
+    private val ringAlpha = FloatArray(rings.count) { i -> FRAME_GLOW_PEAK * rings.falloff(i) }
+
+    override val moves: Boolean get() = false
+
+    override fun DrawScope.draw(alpha: Float, ms: Float, accents: Boolean) {
+        val a = alpha * level
+        for (i in 0 until rings.count) {
+            drawRoundRect(paint, rings.topLeft[i], rings.size[i], rings.corner[i], style = rings.stroke, alpha = a * ringAlpha[i])
+        }
+        drawRoundRect(paint, topLeft, frame, corner, style = ringStroke, alpha = a * FRAME_LINE_ALPHA)
+        if (tint == null) {
+            drawRoundRect(hot, topLeft, frame, corner, style = hotStroke, alpha = a * FRAME_HOT_ALPHA)
+        } else {
+            // The hot core a whiter light of its own colours.
+            drawRoundRect(tint, topLeft, frame, corner, style = hotStroke, alpha = a * FRAME_HOT_ALPHA)
+            drawRoundRect(Color.White, topLeft, frame, corner, style = hotStroke, alpha = a * FRAME_HOT_ALPHA * FRAME_HOT_WHITE)
+        }
+    }
+
+    /** [path] as the line and its hot core are drawn, at [alpha]: what the frame is once its glow comes in. */
+    fun DrawScope.strokeLine(path: Path, alpha: Float) {
+        val a = alpha * level
+        drawPath(path, paint, alpha = a * FRAME_LINE_ALPHA, style = ringStroke)
+        if (tint == null) {
+            drawPath(path, hot, alpha = a * FRAME_HOT_ALPHA, style = hotStroke)
+        } else {
+            drawPath(path, tint, alpha = a * FRAME_HOT_ALPHA, style = hotStroke)
+            drawPath(path, Color.White, alpha = a * FRAME_HOT_ALPHA * FRAME_HOT_WHITE, style = hotStroke)
         }
     }
 }

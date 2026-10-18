@@ -1,6 +1,7 @@
 package app.lumement
 
 import android.os.Build
+import android.os.SystemClock
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -21,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -193,7 +193,7 @@ private fun SurfaceLedLayer(
                 fade(false)
                 break
             }
-            surface.show(look, lens, palette[cycle % palette.size], cycle)
+            surface.show(look, lens, palette[cycle % palette.size], cycle, GlowSession.bright.settledAt(SystemClock.elapsedRealtime()))
             suspendCancellableCoroutine { out ->
                 surface.breathe { out.resume(Unit) }
                 out.invokeOnCancellation { surface.stop() }
@@ -254,18 +254,19 @@ private fun ComposeLedLayer(
 /** The round's dot in [color], [clock] ms into its breath, stepped through the burn-in guard by [cycle]. */
 @Composable
 private fun RoundDot(settings: GlowSettings, color: Int, cycle: Int, geometry: ScreenGeometry, clock: () -> Float) {
-    val onCamera = settings.ledOnCamera
-    val shift = if (onCamera) Offset.Zero else PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size]
+    val shift = ledShiftAt(settings.ledForm, cycle)
     LedDot(
         color = Color(color),
         alpha = { ledBreathAt(clock()) },
         dotX = settings.dotX,
         dotY = settings.dotY,
         radius = settings.dotSize.radius,
-        onCamera = onCamera,
+        form = settings.ledForm,
         geometry = geometry,
-        ringGrowPx = if (onCamera) RING_SHIFTS[cycle % RING_SHIFTS.size] else 0f,
+        stepPx = ledStepPx(settings.ledForm, cycle),
         material = ledMaterial(settings, elementFramesSupported),
+        frameOf = settings,
+        calm = GlowSession.bright.settledAt(SystemClock.elapsedRealtime()),
         clock = clock,
         modifier = Modifier
             .fillMaxSize()

@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -63,11 +64,15 @@ internal const val ARRIVAL_MS = 2_300
 
 /**
  * How long [settings]' effect plays: the Edge Frame's lands on the LED and goes out on the LED's
- * own exhale ([HANDOFF_END_MS]); on a lit lock screen that tail plays over the black the screen
- * has dimmed to ([GlowShield.dimIn]).
+ * own exhale ([HANDOFF_END_MS]), as the beacon's does when its light runs out into the frame LED
+ * ([FRAME_RUN_END_MS]); on a lit lock screen that tail plays over the black the screen has dimmed
+ * to ([GlowShield.dimIn]).
  */
-internal fun arrivalMsFor(settings: GlowSettings): Int =
-    if (settings.style == GlowStyle.EDGE_FRAME) HANDOFF_END_MS.toInt() else ARRIVAL_MS
+internal fun arrivalMsFor(settings: GlowSettings): Int = when {
+    settings.style == GlowStyle.EDGE_FRAME -> HANDOFF_END_MS.toInt()
+    settings.ledOnEdge -> FRAME_RUN_END_MS.toInt()
+    else -> ARRIVAL_MS
+}
 
 /** Light pools in the camera before the wave is released: the flash is the cause, the wave its effect. */
 internal const val SPAWN_GATHER_MS = 110f
@@ -157,12 +162,14 @@ private fun fadeOutAt(ms: Float): Float = 1f - smoothstep(FADE_OUT_AT_MS, ARRIVA
 
 /**
  * The Edge Frame's opacity: a fade in (only without the spawn, whose wave does the revealing) and
- * a short last fade once the frame has mostly drained into the camera. Beacons ignite instead of
- * fading in, and shape the fade out themselves ([fadeOutAt]).
+ * a short last fade once the frame has mostly drained into the camera, or, as it [settles] into
+ * the frame LED, as the LED rises in its place ([frameSettleAt]). Beacons ignite instead of fading
+ * in, and shape the fade out themselves ([fadeOutAt]).
  */
-private fun levelAt(ms: Float, spawn: Boolean): Float {
+private fun levelAt(ms: Float, spawn: Boolean, settles: Boolean): Float {
     val fadeIn = if (spawn) 1f else smoothstep(0f, FADE_IN_MS, ms)
-    return minOf(fadeIn, 1f - smoothstep(EDGE_FADE_AT_MS, ARRIVAL_MS.toFloat(), ms))
+    val fadeOut = if (settles) frameSettleAt(ms) else smoothstep(EDGE_FADE_AT_MS, ARRIVAL_MS.toFloat(), ms)
+    return minOf(fadeIn, 1f - fadeOut)
 }
 
 /** How far the comet heads have taken over from the plain lit frame. */
@@ -332,8 +339,9 @@ private const val COMET_BASE = 0.15f
  *
  * With [GlowSettings.spawn], an AirDrop-style wave bursts out of the camera, washes across the
  * screen, and lights the chosen style as its rim passes. Then the style plays: the Edge Frame in
- * its chosen motion and colours, its last light flying to the LED ([LedHandOff]); the LED Beacon
- * where the LED waits, in its form, sending out ripples.
+ * its chosen motion and colours, its last light flying to the LED ([LedHandOff]) or settling into
+ * the frame LED ([LedFrameSettle]); the LED Beacon where the LED waits, in its form, sending out
+ * ripples, or round the camera for the frame LED, its light then running out into it ([LedFrameRun]).
  *
  * With [GlowSettings.fire], the wave is a ring of fire instead ([FireWave]); with
  * [GlowSettings.air], a gust of wind ([AirWave]); with [GlowSettings.earth], a quake ([EarthWave]).
@@ -394,9 +402,16 @@ fun ArrivalEffect(
         when (settings.style) {
             GlowStyle.EDGE_FRAME -> {
                 EdgeArrival(settings, glow, geometry, scale, time)
-                LedHandOff(settings, glow, geometry, scale, time)
+                if (settings.ledOnEdge) {
+                    LedFrameSettle(settings, glow, geometry, scale, time)
+                } else {
+                    LedHandOff(settings, glow, geometry, scale, time)
+                }
             }
-            GlowStyle.BEACON -> BeaconArrival(settings, glow, geometry, scale, time)
+            GlowStyle.BEACON -> {
+                BeaconArrival(settings, glow, geometry, scale, time)
+                if (settings.ledOnEdge) LedFrameRun(settings, glow, geometry, scale, time)
+            }
         }
     }
 }
@@ -747,7 +762,7 @@ private fun SpawnWave(
  */
 internal fun CacheDrawScope.spawnFlash(color: Color, settings: GlowSettings, geometry: ScreenGeometry, scale: Float, origin: Offset): Brush {
     val bloomRadius = BLOOM_RADIUS.toPx() * scale
-    val ringSource = settings.style == GlowStyle.BEACON && settings.ledOnCamera
+    val ringSource = settings.style == GlowStyle.BEACON && beaconRings(settings, geometry)
     return if (ringSource) {
         val metrics = GlowMetrics.FullScreen
         val lens = geometry.lens(size.width, density, scale).radius
@@ -802,32 +817,36 @@ internal fun DrawScope.drawSpawnFlash(flash: Brush, origin: Offset, scale: Float
 private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
     val spawn = settings.spawn
     val motion = settings.edgeMotion
+    // Ends in the frame LED: the heads let go, the whole edge lights again and settles into it,
+    // rather than draining into the camera.
+    val settles = settings.ledOnEdge
     Spacer(
         Modifier
             .fillMaxSize()
             .graphicsLayer {
                 compositingStrategy = CompositingStrategy.Offscreen
                 val ms = time()
-                alpha = levelAt(ms, spawn)
+                alpha = levelAt(ms, spawn, settles)
             }
             .drawWithCache {
                 val line = settings.edgeWidth.stroke.toPx() * scale
                 val inset = line / 2f
-                val corner = geometry.cornerRadiusPx ?: (GlowMetrics.FullScreen.fallbackCornerRadius.toPx() * scale)
+                val corner = geometry.frameCornerPx(density, scale)
                 val frameTopLeft = Offset(inset, inset)
                 val frameSize = Size(size.width - line, size.height - line)
                 val frameCorner = CornerRadius((corner - inset).coerceAtLeast(0f))
                 val core = Stroke(line)
-                // The light spilling inward from the line: thin rings stepping in, none overlapping,
-                // their light falling off as a Gaussian, so it reads as glow, not as stacked bands.
+                // The light spilling inward from the line ([EdgeGlowRings]).
                 val glowReach = settings.edgeGlow.reach.toPx() * scale
                 val ringStep = max(1f, round(2.dp.toPx() * scale))
-                val rings = if (glowReach <= 0f) 0 else max(2, round(glowReach / ringStep).toInt())
-                val ringStroke = Stroke(ringStep)
-                val ringTopLeft = Array(rings) { i -> (round(line) + ringStep * (i + 0.5f)).let { Offset(it, it) } }
-                val ringSize = Array(rings) { i -> (round(line) + ringStep * (i + 0.5f)).let { Size(size.width - 2f * it, size.height - 2f * it) } }
-                val ringCorner = Array(rings) { i -> CornerRadius((corner - ringTopLeft[i].x).coerceAtLeast(0f)) }
-                val ringAt = FloatArray(rings) { i -> (i + 0.5f) / rings }
+                val rings = EdgeGlowRings(
+                    Offset.Zero,
+                    size,
+                    corner,
+                    from = round(line),
+                    step = ringStep,
+                    count = if (glowReach <= 0f) 0 else max(2, round(glowReach / ringStep).toInt()),
+                )
                 val glowPeak = settings.edgeGlow.peak
                 // The hot filament, flush with the bezel where the light is brightest.
                 val filament = max(1.dp.toPx() * scale, line * 0.35f)
@@ -928,7 +947,7 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                     if (wave < MIN_WAVE) return@onDrawBehind
                     // Drained and faded: through the hand-off's tail (the LED's first exhale) the
                     // frame records none of its shader passes, frame after frame, for nothing.
-                    if (levelAt(ms, spawn) <= 0f) return@onDrawBehind
+                    if (levelAt(ms, spawn, settles) <= 0f) return@onDrawBehind
                     // Pulse breathes in the glow, which also draws in and spreads out; the line
                     // barely dims, so it stays crisp. 1 elsewhere.
                     val b = if (motion == EdgeMotion.PULSE) breathAt(ms, spawn) else 1f
@@ -948,13 +967,12 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                         )
                         drawRoundRect(element, Offset.Zero, size, bandCorner, style = band)
                     } else {
-                        for (i in 0 until rings) {
-                            val t = ringAt[i] / spread
-                            val alpha = glowPeak * exp(-4.5f * t * t) * (0.5f + 0.5f * b)
-                            drawRoundRect(paint, ringTopLeft[i], ringSize[i], ringCorner[i], style = ringStroke, alpha = alpha)
+                        for (i in 0 until rings.count) {
+                            val alpha = glowPeak * rings.falloff(i, spread) * (0.5f + 0.5f * b)
+                            drawRoundRect(paint, rings.topLeft[i], rings.size[i], rings.corner[i], style = rings.stroke, alpha = alpha)
                         }
                         // Without the glow the line carries the breath, so it dims more.
-                        val coreAlpha = if (rings == 0) 0.55f + 0.45f * b else 0.72f + 0.28f * b
+                        val coreAlpha = if (rings.count == 0) 0.55f + 0.45f * b else 0.72f + 0.28f * b
                         drawRoundRect(paint, frameTopLeft, frameSize, frameCorner, style = core, alpha = coreAlpha)
                         if (tint != null) {
                             tint.rotateTo(tintTurnAt(ms, settings.edgeColor, spawn), center)
@@ -977,10 +995,11 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                         // The mask holds 1 - brightness and is laid on with DstOut, so drawing it
                         // at partial alpha blends from the fully lit frame into the comets; drawn
                         // twice at the end, the tails draw into the heads.
-                        val strength = motionAt(ms, spawn)
+                        val letGo = if (settles) 1f - frameSettleAt(ms) else 1f
+                        val strength = motionAt(ms, spawn) * letGo
                         if (strength > 0f) {
                             val p = headAt(ms, spawn)
-                            val tailIn = smoothstep(TAIL_IN_AT_MS, TAIL_IN_AT_MS + TAIL_IN_MS, ms)
+                            val tailIn = smoothstep(TAIL_IN_AT_MS, TAIL_IN_AT_MS + TAIL_IN_MS, ms) * letGo
                             if (heads != null) {
                                 heads.moveTo(p)
                                 cutToComets(heads, bandCorner, band, strength, tailIn)
@@ -1000,7 +1019,7 @@ private fun EdgeArrival(settings: GlowSettings, color: Color, geometry: ScreenGe
                             }
                         }
                     }
-                    val exit = smoothstep(EXIT_AT_MS, ARRIVAL_MS.toFloat(), ms)
+                    val exit = if (settles) 0f else smoothstep(EXIT_AT_MS, ARRIVAL_MS.toFloat(), ms)
                     if (exit > 0f) {
                         drain.scaleTo(1f - 0.97f * ExitEasing.transform(exit), origin)
                         drawRoundRect(drain, Offset.Zero, size, bandCorner, style = band, blendMode = BlendMode.DstIn)
@@ -1084,42 +1103,75 @@ private fun crackGrowthAt(ms: Float, spawn: Boolean): Float {
 /** Cracks race out and slow as they run out of force. */
 private val EaseOutCubic = CubicBezierEasing(0.33f, 1f, 0.68f, 1f)
 
-/** Duo and Spectrum turn with the heads, from rest to rest. */
-private fun tintTurnAt(ms: Float, mode: EdgeColor, spawn: Boolean): Float {
+/** Duo and Spectrum turn with the heads, from rest to rest: they end at [edgeTintRestDegrees]. */
+internal fun tintTurnAt(ms: Float, mode: EdgeColor, spawn: Boolean): Float {
     val degrees = if (mode == EdgeColor.SPECTRUM) SPECTRUM_TURN_DEGREES else DUO_TURN_DEGREES
     val start = if (spawn) HEADS_IN_AT_MS else 0f
-    return -90f + degrees * HeadEasing.transform(((ms - start) / (HEADS_HOME_MS - start)).coerceIn(0f, 1f))
+    val turned = HeadEasing.transform(((ms - start) / (HEADS_HOME_MS - start)).coerceIn(0f, 1f))
+    return edgeTintRestDegrees(mode) - degrees * (1f - turned)
 }
 
 /**
- * Sweep gradient that recolours the frame, or null for the plain brand colour. The hues are
- * picked and blended in OKLab, so every step of the turn is as light as the next and no band
- * between two hues goes muddy or neon.
+ * Where Duo and Spectrum come to rest round the frame, in degrees, once their turn is done: the
+ * frame LED wears them turned this far ([frameTint]), so the Edge Frame settles into the same colours.
  */
-private fun CacheDrawScope.edgeTint(mode: EdgeColor, color: Color): MovingShaderBrush? {
-    val center = Offset(size.width / 2f, size.height / 2f)
-    return when (mode) {
-        EdgeColor.APP -> null
-        EdgeColor.DUO -> {
-            val (l, c, h) = toOklch(color)
-            // The neighbour on the side that keeps more of its colour inside sRGB.
-            val left = oklch(l, c, h - DUO_HUE_SHIFT)
-            val right = oklch(l, c, h + DUO_HUE_SHIFT)
-            val partner = if (toOklch(left)[1] >= toOklch(right)[1]) left else right
-            val mid = oklabMix(color, partner)
-            movingSweep(
-                center,
-                0f to color, 0.125f to mid, 0.25f to partner, 0.375f to mid, 0.5f to color,
-                0.625f to mid, 0.75f to partner, 0.875f to mid, 1f to color,
-            )
-        }
-        EdgeColor.SPECTRUM -> {
-            // Twelve even steps round the hue circle from the brand colour, all equally light
-            // and vivid even for a muted brand.
-            val h = toOklch(color)[2]
-            val hues = Array(13) { (it / 12f) to oklch(0.72f, 0.18f, h + it * 30f) }
-            movingSweep(center, *hues)
-        }
+internal fun edgeTintRestDegrees(mode: EdgeColor): Float =
+    -90f + if (mode == EdgeColor.SPECTRUM) SPECTRUM_TURN_DEGREES else DUO_TURN_DEGREES
+
+/**
+ * Sweep gradient that recolours the frame, or null for the plain brand colour ([edgeTintStops]),
+ * about the screen's centre, for the effect to turn.
+ */
+private fun CacheDrawScope.edgeTint(mode: EdgeColor, color: Color): MovingShaderBrush? =
+    edgeTintStops(mode, color)?.let { movingSweep(Offset(size.width / 2f, size.height / 2f), *it) }
+
+/**
+ * The Edge Frame's glow: [count] thin rings [step] apart, stepping in from a rounded rectangle at
+ * [topLeft] of [size] with [corner] radius, from [from] in. None overlap and their light falls off
+ * as a Gaussian ([falloff]), so it reads as glow, not as stacked bands. The effect and the frame
+ * LED ([LedLook]) glow alike with it. Built once per size; drawing only reads it.
+ */
+internal class EdgeGlowRings(topLeft: Offset, size: Size, corner: Float, from: Float, step: Float, val count: Int) {
+    val stroke = Stroke(step)
+    private val inset = FloatArray(count) { i -> from + step * (i + 0.5f) }
+    val topLeft = Array(count) { i -> topLeft + Offset(inset[i], inset[i]) }
+    val size = Array(count) { i -> Size(size.width - 2f * inset[i], size.height - 2f * inset[i]) }
+    val corner = Array(count) { i -> CornerRadius((corner - inset[i]).coerceAtLeast(0f)) }
+
+    /** How bright ring [i] is, as a share of the glow's peak; [spread] below 1 draws the glow in. */
+    fun falloff(i: Int, spread: Float = 1f): Float {
+        val t = (i + 0.5f) / count / spread
+        return exp(-EDGE_GLOW_FALLOFF * t * t)
+    }
+}
+
+/** How quickly the Edge Frame's glow falls off inward: its Gaussian's steepness. */
+private const val EDGE_GLOW_FALLOFF = 4.5f
+
+/**
+ * The colours round the Edge Frame in [mode], as sweep gradient stops, or null for the plain brand
+ * [color]. The hues are picked and blended in OKLab, so every step of the turn is as light as the
+ * next and no band between two hues goes muddy or neon. The frame LED wears them too ([LedLook]).
+ */
+internal fun edgeTintStops(mode: EdgeColor, color: Color): Array<Pair<Float, Color>>? = when (mode) {
+    EdgeColor.APP -> null
+    EdgeColor.DUO -> {
+        val (l, c, h) = toOklch(color)
+        // The neighbour on the side that keeps more of its colour inside sRGB.
+        val left = oklch(l, c, h - DUO_HUE_SHIFT)
+        val right = oklch(l, c, h + DUO_HUE_SHIFT)
+        val partner = if (toOklch(left)[1] >= toOklch(right)[1]) left else right
+        val mid = oklabMix(color, partner)
+        arrayOf(
+            0f to color, 0.125f to mid, 0.25f to partner, 0.375f to mid, 0.5f to color,
+            0.625f to mid, 0.75f to partner, 0.875f to mid, 1f to color,
+        )
+    }
+    EdgeColor.SPECTRUM -> {
+        // Twelve even steps round the hue circle from the brand colour, all equally light
+        // and vivid even for a muted brand.
+        val h = toOklch(color)[2]
+        Array(13) { (it / 12f) to oklch(0.72f, 0.18f, h + it * 30f) }
     }
 }
 
@@ -1145,15 +1197,32 @@ private fun CacheDrawScope.cometSweep(): MovingShaderBrush {
 }
 
 /**
- * The LED Beacon: where the LED waits, in its form (a dot, or a ring round the camera), a beacon
- * ignites with a flare when the wave's crest reaches it (or on its own without the spawn),
- * settles, then sends out two double pulses. At the end the halo draws in and the core lingers as
- * an ember that takes the LED's exact shape before it goes, so the hand-over doesn't jump.
+ * The beacon is a ring round the camera: the LED's own, or the frame LED's on a screen with a
+ * camera, where it plays round the camera before its light runs out into the frame ([LedFrameRun]).
+ */
+internal fun beaconRings(settings: GlowSettings, geometry: ScreenGeometry): Boolean =
+    settings.ledOnCamera || (settings.ledOnEdge && !geometry.noCamera)
+
+/**
+ * The frame LED's beacon, round the camera (or a dot where one usually is): sized as the ring or
+ * the dot LED would be, as its ember takes that shape on its way out into the frame.
+ */
+private fun Density.beaconAtCamera(settings: GlowSettings, camera: CutoutSpot, ring: Boolean, scale: Float): LedLanding {
+    val core = ledRadiusAt(settings.dotSize, scale).toPx()
+    return LedLanding(camera.center, ledLight(core, ring, camera.radius, ringGrowPx = 0f, ringGap = ledRingGapAt(scale).toPx()))
+}
+
+/**
+ * The LED Beacon: where the LED waits, in its form (a dot, or a ring round the camera; round the
+ * camera for the frame), a beacon ignites with a flare when the wave's crest reaches it (or on its
+ * own without the spawn), settles, then sends out two double pulses. At the end the halo draws in
+ * and the core lingers as an ember that takes the LED's exact shape before it goes, so the
+ * hand-over doesn't jump; for the frame, as its light runs out round the edge.
  */
 @Composable
 private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: ScreenGeometry, scale: Float, time: () -> Float) {
     val spawn = settings.spawn
-    val ring = settings.ledOnCamera
+    val ring = beaconRings(settings, geometry)
     Spacer(
         Modifier
             .fillMaxSize()
@@ -1163,7 +1232,7 @@ private fun BeaconArrival(settings: GlowSettings, color: Color, geometry: Screen
                 val camera = geometry.lens(size.width, density, scale)
                 val lens = camera.radius
                 // It plays where the LED lights, and its ember ends as that LED.
-                val led = ledLanding(settings, camera, size, scale)
+                val led = if (settings.ledOnEdge) beaconAtCamera(settings, camera, ring, scale) else ledLanding(settings, camera, size, scale)
                 val center = led.center
                 // The ring stands clear of the LED's at first and closes in on it as it ends.
                 val radius = if (ring) lens + (metrics.ringGap.toPx() + metrics.stroke.toPx() / 2f) * scale else led.light.core

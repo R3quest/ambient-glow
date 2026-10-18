@@ -93,5 +93,8 @@ internal fun PhoneMock(
 /** How much smaller a style tile's mini phone is than the screen. */
 internal const val TILE_PREVIEW_SCALE = 0.22f
 
+/** Matches the corner of [GlowShapes.Phone], so a previewed frame hugs the mock-up's edge. */
+internal val PhoneCorner: Dp = 14.dp
+
 /** The real dot scaled down to a mock-up, kept just large enough to see. */
 internal fun previewDotRadius(size: DotSize, scale: Float): Dp = ledRadiusAt(size, scale)

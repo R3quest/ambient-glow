@@ -21,6 +21,12 @@ class LedLookTest {
         assertEquals(LedMaterial.NEON, ledMaterial(elemental, shaders = false))
         assertEquals(LedMaterial.NEON, ledMaterial(elemental.copy(style = GlowStyle.BEACON), shaders = true))
         assertEquals(LedMaterial.NEON, ledMaterial(elemental.copy(arrival = ArrivalMode.LED_ONLY), shaders = true))
+        // The dot keeps the element as the ring does.
+        assertEquals(LedMaterial.COAL, ledMaterial(elemental.copy(element = SpawnElement.FIRE, ledForm = LedForm.DOT), shaders = true))
+        // The frame LED is always plain neon, whatever the Edge Frame is made of ([FrameLedTest]).
+        for (element in SpawnElement.entries) {
+            assertEquals("$element", LedMaterial.NEON, ledMaterial(elemental.copy(element = element, ledForm = LedForm.FRAME), shaders = true))
+        }
     }
 
     @Test

@@ -97,6 +97,7 @@ import app.lumement.GlowPrefs
 import app.lumement.GlowSettings
 import app.lumement.aodSwitchUris
 import app.lumement.GlowStyle
+import app.lumement.LedForm
 import app.lumement.PremiumState
 import app.lumement.R
 import app.lumement.ScreenGeometry
@@ -327,13 +328,22 @@ internal fun Dashboard(reported: ScreenGeometry) {
         if (!geometry.measured || !settings.ledOnCamera || window.width == 0) return@LaunchedEffect
         val lens = dotSpots(camera, window, settings.dotSize, screenDensity).first { it.atLens }
         if (lens.camera && lens.matches(settings.dotX, settings.dotY)) return@LaunchedEffect
-        edit(save = true) { it.copy(ledOnCamera = lens.camera, dotX = lens.x, dotY = lens.y) }
+        edit(save = true) { it.copy(ledForm = if (lens.camera) LedForm.RING else LedForm.DOT, dotX = lens.x, dotY = lens.y) }
     }
     val openScreenTab: () -> Unit = {
         scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.SCREEN)) }
     }
     val openLedTab: () -> Unit = {
         scope.launch { pager.animateScrollToPage(tabs.indexOf(DashboardTab.LED)) }
+    }
+    // The Edge Frame card's link to the frame LED's look: the LED tab, then, once it is in place,
+    // scrolled to its Look card. A slide cut short by a swipe asks for nothing.
+    var revealLedLook by remember { mutableStateOf(false) }
+    val openLedLook: () -> Unit = {
+        scope.launch {
+            pager.animateScrollToPage(tabs.indexOf(DashboardTab.LED))
+            revealLedLook = true
+        }
     }
     // The step the real-size preview shows (the newer one during a hand-off), or null.
     val previewHeld = when {
@@ -441,8 +451,14 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             onShowcase = showcase,
                                             onChooseScreen = openScreenTab,
                                             onMoveLed = openLedTab,
+                                            onOpenLedLook = openLedLook,
                                         )
-                                        DashboardTab.LED -> LedPage(settings, edit) { holding ->
+                                        DashboardTab.LED -> LedPage(
+                                            settings = settings,
+                                            edit = edit,
+                                            revealLook = revealLedLook,
+                                            onLookRevealed = { revealLedLook = false },
+                                        ) { holding ->
                                             ledColor = null
                                             showLed(holding)
                                         }
@@ -566,6 +582,7 @@ private fun EffectPage(
     onShowcase: () -> Unit,
     onChooseScreen: () -> Unit,
     onMoveLed: () -> Unit,
+    onOpenLedLook: () -> Unit,
 ) {
     val onEffect = { next: GlowSettings ->
         edit(save = true) { next }
@@ -590,7 +607,9 @@ private fun EffectPage(
                     Column {
                         ElementCard(settings, SAMPLE_COLORS[sample].color, premium, onEffect)
                         Disclosure(visible = settings.style == GlowStyle.EDGE_FRAME) {
-                            Box(Modifier.padding(top = 14.dp)) { EdgeFrameCard(settings, onEffect) }
+                            Box(Modifier.padding(top = 14.dp)) {
+                                EdgeFrameCard(settings, onEffect, onOpenLedLook)
+                            }
                         }
                     }
                 }
@@ -600,11 +619,19 @@ private fun EffectPage(
 }
 
 /**
- * The waiting LED is always the dot (or ring), whatever arrival style is chosen. While it moves the
- * real LED follows on screen ([onLed] holding); it breathes once when let go, and is stored then.
+ * The waiting LED is always the dot, the ring or the frame, whatever arrival style is chosen: its
+ * shape and place, then its look, here alone. While it moves the real LED follows on screen ([onLed]
+ * holding); it breathes once when let go, and is stored then. [revealLook] (the Edge Frame card's
+ * link) scrolls to its look, once: [onLookRevealed] then lets it go.
  */
 @Composable
-private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding: Boolean) -> Unit) {
+private fun LedPage(
+    settings: GlowSettings,
+    edit: SettingsEdit,
+    revealLook: Boolean,
+    onLookRevealed: () -> Unit,
+    onLed: (holding: Boolean) -> Unit,
+) {
     SettingsGroup(index = "03", title = R.string.group_led_title, body = R.string.group_led_body) {
         val settle = {
             edit(save = true) { it }
@@ -612,8 +639,8 @@ private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding:
         }
         LedCard(
             settings = settings,
-            onMove = { x, y, onCamera ->
-                edit(save = false) { it.copy(dotX = x, dotY = y, ledOnCamera = onCamera) }
+            onMove = { x, y, form ->
+                edit(save = false) { it.copy(dotX = x, dotY = y, ledForm = form) }
                 onLed(true)
             },
             onCommit = settle,
@@ -625,10 +652,12 @@ private fun LedPage(settings: GlowSettings, edit: SettingsEdit, onLed: (holding:
         )
         LedLookCard(
             settings = settings,
-            onSize = { size ->
-                edit(save = true) { it.copy(dotSize = size) }
+            onLook = { look ->
+                edit(save = true) { look }
                 onLed(false)
             },
+            reveal = revealLook,
+            onRevealed = onLookRevealed,
         )
     }
 }

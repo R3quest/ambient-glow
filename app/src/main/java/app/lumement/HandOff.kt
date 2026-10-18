@@ -217,7 +217,7 @@ internal fun LedHandOff(settings: GlowSettings, color: Color, geometry: ScreenGe
                 val path = HandOffPath(token, origin, target, top = TOKEN_ROOM * u)
                 val look = TokenLook(token, settings, color, u)
                 // The LED itself, in the material it will breathe in.
-                val ledLook = LedLook(ledMaterial(settings, elementFramesSupported), color, led.light, around)
+                val ledLook = LedLook(ledMaterial(settings, elementFramesSupported), color, led.light, settings.ledForm)
                 val touch = landingTouch(token, settings, color, look.landing, look.trail, u)
                 // Where the light lands from: round the ring, or off the dot's edge.
                 val landFrom = if (around) ledRing + ledLine else ledCore * 1.3f

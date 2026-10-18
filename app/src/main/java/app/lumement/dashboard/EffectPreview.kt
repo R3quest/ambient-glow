@@ -77,9 +77,6 @@ import kotlinx.coroutines.withContext
 
 private val StudioPreviewHeight: Dp = 250.dp
 
-/** Matches the corner of [GlowShapes.Phone], so the previewed frame hugs the mock-up's edge. */
-private val PhoneCorner: Dp = 14.dp
-
 private const val PREVIEW_LOOP_GAP_MS = 700L
 
 /** Black panel before the dot's first breath, as the LED takes over. */
@@ -262,11 +259,14 @@ internal fun EffectPreview(
                 dotX = settings.dotX,
                 dotY = settings.dotY,
                 radius = previewDotRadius(settings.dotSize, scale),
-                onCamera = settings.ledOnCamera,
-                geometry = mockGeometry,
+                form = settings.ledForm,
+                // The frame follows the mock-up's corners, as the effect's frame does.
+                geometry = if (settings.ledOnEdge) effectGeometry else mockGeometry,
                 ringGap = ledRingGapAt(scale),
                 material = ledMaterial(settings, elementFramesSupported),
                 clock = { led.value },
+                scale = scale,
+                frameOf = settings,
                 modifier = Modifier.fillMaxSize(),
             )
         }
