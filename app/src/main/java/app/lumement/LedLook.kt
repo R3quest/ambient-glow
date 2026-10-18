@@ -193,9 +193,11 @@ internal class LedLook(
     still: List<Color>? = null,
 ) {
     private val look: MaterialLook = if (form == LedForm.FRAME) {
-        FrameLook(color, light, calm, frameOf?.let { frameTint(it, color) } ?: still?.takeIf { it.size > 1 }?.let(::appsSweep))
+        val tone = if (still != null) stillTone(color) else color
+        val apps = still?.takeIf { it.size > 1 }?.map(::stillTone)
+        FrameLook(tone, light, calm, frameOf?.let { frameTint(it, tone) } ?: apps?.let(::appsSweep), still != null)
     } else if (still != null) {
-        StillLook(still.ifEmpty { listOf(color) }, light, form == LedForm.RING)
+        StillLook(still.ifEmpty { listOf(color) }.map(::stillTone), light, form == LedForm.RING)
     } else {
         val onCamera = form == LedForm.RING
         when (material) {
@@ -358,6 +360,18 @@ private class StillLook(private val colors: List<Color>, light: LedLight, onCame
     }
 }
 
+/**
+ * [color] on the always-on display, where One UI runs the panel at ~10 nits: at least
+ * [STILL_MIN_LIGHTNESS] light, its hue kept and as much of its chroma as the screen shows. A deep
+ * blue, as an app paints it, barely showed there; a light colour stays as it is.
+ */
+internal fun stillTone(color: Color): Color {
+    val lch = toOklch(color)
+    return if (lch[0] >= STILL_MIN_LIGHTNESS) color else oklch(STILL_MIN_LIGHTNESS, lch[1], lch[2])
+}
+
+private const val STILL_MIN_LIGHTNESS = 0.78f
+
 /** The always-on display's dot and ring: this much larger than the lit LED. */
 internal val AOD_CORE_EXTRA = 2.5.dp
 
@@ -368,6 +382,9 @@ private const val STILL_FROM_DEGREES = -90f
 private const val STILL_HOT_WHITE = 0.7f
 private const val STILL_HOT_LINE = 0.55f
 private const val STILL_HOT_CORE = 0.6f
+
+/** The frame's hot core on the always-on display, under full light (the lit frame's 0.5). */
+private const val STILL_FRAME_HOT_ALPHA = 0.9f
 
 // ---------------------------------------------------------------------------------------------
 // The frame LED: the Edge Frame waiting, in plain light. A line round the whole screen is a lot of
@@ -398,10 +415,15 @@ private const val FRAME_HOT_WHITE = 0.45f
  * inward ([EdgeGlowRings], as the Edge Frame effect's glow is, so it reads as the same light); in
  * the Edge Frame's colours ([tint]: Duo, Spectrum), or the app's.
  */
-private class FrameLook(color: Color, light: LedLight, calm: Float, private val tint: Brush?) : MaterialLook(color, light, onCamera = false) {
-    private val level = 1f - (1f - FRAME_CALM_LEVEL) * calm
+private class FrameLook(color: Color, light: LedLight, calm: Float, private val tint: Brush?, still: Boolean) : MaterialLook(color, light, onCamera = false) {
+    // On the always-on display (~10 nits) at full light, its core whiter, as the dot and ring are there ([StillLook]).
+    private val level = if (still) 1f else 1f - (1f - FRAME_CALM_LEVEL) * calm
+    private val lineAlpha = if (still) 1f else FRAME_LINE_ALPHA
+    private val hotAlpha = if (still) STILL_FRAME_HOT_ALPHA else FRAME_HOT_ALPHA
+    private val hotWhite = if (still) STILL_HOT_WHITE else FRAME_HOT_WHITE
+    private val hotLine = if (still) Stroke(line * STILL_HOT_LINE) else hotStroke
     private val paint: Brush = tint ?: SolidColor(color)
-    private val hot = lerp(color, Color.White, 0.45f)
+    private val hot = lerp(color, Color.White, if (still) STILL_HOT_WHITE else 0.45f)
     private val frame = light.frame
     private val topLeft = Offset(-frame.width / 2f, -frame.height / 2f)
     private val corner = CornerRadius(light.corner)
@@ -420,25 +442,25 @@ private class FrameLook(color: Color, light: LedLight, calm: Float, private val 
         for (i in 0 until rings.count) {
             drawRoundRect(paint, rings.topLeft[i], rings.size[i], rings.corner[i], style = rings.stroke, alpha = a * ringAlpha[i])
         }
-        drawRoundRect(paint, topLeft, frame, corner, style = ringStroke, alpha = a * FRAME_LINE_ALPHA)
+        drawRoundRect(paint, topLeft, frame, corner, style = ringStroke, alpha = a * lineAlpha)
         if (tint == null) {
-            drawRoundRect(hot, topLeft, frame, corner, style = hotStroke, alpha = a * FRAME_HOT_ALPHA)
+            drawRoundRect(hot, topLeft, frame, corner, style = hotLine, alpha = a * hotAlpha)
         } else {
             // The hot core a whiter light of its own colours.
-            drawRoundRect(tint, topLeft, frame, corner, style = hotStroke, alpha = a * FRAME_HOT_ALPHA)
-            drawRoundRect(Color.White, topLeft, frame, corner, style = hotStroke, alpha = a * FRAME_HOT_ALPHA * FRAME_HOT_WHITE)
+            drawRoundRect(tint, topLeft, frame, corner, style = hotLine, alpha = a * hotAlpha)
+            drawRoundRect(Color.White, topLeft, frame, corner, style = hotLine, alpha = a * hotAlpha * hotWhite)
         }
     }
 
     /** [path] as the line and its hot core are drawn, at [alpha]: what the frame is once its glow comes in. */
     fun DrawScope.strokeLine(path: Path, alpha: Float) {
         val a = alpha * level
-        drawPath(path, paint, alpha = a * FRAME_LINE_ALPHA, style = ringStroke)
+        drawPath(path, paint, alpha = a * lineAlpha, style = ringStroke)
         if (tint == null) {
-            drawPath(path, hot, alpha = a * FRAME_HOT_ALPHA, style = hotStroke)
+            drawPath(path, hot, alpha = a * hotAlpha, style = hotLine)
         } else {
-            drawPath(path, tint, alpha = a * FRAME_HOT_ALPHA, style = hotStroke)
-            drawPath(path, Color.White, alpha = a * FRAME_HOT_ALPHA * FRAME_HOT_WHITE, style = hotStroke)
+            drawPath(path, tint, alpha = a * hotAlpha, style = hotLine)
+            drawPath(path, Color.White, alpha = a * hotAlpha * hotWhite, style = hotLine)
         }
     }
 }

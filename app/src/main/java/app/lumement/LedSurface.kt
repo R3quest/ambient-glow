@@ -71,7 +71,8 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
      * The LED in [color] where the screen shows it at breath [cycle], its burn-in step included,
      * with [settings] as the screen shows them and [geometry] fitted. Dark until [breathe]. The
      * frame quiets down as [calm] goes from 0 to 1 ([BrightStreak.settledAt]). [still]: on the
-     * always-on display, every waiting app's colour at once, the dot and ring larger ([LedLook]).
+     * always-on display, every waiting app's colour at once, the dot and ring larger, the frame as
+     * wide as the effect's ([LedLook]).
      */
     fun show(settings: GlowSettings, geometry: ScreenGeometry, color: Int, cycle: Int, calm: Float, still: List<Int>? = null) {
         val density = context.resources.displayMetrics.density
@@ -79,7 +80,7 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         val form = settings.ledForm
         val step = ledStepPx(form, cycle)
         val light = if (form == LedForm.FRAME) {
-            ledFrameLight(settings, size, geometry.frameCornerPx(density), inset = step, dp = density)
+            ledFrameLight(settings, size, geometry.frameCornerPx(density), inset = step, dp = density, full = still != null)
         } else {
             val core = (settings.dotSize.radius.value + if (still != null) AOD_CORE_EXTRA.value else 0f) * density
             ledLight(core, form == LedForm.RING, geometry.lensRadius(density), ringGrowPx = step, ringGap = LED_RING_GAP.value * density)
