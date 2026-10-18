@@ -186,9 +186,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val inSetup = !access.ready || finishing
     val tabs = DashboardTab.entries
     val pager = rememberPagerState(pageCount = { tabs.size })
-    // The tabs on screen, even in part: one kept composed beside them doesn't follow each change
-    // as it is made (a drag on the LED tab changes the settings every frame) and catches up as it
-    // comes into view.
+    // The tabs on screen, even in part: while the LED is dragged (the settings change every frame)
+    // one kept composed beside them waits, and catches up once the drag settles, still off screen.
     val inView by remember(pager) { derivedStateOf { pager.layoutInfo.visiblePagesInfo.mapTo(HashSet()) { it.index } } }
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
@@ -318,6 +317,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
             showcasing = false
             ledShowing = false
             ledLeaving = false
+            // A drag cut off by leaving settles with the app away, which showLed ignores.
+            ledHolding = false
         }
     }
 
@@ -437,7 +438,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                 beyondViewportPageCount = 1,
                             ) { page ->
-                                val pageSettings = heldAway(settings, page in inView)
+                                val pageSettings = heldAway(settings, pageFollows(page, inView, ledHolding))
                                 PageColumn(Modifier.fillMaxSize()) {
                                     when (tabs[page]) {
                                         DashboardTab.SCREEN -> ScreenPage(
@@ -521,7 +522,14 @@ internal fun Dashboard(reported: ScreenGeometry) {
     }
 }
 
-/** [value] while [shown]; out of view, the one it last showed, so what reads it can skip. */
+/**
+ * Whether [page] follows each change to the settings: always, but while the LED is dragged
+ * ([ledHolding]) only if it is on screen. A pick on one tab then plays out on the next off screen,
+ * not as it slides in.
+ */
+internal fun pageFollows(page: Int, inView: Set<Int>, ledHolding: Boolean): Boolean = !ledHolding || page in inView
+
+/** [value] while [shown]; otherwise the one it last showed, so what reads it can skip. */
 @Composable
 private fun <T> heldAway(value: T, shown: Boolean): T {
     // Not state: being in view again is what recomposes it, with the newest value.
