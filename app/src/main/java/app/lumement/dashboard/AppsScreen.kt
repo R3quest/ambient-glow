@@ -65,6 +65,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -191,9 +193,10 @@ internal fun AppsScreen(model: AppsModel, premium: PremiumModel, onBack: () -> U
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
+    val title = stringResource(R.string.group_apps_title)
+    Box(Modifier.fillMaxSize().semantics { paneTitle = title }) {
         Column(Modifier.fillMaxSize()) {
-            PageHeader(stringResource(R.string.group_apps_title), onBack)
+            PageHeader(title, onBack)
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().imePadding(),
                 contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 20.dp, bottom = 24.dp),
@@ -313,6 +316,7 @@ internal fun PageHeader(title: String, onBack: () -> Unit) {
             text = title,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
+            modifier = Modifier.semantics { heading() },
         )
     }
 }

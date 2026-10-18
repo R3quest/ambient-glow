@@ -88,7 +88,7 @@ internal fun WaitingCard(
     val noBright = settings.brightFor == BrightFor.OFF
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionLabel(stringResource(R.string.waiting_bright_label), GlowPalette.TextMuted)
+            SectionLabel(stringResource(R.string.waiting_bright_label), GlowPalette.TextMuted, heading = true)
             ChipRow(BrightFor.entries, settings.brightFor, onBrightFor)
             OptionBody(noBright) { off ->
                 stringResource(if (off) R.string.waiting_bright_off_body else R.string.waiting_bright_body)
@@ -124,7 +124,7 @@ private fun ThenSection(
     var shown by remember { mutableStateOf(readiness) }
     SideEffect { if (after == AfterBright.AOD) shown = readiness }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionLabel(stringResource(R.string.waiting_then_label), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.waiting_then_label), GlowPalette.TextMuted, heading = true)
         ChipRow(AfterBright.entries, after, onAfterBright)
         Disclosure(visible = after == AfterBright.AOD) {
             Box(Modifier.padding(top = 2.dp)) {

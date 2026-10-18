@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -131,7 +132,7 @@ internal fun EffectCard(
 ) {
     val color = SAMPLE_COLORS[sample].color
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_effect), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.section_effect), GlowPalette.TextMuted, heading = true)
         // Preview beside the style list: what you pick is what plays, without scrolling.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             EffectPreview(settings = settings, color = color, heldBy = previewHeld, loop = loop)
@@ -259,6 +260,7 @@ internal fun EffectsOffCard(onChooseScreen: () -> Unit) {
             text = stringResource(R.string.effects_off_title),
             style = MaterialTheme.typography.titleMedium,
             color = GlowPalette.TextPrimary,
+            modifier = Modifier.semantics { heading() },
         )
         Text(
             text = stringResource(R.string.effects_off_body),

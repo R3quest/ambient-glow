@@ -326,7 +326,7 @@ internal fun LedCard(
     val frame = settings.ledOnEdge
 
     Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_led), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.section_led), GlowPalette.TextMuted, heading = true)
 
         // Tiles, a glyph over its name, so "Edge Frame" has the width.
         OptionGroup(stringResource(R.string.led_form)) {
@@ -558,7 +558,7 @@ internal fun LedLookCard(
         }
     }
     Column(Modifier.bringIntoViewRequester(view).glowCard()) {
-        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.TextMuted)
+        SectionLabel(stringResource(R.string.section_led_look), GlowPalette.TextMuted, heading = true)
         // The dot's and the ring's size, or the frame's look; each carries its own gap.
         Disclosure(visible = !settings.ledOnEdge) {
             Box(Modifier.padding(top = 16.dp)) {
@@ -803,6 +803,8 @@ private fun SpotRow(spots: List<DotSpot>, dotX: Float, dotY: Float, onPick: (Dot
                 selected = spot.matches(dotX, dotY),
                 onClick = { onPick(spot) },
                 compact = true,
+                // Said in full: the chip's "CAM L" is short for it.
+                description = stringResource(spot.phrase),
                 modifier = Modifier.weight(1f),
             )
         }

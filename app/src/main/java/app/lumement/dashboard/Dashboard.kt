@@ -82,7 +82,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -677,7 +681,7 @@ internal fun BrandHeader(modifier: Modifier = Modifier, action: (@Composable () 
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = GlowPalette.TextPrimary,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).semantics { heading() },
         )
         if (action != null) Box(Modifier.height(0.dp).wrapContentHeight(unbounded = true)) { action() }
     }
@@ -842,11 +846,14 @@ private fun Padlock() {
 @Composable
 private fun TestHint(test: LockedTest, modifier: Modifier = Modifier) {
     Disclosure(visible = test.blocked || test.countdown > 0) {
+        // Said as it comes, too: with TalkBack the tap gives no other sign of what to do next.
         Text(
             text = stringResource(if (test.blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
             style = MaterialTheme.typography.bodySmall,
             color = if (test.blocked) GlowPalette.Amber else GlowPalette.TextMuted,
-            modifier = modifier.padding(bottom = 14.dp),
+            modifier = modifier
+                .padding(bottom = 14.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
         )
     }
 }

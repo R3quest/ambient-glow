@@ -41,6 +41,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -199,7 +201,10 @@ internal fun Modifier.selectionSurface(shape: Shape, on: State<Float>, selectedS
     }
 }
 
-/** A single chip that crossfades when chosen; equal-width rows use [SelectionRow] instead. */
+/**
+ * A single chip that crossfades when chosen; equal-width rows use [SelectionRow] instead. A
+ * [description] is what TalkBack says in place of a [label] abbreviated to fit ("CAM L").
+ */
 @Composable
 internal fun BladeChip(
     label: String,
@@ -207,6 +212,7 @@ internal fun BladeChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    description: String? = null,
     leading: @Composable () -> Unit = {},
 ) {
     val on = animateFloatAsState(
@@ -220,6 +226,8 @@ internal fun BladeChip(
             .clip(GlowShapes.Pill)
             .selectionSurface(GlowShapes.Pill, on, selectedStroke = 1.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            // Inside the selection, so it keeps its role and state and only the words change.
+            .then(if (description != null) Modifier.clearAndSetSemantics { contentDescription = description } else Modifier)
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

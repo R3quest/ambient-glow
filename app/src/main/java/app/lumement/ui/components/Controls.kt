@@ -75,7 +75,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -93,7 +95,10 @@ import app.lumement.ui.theme.GlowShapes
 // Dashboard building blocks: headings, cards, rows, folds, buttons, steppers, sliders.
 // ---------------------------------------------------------------------------------------------
 
-/** A numbered heading with one line of context, then its cards. */
+/**
+ * A numbered heading with one line of context, then its cards. The number only orders what the
+ * eye sees, so TalkBack hears the title, as a heading to move by, and the line.
+ */
 @Composable
 internal fun SettingsGroup(
     index: String,
@@ -107,7 +112,7 @@ internal fun SettingsGroup(
                 text = index,
                 style = MaterialTheme.typography.labelMedium,
                 color = GlowPalette.TextFaint,
-                modifier = Modifier.padding(top = 3.dp),
+                modifier = Modifier.padding(top = 3.dp).clearAndSetSemantics {},
             )
             Spacer(Modifier.width(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -115,6 +120,7 @@ internal fun SettingsGroup(
                     text = stringResource(title),
                     style = MaterialTheme.typography.titleMedium,
                     color = GlowPalette.TextPrimary,
+                    modifier = Modifier.semantics { heading() },
                 )
                 Text(
                     text = stringResource(body),
@@ -344,9 +350,15 @@ internal fun Chevron(tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
+/** A small caps label: over a control it names, or, as a [heading], a card's title. */
 @Composable
-internal fun SectionLabel(text: String, color: Color = GlowPalette.TextFaint) {
-    Text(text = text, style = MaterialTheme.typography.labelSmall, color = color)
+internal fun SectionLabel(text: String, color: Color = GlowPalette.TextFaint, heading: Boolean = false) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        modifier = if (heading) Modifier.semantics { heading() } else Modifier,
+    )
 }
 
 /**

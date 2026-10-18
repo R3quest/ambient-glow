@@ -65,6 +65,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
@@ -443,7 +446,9 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
             },
             label = "setup-step",
         ) { shown ->
-            Column {
+            // Each step is a pane of its own: TalkBack says its title as it slides in.
+            val title = stringResource(shown.title)
+            Column(Modifier.semantics { paneTitle = title }) {
                 StepGlyph(shown, Modifier.size(72.dp))
                 Spacer(Modifier.height(28.dp))
                 if (shown != SetupPage.Done && total > 1) {
@@ -459,9 +464,10 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
                     Spacer(Modifier.height(10.dp))
                 }
                 Text(
-                    text = stringResource(shown.title),
+                    text = title,
                     style = MaterialTheme.typography.displaySmall,
                     color = GlowPalette.TextPrimary,
+                    modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(14.dp))
                 Text(
