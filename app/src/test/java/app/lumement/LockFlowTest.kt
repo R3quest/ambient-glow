@@ -598,6 +598,30 @@ class LockFlowTest {
         assertFalse(phone.coverUp)
     }
 
+    /**
+     * Just the LED, in Battery Saver or below 20 %: its dot for a breath, then asleep, as with no
+     * bright phase. The phase's end was set by its time alone, so the LED's face held the screen
+     * on for all of its minutes (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun justTheLedOnALowBatteryShowsABreathThenSleeps() {
+        for (saver in listOf(false, true)) {
+            clean()
+            phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.TEN)
+            if (saver) phone.batterySaver = true else phone.batteryPct = LOW_BATTERY_PCT - 1
+            message()
+            phone.launch(WakeMode.LED, 1_000)
+            logged("lit LED up")
+
+            phone.advance(5_000)
+
+            logged("sleep now", "system: SCREEN_OFF")
+            assertFalse("saver=$saver", phone.interactive)
+            assertFalse("saver=$saver", phone.panelLocked)
+            assertTrue("broken on the way:\n${phone.broken.joinToString("\n")}", phone.broken.isEmpty())
+        }
+    }
+
     @Test
     fun withoutTheShieldTheLedFaceCoversAndPowerOpensTheLockScreen() {
         phone.shieldOn = false

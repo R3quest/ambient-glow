@@ -474,12 +474,14 @@ internal class LockFlow(
 
     /**
      * When the bright phase ends ([GlowSession.bright]), from now; a new message, a launch or the
-     * LED settling asks again. With none left (none chosen, or the streak's spent), the LED's face
-     * still shows for a breath once lit, so the dot is seen, before the phone sleeps.
+     * LED settling asks again. With none left (none chosen, or the streak's spent, or the battery
+     * saving or low: [litAllowed]), the LED's face still shows for a breath once lit, so the dot is
+     * seen, before the phone sleeps. Set by the phase's time alone, Just the LED held the screen on
+     * in Battery Saver for all of the phase's minutes.
      */
     private fun armBrightEnd() {
         port.cancel(LockTimer.BRIGHT_END)
-        val left = GlowSession.bright.until - port.elapsedMs
+        val left = if (litAllowed) GlowSession.bright.until - port.elapsedMs else 0L
         port.schedule(LockTimer.BRIGHT_END, if (left > 0) left else LED_BREATH_MS.toLong() + SETTLE_FALLBACK_MS)
     }
 
