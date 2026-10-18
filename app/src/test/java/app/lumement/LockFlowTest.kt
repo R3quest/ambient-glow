@@ -1053,8 +1053,8 @@ class LockFlowTest {
 
     /**
      * The last message read with the phone dark in a call, and a new one in it: the finished glow
-     * screen's call watch was still armed, and as the call ended it relit the phone, besides the
-     * listener's own relight for the new message.
+     * screen's call watch was still armed, and as the call ended it relit the phone for a message
+     * it no longer hears of. Lighting the LED for the new one after the call is the listener's.
      */
     @Test
     fun aFinishedGlowScreenDoesNotRelightAfterTheCall() {
@@ -1068,7 +1068,7 @@ class LockFlowTest {
         assertFalse(phone.interactive)
         read("chat-1")
         assertTrue(phone.finished)
-        message("chat-2") // in the call: the listener relights once it is over
+        message("chat-2") // in the call, with no glow screen up: the listener's, not this finished one's
 
         phone.log.clear()
         phone.callTurns(false)
