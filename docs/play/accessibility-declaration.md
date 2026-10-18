@@ -60,7 +60,7 @@ the service on, that says what the service does and gets an explicit yes. Setup'
 does this: `setup_shield_title` / `setup_shield_body` ("Plays your effect over the lock screen
 when a message arrives… Lumement reads nothing on screen.") with **Turn on** and **Not now**.
 
-**To fix before submitting** (it's outside this lane, so it's in the report's handoffs): the
+**To fix before submitting:** the
 dashboard's other ways in, the Screen tab's note (`arrival_needs_shield`,
 `arrival_needs_shield_led`) and the waiting card's always-on display row, go straight to
 Settings from a one-line note. A reviewer can find that path. Each should show the same

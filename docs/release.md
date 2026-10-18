@@ -140,9 +140,12 @@ soak build.
 calling and alarm apps, and Lumement is neither, so a Play install starts without it. Setup
 already has a step for it on Android 14+: `canUseFullScreenIntent()`, then
 `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`. With Lumement effects on, most wakes don't use the
-full-screen intent at all (`GlowLauncher.startInTheDark`). Gap, outside this lane: if the user
-takes the grant back later, `GlowLauncher.canPostBridge` still says yes, and the bridge posts as
-an ordinary silent notification that wakes nothing. See the report's handoffs.
+full-screen intent at all (`GlowLauncher.startInTheDark`). Still open: if the user takes
+the grant back later, `GlowLauncher.canPostBridge` still says yes, and the bridge posts anyway.
+Android shows it as an ordinary heads-up notification for its 4 seconds, and it wakes nothing.
+`canPostBridge` should also check `canUseFullScreenIntent()` on Android 14+, so that wake is
+skipped like a blocked bridge. The dashboard already shows the missing step the next time it
+opens.
 
 **Backup.** Nothing is backed up or moved to a new phone: `allowBackup="false"` and
 `fullBackupContent` for Android 11 and lower, and `dataExtractionRules` that exclude every domain
