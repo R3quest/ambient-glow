@@ -21,17 +21,21 @@ Exits 1 with what failed. Its parsing is tested on captured text (--selftest, ma
     ADB=adb SETTLE=30 ARRIVAL=15 scripts/scenario.py [one|two|all]
     scripts/scenario.py --selftest
 """
+import base64
 import os
 import re
 import shlex
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 PKG = "app.lumement"
 SHELL_PKG = "com.android.shell"
 # Kept on the phone (adb's own scratch space), so `make diary` finds it from any checkout.
 WINDOWS = "/data/local/tmp/lumement-scenarios.txt"
+# The messages the LED waits on, as the app keeps them across a restart (NotificationWakerService.PENDING_FILE).
+PENDING_PREFS = "shared_prefs/lumement_pending.xml"
 # A test message read is snoozed for ten years: `cmd notification` has no cancel.
 SNOOZE_MS = 315360000000
 QUIET_SCREENS = ("OFF", "DOZE", "DOZE_SUSPEND")
@@ -117,16 +121,6 @@ def log_problems(log, pids):
     return out
 
 
-def pending_in_log(log, pid):
-    """The waiting count the flow last logged ("… pending=N") from process [pid], or None."""
-    last = None
-    for _, _, tag, line_pid, message in log_lines(log):
-        m = re.search(r"\bpending=(\d+)", message)
-        if tag == "Lumement" and line_pid == pid and m:
-            last = int(m.group(1))
-    return last
-
-
 def diary_events(text, since_ms=0):
     """(wall ms, event, detail) of each LED diary line at or after [since_ms]."""
     out = []
@@ -149,13 +143,48 @@ def diary_waiting(text):
     return None
 
 
-def waiting_now(diary, log):
-    """How many messages wait, from the diary's last count and the log's (either may be None).
-    Each can be stale: the log says nothing on a read (its last pending= can be from before it), and
-    the diary nothing when the process restarts (which forgets what waited). Neither undercounts
-    otherwise, so the smaller one."""
-    known = [n for n in (diary, log) if n is not None]
-    return min(known) if known else None
+def kept_waiting(prefs):
+    """The keys of the messages the LED waits on, as Lumement keeps them in its file (PENDING_PREFS,
+    written on every change of the list: GlowPending in GlowSession.kt), or None if the file
+    doesn't read as XML. No file, or no list in it: nothing waits."""
+    if not prefs.strip():
+        return []
+    try:
+        root = ET.fromstring(prefs)
+    except ET.ParseError:
+        return None
+    keys = []
+    for entry in root.iter("string"):
+        if entry.get("name") != "pending":
+            continue
+        # One line per message: key, package, colour, newest time; key and package URL-safe Base64.
+        for line in (entry.text or "").splitlines():
+            fields = line.split(",")
+            if len(fields) != 4:
+                continue
+            try:
+                keys.append(base64.urlsafe_b64decode(fields[0] + "=" * (-len(fields[0]) % 4)).decode())
+            except (ValueError, UnicodeDecodeError):
+                pass
+    return keys
+
+
+def shown_keys(listing):
+    """Every key in `cmd notification list` (user|pkg|id|tag|uid)."""
+    return {line.strip() for line in listing.splitlines() if len(line.strip().split("|")) == 5}
+
+
+def waiting_now(prefs, listing, diary):
+    """How many messages wait: those in Lumement's kept list still in the shade (one read while its
+    process was gone stays in the file until it reconnects). The LED diary's and the log's counts
+    each miss some: a message that comes while the phone is in use logs no pending=, and the diary
+    notes no mute or a missed removal. The diary never counts too few, so it stands in, or None,
+    when the file doesn't read."""
+    keys = kept_waiting(prefs)
+    if keys is None:
+        return diary
+    shown = shown_keys(listing)
+    return sum(1 for key in keys if key in shown)
 
 
 def shell_key(listing, tag):
@@ -219,7 +248,10 @@ class Phone:
         pid = self.pid()
         if pid is None:
             raise Fail("Lumement isn't running: open it once (make launch)")
-        waiting = waiting_now(diary_waiting(self.diary()), pending_in_log(self.shell("logcat -d -v time -s Lumement"), pid))
+        prefs = self.shell(f"run-as {PKG} cat {PENDING_PREFS} 2>/dev/null")
+        waiting = waiting_now(prefs, self.shell("cmd notification list"), diary_waiting(self.diary()))
+        if kept_waiting(prefs) is None:
+            say(f"{PENDING_PREFS} doesn't read: what waits is the LED diary's count")
         if waiting:
             raise Fail(f"{waiting} message(s) waiting for the LED: read them first, so the scenario's streak is its own")
         if "Lumement:led" in self.locks():
@@ -451,7 +483,6 @@ def selftest():
     assert lumement_pids(log) == {30999}
     # The surface's "Error -19" from Lumement's process, logged as E, is the system's, not a failure.
     assert log_problems(log, {30999}) == [], log_problems(log, {30999})
-    assert pending_in_log(log, 30999) == 1 and pending_in_log(log, 1) is None
     crash = log + "\n".join([
         "10-18 09:52:30.001 E/AndroidRuntime(30999): FATAL EXCEPTION: main",
         "10-18 09:52:30.001 E/AndroidRuntime(30999): Process: app.lumement, PID: 30999",
@@ -468,10 +499,23 @@ def selftest():
     assert diary_events(diary, 1792232975000) == [(1792232975911, "read", "waiting=0")]
     assert diary_waiting(diary) == 0 and diary_waiting("1 2 message waiting=3\n1 3 screen-on\n") == 3
     assert diary_waiting("") is None
-    # After a read on the always-on display the log's last count is from before it; after a restart
-    # the diary's is from before it.
-    assert waiting_now(0, 1) == 0 and waiting_now(3, 0) == 0 and waiting_now(2, 2) == 2
-    assert waiting_now(None, 4) == 4 and waiting_now(None, None) is None
+    # Lumement's kept list, as SharedPreferences writes it (a newline as &#10;): a WhatsApp message
+    # and the scenario's own, the second read while the app's process was gone.
+    wa, sc = "0|com.whatsapp|1|null|10234", "0|com.android.shell|2020|lumement-scenario-1-1|2000"
+    b64 = lambda key: base64.urlsafe_b64encode(key.encode()).decode().rstrip("=")
+    prefs = (
+        "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n"
+        f'    <string name="pending">{b64(wa)},{b64("com.whatsapp")},-16711936,1792232972103&#10;'
+        f'{b64(sc)},{b64("com.android.shell")},-1,1792232970000&#10;torn</string>\n</map>\n'
+    )
+    assert kept_waiting(prefs) == [wa, sc], kept_waiting(prefs)
+    assert kept_waiting("") == [] and kept_waiting("<map />") == [] and kept_waiting("ABX\x00\x01") is None
+    shade = f"-1|com.android.systemui|2114586824|charging_state|10041\n{wa}\n"
+    # The WhatsApp message came while the phone was in use: the diary says waiting=1, the log's last
+    # pending= is the unlock's 0. It waits, and the scenario's streak wouldn't be its own.
+    assert waiting_now(prefs, shade, 1) == 1
+    assert waiting_now(prefs, "", 2) == 0 and waiting_now("", shade, 3) == 0
+    assert waiting_now("ABX\x00", shade, 2) == 2 and waiting_now("ABX\x00", shade, None) is None
 
     listing = "-1|com.android.systemui|2114586824|charging_state|10041\n0|com.android.shell|2020|lumement-scenario-1-1|2000\n"
     assert shell_key(listing, "lumement-scenario-1-1") == "0|com.android.shell|2020|lumement-scenario-1-1|2000"
