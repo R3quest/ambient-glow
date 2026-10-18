@@ -102,10 +102,13 @@ SCENARIO ?= all
 scenario: ## Messages through the real flow (debug build, phone flat): no wake lock left, display off, no crash
 	ADB="$(ADB)" python3 -I scripts/scenario.py $(SCENARIO)
 
-# make scenario notes its windows on the phone, and the diary leaves its test messages out.
+# make scenario notes its windows on the phone, and the diary leaves its test messages out. exec-out
+# exits 0 whatever happened on the phone, with run-as's complaint (a release build) as the "file".
 diary: ## Pull the LED diary from the phone (debug build) and say what it means for the defaults
 	@mkdir -p app/build/diary
 	$(ADB) exec-out run-as $(PACKAGE) cat files/led-diary.txt > app/build/diary/led-diary.txt
+	@! grep -q '^run-as: ' app/build/diary/led-diary.txt || \
+		{ head -n 1 app/build/diary/led-diary.txt; echo "The diary needs the debug build on the phone (make install)."; exit 1; }
 	$(ADB) shell 'cat /data/local/tmp/lumement-scenarios.txt 2>/dev/null; true' | tr -d '\r' > app/build/diary/scenarios.txt
 	@python3 -I scripts/diary.py app/build/diary/led-diary.txt --skip app/build/diary/scenarios.txt
 
