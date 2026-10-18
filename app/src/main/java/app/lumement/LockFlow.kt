@@ -487,7 +487,9 @@ internal class LockFlow(
     private fun sleepWatch() {
         if (face.value != Face.LOCK_SCREEN) return
         if (port.interactive) {
-            port.schedule(LockTimer.SLEEP_WATCH, sleepWatchMs())
+            // Stops at a call, as [watchForSleep] won't start in one: the call keeps the phone
+            // awake at the ear. The window makes way for a call, so only the slower watch asks.
+            if (ledInWindow.value || !port.inCall) port.schedule(LockTimer.SLEEP_WATCH, sleepWatchMs())
         } else {
             onGoingToSleep()
         }
