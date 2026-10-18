@@ -1,8 +1,10 @@
 # Battery measurements
 
-`make soak MODE=lit|aod|idle MINUTES=… NOTE=…` (see `scripts/soak.sh`) appends one line per run to
-`soak.tsv`. The raw dumps of each run (batterystats, power) are in `raw/`, kept locally only: they
-list every app on the test phone.
+`make soak MODE=lit|aod|idle|hybrid MINUTES=… NOTE=…` (see `scripts/soak.sh`) appends one line per
+run to `soak.tsv`; `make soak-set` runs the defaults' set in one go (~4.5 h). The raw dumps of each
+run (batterystats, power) are in `raw/`, kept locally only: they list every app on the test phone.
+Every adb call has a timeout (60 s, a stall tried twice more): adb over Wi-Fi stalls now and then
+while the phone is in deep sleep.
 
 Modes (2026-10-17, for the bright phase): `lit` (the always-on display off, the lit LED for the whole
 run, 10 minutes at most), `aod` (the LED straight onto the always-on display, still), `hybrid` (the LED
@@ -13,7 +15,19 @@ phone's back afterwards. A sleeping run's end state is read off the display (`mS
 wakefulness says Dozing even with the always-on display off.
 
 When people look, for the defaults, comes from the LED diary instead (`make diary`, debug builds
-only; see `claude.md`).
+only; see `claude.md`). It leaves out what a reboot cut short, and the windows `make scenario` noted
+on the phone (`/data/local/tmp/lumement-scenarios.txt`): test messages are no one's looks.
+
+## make scenario: nothing left behind
+
+`make scenario` (`scripts/scenario.py`, debug build, the phone flat, nothing waiting) locks the
+phone, posts adb's test message, waits through the arrival and reads it (snoozed away, a removal as
+the listener sees it). Within `SETTLE` seconds (30) no `Lumement:*` wake lock may still be held, the
+display must be back to OFF or DOZE, the LED diary must have counted the message and the read, and
+the log since the start must have no exception, crash, ANR or death from Lumement. `SCENARIO=two`
+reads one of two messages first: the LED must stay as it was until the second is read. adb posts as
+`com.android.shell` only, so the two come from the one app. It exits 1 with what failed; its parsing
+is self-tested on the S23's captured output (`make scripts-test`).
 
 ## How a run measures
 

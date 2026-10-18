@@ -1,0 +1,36 @@
+10-18 09:41:07.895 E/BufferQueueProducer(30999): [9da3303 SurfaceView[Lumement:led]@0#23(BLAST Consumer)23](id:791700000017,api:0,p:-1,c:30999) disconnect: not connected (req=1)
+10-18 09:41:07.895 E/Surface (30999): [9da3303 SurfaceView[Lumement:led]@0#23(BLAST Consumer)23-DISCONNECTED](id:0) Surface failed to disconnect. Cleaning up internals anyway. Error -19 (NO_INIT).
+10-18 09:41:07.895 W/libEGL  (30999): EGLNativeWindowType 0xb400007b8401bc10 disconnect failed
+10-18 09:47:24.342 D/Lumement(30999): svc posted quiet=false interactive=false locked=true host=false away=null
+10-18 09:47:24.380 D/Lumement(30999): dark start mode=ARRIVAL
+10-18 09:47:24.388 D/Lumement(30999): act onCreate mode=ARRIVAL dark=true interactive=false
+10-18 09:47:24.396 D/Lumement(30999): act showLed arrival=true pending=1
+10-18 09:47:24.404 D/Lumement(30999): shield up
+10-18 09:47:24.410 D/Lumement(30999): act onResume face=LED interactive=false locked=true
+10-18 09:47:24.437 D/Lumement(30999): act onPause face=LED interactive=false
+10-18 09:47:24.557 D/Lumement(30999): panel wake
+10-18 09:47:24.578 D/Lumement(30999): act onResume face=LED interactive=true locked=true
+10-18 09:47:24.669 D/Lumement(30999): svc SCREEN_ON pending=1
+10-18 09:47:24.679 D/Lumement(30999): aod window up
+10-18 09:47:24.700 D/Lumement(30999): act SCREEN_ON face=LED display=2
+10-18 09:47:24.705 D/Lumement(30999): led window up
+10-18 09:47:25.195 D/Lumement(30999): shield down
+10-18 09:47:25.195 D/Lumement(30999): act settled: LED shows
+10-18 09:47:28.942 D/Lumement(30999): effect live EDGE_FRAME ELEMENT TWIN DUO THIN SOFT spawn=true AIR glass=MEDIUM/REVEAL/SOFT fire=BLAZE/NATURAL/FEW/BURN air=GUST/CURLS/APP/PETALS/LIGHT earth=QUAKE/SLABS/CRYSTAL/RUBBLE: 119 fps, 0 stutters, worst 8 ms
+10-18 09:47:28.943 D/Lumement(30999): act arrival done
+10-18 09:47:28.950 D/Lumement(30999): lit LED up
+10-18 09:47:28.950 D/Lumement(30999): act LED in its window, the lock screen ready under it
+10-18 09:47:28.950 D/Lumement(30999): act showLockScreen auto=false underCover=false underLed=true interactive=true
+10-18 09:47:28.980 D/Lumement(30999): act onPause face=LOCK_SCREEN interactive=true
+10-18 09:52:24.343 D/Lumement(30999): act bright phase over: asleep from under the LED
+10-18 09:52:24.354 D/Lumement(30999): shield up
+10-18 09:52:24.355 D/Lumement(30999): lit LED down
+10-18 09:52:24.372 D/Lumement(30999): act asleep at once, under the cover
+10-18 09:52:24.376 D/Lumement(30999): act going to sleep on the lock screen expectsAod=true
+10-18 09:52:24.852 D/Lumement(30999): svc SCREEN_OFF pending=1
+10-18 09:52:24.854 D/Lumement(30999): svc sleep expected: always-on display true
+10-18 09:52:24.857 D/Lumement(30999): svc sleep: always-on display off
+10-18 09:52:24.859 D/Lumement(30999): act SCREEN_OFF face=LOCK_SCREEN display=1
+10-18 09:52:25.346 D/Lumement(30999): act aod: LED on the always-on display
+10-18 09:52:25.356 D/Lumement(30999): shield down
+10-18 09:52:25.356 D/Lumement(30999): svc sleep: always-on display showed

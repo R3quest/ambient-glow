@@ -1,0 +1,20 @@
+Display Power Controllers: size=1
+
+Display Power Controller:
+-------------------------
+  mDisplayId=0
+  mLeadDisplayId=-1
+  mLightSensor={Sensor name="STK33911 Auto Brightness Light  Non-wakeup", vendor="SensorTek", version=2, type=65601, maxRange=9999999.0, resolution=0.54, power=0.09, minDelay=0}
+  mDisplayBrightnessFollowers={}
+
+  mWasShortTermModelActive=true
+  mAutoBrightnessAdjustmentReasonsFlags=0
+  mScreenBrightnessRampAnimator.isAnimating()=false
+  mColorFadeOffAnimator.isStarted()=false
+
+Display Power State:
+  mStopped=false
+  mScreenState=DOZE
+  mScreenBrightness=0.04705883
+  mSdrScreenBrightness=0.04705883
+  mScreenReady=true
