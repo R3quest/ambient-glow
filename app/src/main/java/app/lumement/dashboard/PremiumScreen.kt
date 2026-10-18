@@ -36,9 +36,9 @@ import app.lumement.ui.theme.GlowPalette
 
 /**
  * Where the trial stands and what premium adds, in one card; under it the page's one action,
- * Play's price to unlock it (or that button greyed out, and why it can't be bought right now: no
- * Play Store, not signed in), apart from the list so it never reads as one more item. What stays free comes last, so
- * buying is never mistaken for needing to.
+ * Play's price to unlock it (or that button greyed out while Play is asked for it, or with why it
+ * can't be bought right now: no Play Store, not signed in), apart from the list so it never reads
+ * as one more item. What stays free comes last, so buying is never mistaken for needing to.
  */
 @Composable
 internal fun PremiumScreen(premium: PremiumModel, onBack: () -> Unit) {
@@ -76,13 +76,18 @@ internal fun PremiumScreen(premium: PremiumModel, onBack: () -> Unit) {
                 PremiumItem(R.string.premium_once_title, R.string.premium_once_body)
             }
             Spacer(Modifier.height(6.dp))
-            when {
-                premium.state == PremiumState.Owned -> OptionNote(stringResource(R.string.premium_owned))
-                price != null && activity != null -> PrimaryButton(
-                    text = stringResource(R.string.premium_over_buy, price),
-                    onClick = { premium.unlock(activity) },
+            when (premiumOffer(premium.state, price, premium.shop, canBuy = activity != null)) {
+                PremiumOffer.OWNED -> OptionNote(stringResource(R.string.premium_owned))
+                PremiumOffer.BUY -> PrimaryButton(
+                    text = stringResource(R.string.premium_over_buy, price.orEmpty()),
+                    onClick = { activity?.let(premium::unlock) },
                 )
-                else -> {
+                // The same button greyed out, so the price lands in place when Play says it.
+                PremiumOffer.ASKING -> {
+                    PrimaryButton(text = stringResource(R.string.premium_unlock_waiting), onClick = {}, enabled = false)
+                    OptionNote(stringResource(R.string.premium_asking))
+                }
+                PremiumOffer.UNAVAILABLE -> {
                     PrimaryButton(text = stringResource(R.string.premium_unlock_waiting), onClick = {}, enabled = false)
                     OptionNote(stringResource(R.string.premium_unavailable))
                 }
