@@ -38,10 +38,15 @@ internal fun isAlert(
  * An alarm only while [ongoing]: Samsung Clock's "upcoming alarm" notice (category alarm, not
  * ongoing) stays up for the 30 minutes before every alarm, and the window made way for all of it,
  * the LED's face covering the lock screen and the fingerprint off; its ringing alarm is an ongoing
- * foreground-service post with no full-screen intent (measured on the S23).
+ * foreground-service post with no full-screen intent (measured on the S23). A call likewise only
+ * while it is live: Android has a call's post ring through a full-screen intent or run as an
+ * ongoing or [foreground] service, and a missed call, which some dialers file as a call too, is
+ * neither; it would hold the LED back for as long as it stays in the shade.
  */
-internal fun takesScreen(category: String?, fullScreen: Boolean, ongoing: Boolean): Boolean =
-    fullScreen || category == Notification.CATEGORY_CALL || (category == Notification.CATEGORY_ALARM && ongoing)
+internal fun takesScreen(category: String?, fullScreen: Boolean, ongoing: Boolean, foreground: Boolean = false): Boolean =
+    fullScreen ||
+        (category == Notification.CATEGORY_CALL && (ongoing || foreground)) ||
+        (category == Notification.CATEGORY_ALARM && ongoing)
 
 /**
  * A silent update to a message the LED already waits on: refresh it, don't re-wake. WhatsApp (and

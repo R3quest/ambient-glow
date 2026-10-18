@@ -329,7 +329,12 @@ class NotificationWakerService : NotificationListenerService() {
 
     /** Another app's post that wants the screen ([takesScreen]). */
     private fun isScreenTaker(sbn: StatusBarNotification): Boolean =
-        sbn.packageName != packageName && takesScreen(sbn.notification.category, sbn.notification.fullScreenIntent != null, sbn.isOngoing)
+        sbn.packageName != packageName && takesScreen(
+            sbn.notification.category,
+            fullScreen = sbn.notification.fullScreenIntent != null,
+            ongoing = sbn.isOngoing,
+            foreground = sbn.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0,
+        )
 
     /**
      * [GlowSession.screenTakers] afresh from the shade at a connection ([active]): posts and

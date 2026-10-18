@@ -26,7 +26,11 @@ class MessageFilterTest {
 
     @Test
     fun callsAlarmsAndFullScreenPostsTakeTheScreen() {
-        assertTrue("call", takesScreen(Notification.CATEGORY_CALL, fullScreen = false, ongoing = false))
+        assertTrue("call in progress", takesScreen(Notification.CATEGORY_CALL, fullScreen = false, ongoing = true))
+        assertTrue("call as a service", takesScreen(Notification.CATEGORY_CALL, fullScreen = false, ongoing = false, foreground = true))
+        assertTrue("ringing call", takesScreen(Notification.CATEGORY_CALL, fullScreen = true, ongoing = false))
+        assertFalse("missed call filed as a call", takesScreen(Notification.CATEGORY_CALL, fullScreen = false, ongoing = false))
+        assertFalse("missed call", takesScreen(Notification.CATEGORY_MISSED_CALL, fullScreen = false, ongoing = false))
         assertTrue("ringing alarm", takesScreen(Notification.CATEGORY_ALARM, fullScreen = false, ongoing = true))
         assertFalse("upcoming alarm", takesScreen(Notification.CATEGORY_ALARM, fullScreen = false, ongoing = false))
         assertTrue("full-screen intent", takesScreen(null, fullScreen = true, ongoing = false))
