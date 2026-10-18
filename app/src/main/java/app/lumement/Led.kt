@@ -58,6 +58,20 @@ internal val RING_SHIFTS = listOf(0f, 1f, 0f, -1f)
 /** The frame's burn-in guard: it steps up to 2 px in from the screen's edge and back, as it can't go out past it. */
 internal val FRAME_SHIFTS = listOf(0f, 1f, 2f, 1f)
 
+/**
+ * On the always-on display the LED holds one frame for hours, every night, wider and brighter
+ * there, so its burn-in step is a share of its own line rather than a pixel or two: each pixel
+ * under it lit at most 3 steps in 4, its white core on other pixels at every step. The frame steps
+ * in from the edge, the ring out from the lens ([stillStepPx]); the dot round a square ([stillShiftAt]).
+ */
+internal val STILL_SHIFTS = listOf(0f, 0.5f, 1f, 0.5f)
+
+/** The still frame's inset or ring's growth at step [cycle], in px, for a line [line] px wide. */
+internal fun stillStepPx(cycle: Int, line: Float): Float = STILL_SHIFTS[cycle % STILL_SHIFTS.size] * line
+
+/** The still dot's offset at step [cycle]: round a square half its [core] radius wide ([PIXEL_SHIFTS], scaled). */
+internal fun stillShiftAt(cycle: Int, core: Float): Offset = PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size] * (core / 4f)
+
 /** The burn-in step for breath [cycle] of [form]: the dot's offset, the ring's growth, or the frame's inset ([ledStepPx]). */
 internal fun ledShiftAt(form: LedForm, cycle: Int): Offset =
     if (form == LedForm.DOT) PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size] else Offset.Zero
