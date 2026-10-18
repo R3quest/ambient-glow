@@ -55,6 +55,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -185,6 +186,10 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val inSetup = !access.ready || finishing
     val tabs = DashboardTab.entries
     val pager = rememberPagerState(pageCount = { tabs.size })
+    // The tabs on screen, even in part: one kept composed beside them doesn't follow each change
+    // as it is made (a drag on the LED tab changes the settings every frame) and catches up as it
+    // comes into view.
+    val inView by remember(pager) { derivedStateOf { pager.layoutInfo.visiblePagesInfo.mapTo(HashSet()) { it.index } } }
     val scope = rememberCoroutineScope()
     val actions = rememberAccessActions(onRefresh = refresh)
 
@@ -432,10 +437,11 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                 beyondViewportPageCount = 1,
                             ) { page ->
+                                val pageSettings = heldAway(settings, page in inView)
                                 PageColumn(Modifier.fillMaxSize()) {
                                     when (tabs[page]) {
                                         DashboardTab.SCREEN -> ScreenPage(
-                                            settings = settings,
+                                            settings = pageSettings,
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
@@ -444,7 +450,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             edit = edit,
                                         )
                                         DashboardTab.EFFECT -> EffectPage(
-                                            settings = settings,
+                                            settings = pageSettings,
                                             sample = sample,
                                             previewHeld = previewHeld,
                                             loop = !reduceMotion,
@@ -460,7 +466,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                             onOpenLedLook = openLedLook,
                                         )
                                         DashboardTab.LED -> LedPage(
-                                            settings = settings,
+                                            settings = pageSettings,
                                             edit = edit,
                                             revealLook = revealLedLook,
                                             onLookRevealed = { revealLedLook = false },
@@ -513,6 +519,15 @@ internal fun Dashboard(reported: ScreenGeometry) {
             }
         }
     }
+}
+
+/** [value] while [shown]; out of view, the one it last showed, so what reads it can skip. */
+@Composable
+private fun <T> heldAway(value: T, shown: Boolean): T {
+    // Not state: being in view again is what recomposes it, with the newest value.
+    val last = remember { mutableListOf(value) }
+    if (shown) last[0] = value
+    return last[0]
 }
 
 @Composable
