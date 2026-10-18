@@ -897,6 +897,33 @@ class LockFlowTest {
         assertFalse("asleep at the lock screen's own timeout", phone.interactive)
     }
 
+    /**
+     * Put away in a pocket with the LED lit, and power pressed twice there, the second press in the
+     * sleep's fade: the sleep was cancelled, so no SCREEN_ON said the user had it in hand. The
+     * LED's face took the screen lock at resume, put away nothing let go of it, and the phone
+     * stayed awake in the pocket, its panel off, until taken out (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun powerInTheFadeWhilePutAwayLetsThePhoneSleep() {
+        phone.pressPower() // dark when the message comes: its wake starts the screen's timeout
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.cover(true) // into a pocket
+        phone.advance(COVERED_MS + 1_000)
+        assertTrue("put away", flow.isPutAway)
+        assertTrue(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(300) // asleep, fading
+        assertFalse(phone.interactive)
+        phone.pressPower() // pressed again in the fade: the sleep cancelled
+        phone.advance(11 * MINUTE)
+
+        assertFalse("no screen held on in the pocket", phone.panelLocked)
+        assertFalse("asleep in the pocket", phone.interactive)
+    }
+
     @Test
     fun aLaunchWithNothingWaitingFinishesAtOnce() {
         phone.launch(WakeMode.LED, 500)

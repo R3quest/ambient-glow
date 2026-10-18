@@ -1064,6 +1064,8 @@ internal class LockFlow(
             sleepSettling = false
             if (!wasInteractive) {
                 wokenUnderCover()
+                // Woken by hand while put away: a sleep cancelled in its fade sends no SCREEN_ON.
+                if (stowed) wokenPutAway()
             }
         }
         if (wasInteractive && ledTurnedOff()) {
