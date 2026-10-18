@@ -338,6 +338,40 @@ class LockFlowTest {
     }
 
     /**
+     * A message while the phone was in use, then the phone put to sleep in its bright phase: away,
+     * the glow screen didn't relight it, and the listener put the LED onto the always-on display.
+     * One UI ended that display (a dark room), and the listener's check, the bright phase still
+     * on, lit the screen in its place (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun theAlwaysOnDisplayGoingInTheBrightPhaseLeavesThePhoneDark() {
+        phone.dozes = true
+        phone.expectsAod = true
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.unlock()
+        assertTrue(flow.isAway)
+        phone.keyguardLocked = true // locks again as it sleeps
+        message("chat-2") // read nowhere, the phone in use: the listener leaves it to the glow screen
+        phone.pressPower()
+        phone.advance(1_000)
+        assertFalse(phone.interactive)
+        phone.startGlowScreen(WakeMode.AOD) // the listener's relight, asleep on the always-on display
+        phone.advance(1_000)
+        assertTrue("on the always-on display", phone.aodBreathing)
+
+        phone.log.clear()
+        phone.aodGoes() // One UI ends it (low light, its own timeout)
+        phone.advance(2_500)
+        phone.host { ensureLed() } // the listener's check
+        phone.advance(5_000)
+
+        logged("aod LED off")
+        notLogged("wake")
+        assertFalse(phone.interactive)
+    }
+
+    /**
      * A missed fingerprint on the dark phone (2026-10-13): One UI shows a short doze screen of its
      * own, which isn't the always-on display shown for the message. The LED had gone onto it.
      */

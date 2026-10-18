@@ -287,6 +287,12 @@ internal class LockFlow(
     private var aodLit = false
 
     /**
+     * One UI ended its always-on display under the LED in this sleep (low light, its timeout, its
+     * schedule): it chose a dark panel, and nothing lights the LED in its place until the next wake.
+     */
+    private var aodDropped = false
+
+    /**
      * Shown for new notifications only ([LockPort.aodOnly]), One UI shows its always-on display once
      * for a new message, at the sleep after it arrives; the LED may take that doze, and no other. One
      * UI dozes the panel for other screens of its own too (a missed fingerprint: DOZE_MOD on the
@@ -1063,6 +1069,7 @@ internal class LockFlow(
             revealingAfterPower = false
             sleepSettling = false
             if (!wasInteractive) {
+                aodDropped = false
                 wokenUnderCover()
                 // Woken by hand while put away: a sleep cancelled in its fade sends no SCREEN_ON.
                 if (stowed) wokenPutAway()
@@ -1078,6 +1085,7 @@ internal class LockFlow(
             // its place (it did, all night in a dark room, before 2026-10-17).
             GlowLog.d { "act aod: interactive=$interactiveSeen state=$state" }
             endAodLed(if (interactiveSeen) "woken" else "gone")
+            aodDropped = !interactiveSeen
             // Woken by the user (a press, a lift): a new message ends the LED here before it wakes.
             if (interactiveSeen) userLooked("aod")
         } else if (!aodLit && !interactiveSeen && face.value == Face.LOCK_SCREEN && dozing(state) && !revealingAfterPower) {
@@ -1188,7 +1196,8 @@ internal class LockFlow(
      */
     private fun relightLed(delayMs: Long) {
         port.cancel(LockTimer.RELIGHT)
-        if (!litAllowed || port.interactive || face.value == Face.AWAY || port.inCall || GlowPending.isEmpty || ledResting) return
+        // In its bright phase too: the listener's check lit the screen where One UI had ended it.
+        if (!litAllowed || aodDropped || port.interactive || face.value == Face.AWAY || port.inCall || GlowPending.isEmpty || ledResting) return
         if (!takeRelightToken()) return
         showLed()
         wakeAfter(delayMs)
@@ -1583,8 +1592,9 @@ internal class LockFlow(
         unstow()
         listenForSleep(false)
         ledArmedForSleep = false
-        // Nothing resets it while away; the next power press must start clean.
+        // Nothing resets these while away; the next power press, and the next sleep, must start clean.
         revealingAfterPower = false
+        aodDropped = false
         arrivalDue = false
         shield.stopArrival()
         becomeInvisible()
