@@ -37,6 +37,17 @@ class PendingStoreTest {
         assertEquals(listOf(chat, mail), decodePending(text))
     }
 
+    /** A chat re-posting with nothing new (ONLY_ALERT_ONCE) doesn't take the LED's lead, or lower its newest time. */
+    @Test
+    fun aQuietUpdateKeepsItsPlaceAndItsNewestTime() {
+        GlowPending.put(chat)
+        GlowPending.put(mail)
+        GlowPending.put(chat.copy(newestAt = chat.newestAt - 60_000L), quiet = true)
+
+        assertEquals(listOf(mail, chat), GlowPending.entries.toList())
+        assertEquals(mail.color, GlowPending.newestColor)
+    }
+
     @Test
     fun everyChangeIsKept() {
         val prefs = FakePrefs()

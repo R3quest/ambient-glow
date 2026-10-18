@@ -245,7 +245,7 @@ class NotificationWakerService : NotificationListenerService() {
 
         val unlocked = Premium.unlocked(this)
         val color = if (pkg == packageName) auto else GlowApps.glowOf(apps, pkg, auto, own = unlocked)
-        GlowPending.put(PendingGlow(key = sbn.key, pkg = pkg, color = color, newestAt = newestAt))
+        GlowPending.put(PendingGlow(key = sbn.key, pkg = pkg, color = color, newestAt = newestAt), quiet = quietUpdate)
         // In use as it arrives (no screen-on to come): the always-on display's window up now.
         if (power.isInteractive) GlowShield.prepareAod()
         val host = GlowSession.host
@@ -263,7 +263,7 @@ class NotificationWakerService : NotificationListenerService() {
         LedDiary.note(this, "message", "waiting=${GlowPending.entries.size}")
         val arrival = arrivalFor(settings.arrival, GlowSession.resting)
         // Premium's trial starts with the first message it plays for: its element, or an app's own colour.
-        val premium = unlocked && (settings.playsPremium || GlowApps.colorOf(apps, pkg) != null)
+        val premium = unlocked && messageShowsPremium(settings, arrival, GlowShield.isOn, GlowApps.colorOf(apps, pkg) != null)
         if (arrival == ArrivalMode.MESSAGE) {
             // The system pops a message up by itself for a channel that peeks; only otherwise does
             // the glow screen re-post it. One UI shows that heads-up even when the screen was off

@@ -69,6 +69,14 @@ fun GlowSettings.playable(unlocked: Boolean): GlowSettings =
 val GlowSettings.playsPremium: Boolean get() = spawn && element.premium && arrival.playsEffect
 
 /**
+ * A message arriving as [arrival] shows premium on the phone, so it may start the trial: an app's
+ * own colour ([ownColor]), or the element where its effect really plays. Over the lock screen
+ * only GlowShield plays it ([shieldOn]); without the shield that lock screen lights plain.
+ */
+internal fun messageShowsPremium(settings: GlowSettings, arrival: ArrivalMode, shieldOn: Boolean, ownColor: Boolean): Boolean =
+    ownColor || (settings.playsPremium && (arrival.onBlack || shieldOn))
+
+/**
  * Premium's own file: whether it is owned (as Google Play last said, see the dashboard's
  * PremiumModel) and when its trial started. Read by the listener and the glow screen on each
  * message, which never talk to Play themselves.
