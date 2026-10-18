@@ -304,6 +304,13 @@ internal class LockFlow(
     /** The glow screen is gone ([destroy]): a callback still on its way does nothing. */
     private var destroyed = false
 
+    /**
+     * The session is over ([finish]) and the glow screen on its way out, its receivers still
+     * registered until [destroy]: the next glow screen may be up meanwhile, GlowShield's windows
+     * its own, so what the system still sends here does nothing.
+     */
+    private var finishing = false
+
     override val isAway: Boolean
         get() = face.value == Face.AWAY
 
@@ -362,7 +369,7 @@ internal class LockFlow(
         // double-tapped to sleep). Normally [onDisplayChanged] has already handled it; otherwise
         // open the lock screen now rather than waiting for the late ACTION_SCREEN_OFF, which
         // arrives ~0.3 s after the panel is already dark.
-        if (ledTurnedOff()) {
+        if (ledTurnedOff() && !finishing) {
             revealAfterPower()
         } else {
             updateLedWindow()
@@ -408,15 +415,24 @@ internal class LockFlow(
      * The session is over: the LED goes, and the glow screen finishes, the listener's host no
      * longer. Android destroys it a moment later (up to 10 s, once the next activity is idle). A
      * message meanwhile went to it, which lit the phone and went, and no glow screen came up for
-     * it; now the listener launches a new one.
+     * it; now the listener launches a new one. Until then this one listens no more ([finishing]):
+     * still listening, it put the LED onto the always-on display under the next one, or relit the
+     * phone as a call ended.
      */
     private fun finish() {
         clearLed()
+        finishing = true
+        port.cancelTimers()
+        port.cancelAfterCall()
+        port.stopStowWatch()
+        port.stopWatchingLit()
+        listenForSleep(false)
         GlowSession.detach(this)
         port.finishSession()
     }
 
     fun onTimer(timer: LockTimer) {
+        if (finishing) return
         when (timer) {
             LockTimer.WAKE -> wakeNow()
             LockTimer.VERIFY_WAKE -> verifyWake()
@@ -528,7 +544,7 @@ internal class LockFlow(
 
     /** Battery Saver came on or went off: in it the LED doesn't hold the screen on, so a bright phase under way ends now. */
     fun onBatterySaverChanged() {
-        if (!litAllowed) brightEnded()
+        if (!finishing && !litAllowed) brightEnded()
     }
 
     /** The user looked at the lock screen ([how]: a press, a tap, a lift): the bright streak starts over ([BrightStreak.looked]). */
@@ -891,7 +907,7 @@ internal class LockFlow(
         // SCREEN_OFF arrives ~0.2-0.3 s late. If the panel is already back on (a quick second
         // power press, or our own wake cancelled the sleep), it is stale: acting on it would put
         // the LED over a lit lock screen.
-        if (port.interactive) return
+        if (port.interactive || finishing) return
         port.holdCpu()
         val state = port.displayState
         if (state == Display.STATE_ON && !revealingAfterPower) {
@@ -961,6 +977,7 @@ internal class LockFlow(
     }
 
     fun onScreenOn() {
+        if (finishing) return
         // Woken by the user while put away: they have it in hand; the lock screen as ever.
         if (stowed) unstow()
         revealingAfterPower = false
@@ -996,6 +1013,7 @@ internal class LockFlow(
      * then too.
      */
     fun onDisplayChanged() {
+        if (finishing) return
         val wasInteractive = interactiveSeen
         interactiveSeen = port.interactive
         val state = port.displayState
@@ -1043,6 +1061,7 @@ internal class LockFlow(
 
     /** The phone was unlocked (USER_PRESENT). */
     fun onUnlocked() {
+        if (finishing) return
         GlowLog.d { "act USER_PRESENT face=${face.value}" }
         port.note("unlock")
         goAway()
@@ -1054,6 +1073,7 @@ internal class LockFlow(
      * Samsung Clock's ringing screen is up).
      */
     fun onNextAlarmChanged() {
+        if (finishing) return
         val rang = alarmRang(alarmDueAt, port.wallMs)
         alarmDueAt = port.nextAlarmAt
         if (rang) alarmRings()
@@ -1189,6 +1209,7 @@ internal class LockFlow(
      * settling, arrival, ending or covered state changes.
      */
     fun updateLedWindow() {
+        if (finishing) return
         val screenTaken = GlowSession.screenTakers.isNotEmpty()
         if (!ledInWindow.value) {
             val wanted = ledWindowWanted(
@@ -1487,7 +1508,7 @@ internal class LockFlow(
 
     /** The effect on the black panel has handed over to the dot: drop to the dot's frame rate. */
     fun onArrivalDone() {
-        if (!arriving.value) return
+        if (!arriving.value || finishing) return
         GlowLog.d { "act arrival done" }
         arriving.value = false
         port.dismissMessage()

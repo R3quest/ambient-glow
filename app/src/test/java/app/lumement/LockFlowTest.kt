@@ -807,6 +807,59 @@ class LockFlowTest {
         assertTrue("and the window up", phone.litShown)
     }
 
+    /**
+     * Read on the dark phone, and a new message as One UI dozed the panel, before Android had
+     * destroyed the finished glow screen: still listening to the display, the finished one put the
+     * LED onto the always-on display for the new message, which the new glow screen never knew of,
+     * and it breathed on under the new one's black cover (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun aFinishedGlowScreenPutsNoLedOnTheAlwaysOnDisplay() {
+        phone.destroyAfterMs = 5_000
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.pressPower() // dark when the message comes
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 10_000)
+        assertFalse("the lock screen timed out", phone.interactive)
+        read("chat-1")
+        assertTrue(phone.finished)
+        phone.log.clear()
+
+        phone.dozeScreen()
+        messageArrives("chat-2")
+        phone.advance(4_000)
+
+        notLogged("aod LED on")
+    }
+
+    /**
+     * The last message read with the phone dark in a call, and a new one in it: the finished glow
+     * screen's call watch was still armed, and as the call ended it relit the phone, besides the
+     * listener's own relight for the new message.
+     */
+    @Test
+    fun aFinishedGlowScreenDoesNotRelightAfterTheCall() {
+        phone.destroyAfterMs = 5_000
+        phone.shieldOn = false // the LED's face, left in front in the call
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.callTurns(true)
+        phone.pressPower() // the call's proximity: dark
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+        read("chat-1")
+        assertTrue(phone.finished)
+        message("chat-2") // in the call: the listener relights once it is over
+
+        phone.log.clear()
+        phone.callTurns(false)
+        phone.advance(1_000)
+
+        notLogged("wake")
+        assertFalse(phone.interactive)
+    }
+
     private companion object {
         const val MINUTE = 60_000L
     }
