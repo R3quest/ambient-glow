@@ -19,6 +19,8 @@ with the same debug key, so any of them installs over any other and keeps the no
 access and the Lumement effects (accessibility) grants. An APK signed with the upload key
 couldn't do that, and it couldn't update a Play install either: with Play App Signing, Play
 re-signs what users download with its own app signing key.
+Gradle decides that per run, so it refuses a run that builds the bundle and a release APK
+together (`./gradlew bundleRelease assembleRelease`): build each on its own.
 
 Without the key, `make release` (and so `make check` and CI) still builds, with one warning line.
 `make bundle` fails and says how to provide the key. It also refuses `PREMIUM=1` and `TRIAL=…`,

@@ -148,6 +148,17 @@ tasks.named { it in setOf("bundleRelease", "packageReleaseBundle", "signReleaseB
     dependsOn(checkPlayBundle)
 }
 
+// forPlay holds for the whole run, so a release APK built alongside a bundle would be signed with
+// the upload key too, and no longer install over the debug-signed app: refuse the pair instead.
+gradle.taskGraph.whenReady {
+    if (forPlay && hasTask(":app:packageRelease")) {
+        throw GradleException(
+            "Build the bundle on its own (make bundle): with a bundle task in the same run, the release " +
+                "APK would be signed with the upload key. Build the APK in a run of its own.",
+        )
+    }
+}
+
 // The release APK is for testing: say once per build when there is no key for the Play bundle yet.
 val uploadKeyNotice = tasks.register("uploadKeyNotice") {
     val missing = uploadKey == null
