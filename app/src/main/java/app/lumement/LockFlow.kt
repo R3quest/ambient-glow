@@ -170,7 +170,7 @@ internal interface ShieldPort {
     fun blackout()
     fun dimIn(durationMs: Long)
     fun hide()
-    fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit): Boolean
+    fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit): Boolean
     fun focusLockScreen()
     fun hideLit()
     fun prepareLed()
@@ -189,7 +189,8 @@ internal object RealShield : ShieldPort {
     override fun blackout() = GlowShield.blackout()
     override fun dimIn(durationMs: Long) = GlowShield.dimIn(durationMs)
     override fun hide() = GlowShield.hide()
-    override fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit) = GlowShield.showLit(colors, round, onTouch, onTap)
+    override fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit) =
+        GlowShield.showLit(colors, round, onTouch, onTap, onReady)
     override fun focusLockScreen() = GlowShield.focusLockScreen()
     override fun hideLit() = GlowShield.hideLit()
     override fun prepareLed() = GlowShield.prepareLed()
@@ -253,6 +254,9 @@ internal class LockFlow(
 
     /** The LED was put up during the sleep fade; the SCREEN_OFF / pause that may follow are expected. */
     private var ledArmedForSleep = false
+
+    /** The LED's window is going up over the face, the lock screen to come in front under it ([onLitReady]). */
+    private var litDue = false
 
     /**
      * After an automatic wake (a new message lit the lock screen), cover the lock screen with
@@ -1250,25 +1254,25 @@ internal class LockFlow(
      */
     fun updateLedWindow() {
         if (finishing) return
-        val screenTaken = GlowSession.screenTakers.isNotEmpty()
         if (!ledInWindow.value) {
-            val wanted = ledWindowWanted(
-                ledInFront = face.value == Face.LED && inFront,
-                screenOn = port.interactive,
-                settled = !settling.value,
-                arriving = arriving.value,
-                ending = ending.value,
-                covered = covered.value,
-                putAway = stowed,
-                inCall = port.inCall,
-                screenTaken = screenTaken,
-            )
-            if (wanted) readyLockScreen()
-        } else if (ledWindowEnds(screenTaken, port.inCall, ending.value)) {
+            if (!litDue && ledWindowWantedNow()) readyLockScreen()
+        } else if (ledWindowEnds(GlowSession.screenTakers.isNotEmpty(), port.inCall, ending.value)) {
             GlowLog.d { "act LED window making way" }
             endLedWindow()
         }
     }
+
+    private fun ledWindowWantedNow(): Boolean = ledWindowWanted(
+        ledInFront = face.value == Face.LED && inFront,
+        screenOn = port.interactive,
+        settled = !settling.value,
+        arriving = arriving.value,
+        ending = ending.value,
+        covered = covered.value,
+        putAway = stowed,
+        inCall = port.inCall,
+        screenTaken = GlowSession.screenTakers.isNotEmpty(),
+    )
 
     /**
      * The lit LED into its window over everything, and the lock screen in front under it, ready.
@@ -1283,7 +1287,27 @@ internal class LockFlow(
      * proximity sensor's panel-off), as while its face was in front.
      */
     private fun readyLockScreen() {
-        if (!shield.showLit({ GlowPending.colors() }, 0, ::onLedWindowTouch, ::onLedWindowTap)) return
+        if (!shield.showLit({ GlowPending.colors() }, 0, ::onLedWindowTouch, ::onLedWindowTap, ::onLitReady)) return
+        GlowLog.d { "act LED in its window, the lock screen under it once it has the focus" }
+        litDue = true
+    }
+
+    /**
+     * The LED's window is up over the face and has the focus ([shown]; or its wait ran out), or it
+     * went first: the lock screen comes in front under it now ([readyLockScreen]), if the window is
+     * still wanted. One UI starts listening for the fingerprint as its lock screen comes in front,
+     * and shows its icon over everything, unless another window has the focus; a listen under way
+     * stops only at a check of its own ~0.5 s later. Uncovered as the window went up, before it had
+     * the focus (0.03-0.2 s later), the icon showed for 0.1-0.2 s (measured on the S23, 2026-10-18).
+     */
+    private fun onLitReady(shown: Boolean) {
+        if (!litDue) return
+        litDue = false
+        if (!shown) return
+        if (finishing || !ledWindowWantedNow()) {
+            shield.hideLit()
+            return
+        }
         GlowLog.d { "act LED in its window, the lock screen ready under it" }
         ledInWindow.value = true
         acquireKeepOn()

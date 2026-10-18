@@ -298,6 +298,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     /** The always-on display's window is up and drawn ([prepareLed]). */
     private var aodReady = false
     private var litTouch: (() -> Unit)? = null
+    private var litReady: ((Boolean) -> Unit)? = null
     private var litTap: (() -> Unit)? = null
 
     // ---- Driving it ---------------------------------------------------------------------------
@@ -492,6 +493,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         coverUp = false
         litTouch = null
         litTap = null
+        litReady = null
         GlowSession.bright = BrightStreak()
         proximity()
     }
@@ -680,13 +682,24 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         coverUp = false
     }
 
-    override fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit): Boolean {
+    override fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit): Boolean {
         if (!shieldOn) return false
         litShown = true
         litTouch = onTouch
         litTap = onTap
+        litReady = onReady
         log += "lit LED up"
+        // The window takes the focus a moment later, as GlowShield's does.
+        later(LIT_FOCUS_MS) { endLitWait(true) }
         return true
+    }
+
+    /** The lit LED window's wait for the focus is over, as GlowShield posts it. */
+    private fun endLitWait(shown: Boolean) {
+        val ready = litReady ?: return
+        litReady = null
+        val now = shown && litShown
+        later(0) { ready(now) }
     }
 
     override fun focusLockScreen() {
@@ -694,6 +707,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     }
 
     override fun hideLit() {
+        endLitWait(false)
         if (!litShown) return
         litShown = false
         litTouch = null
@@ -789,6 +803,9 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         const val SCREEN_ON_LAG_MS = 40L
         const val DISPLAY_EVENT_MS = 5L
         const val FOCUS_MS = 16L
+
+        /** The LED's window takes the focus this long after it is shown (0.03-0.2 s on the S23). */
+        const val LIT_FOCUS_MS = 40L
 
         /** One UI's lock-screen timeout (keyguard activityTimeoutWM), and the user's screen timeout. */
         const val LOCK_SCREEN_TIMEOUT_MS = 5_000L
