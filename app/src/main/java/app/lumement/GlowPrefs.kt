@@ -108,8 +108,9 @@ object GlowPrefs {
             brightFor = getEnum(KEY_BRIGHT_FOR, defaults.brightFor),
             afterBright = getEnum(KEY_AFTER_BRIGHT, defaults.afterBright),
             spawn = getBoolean(KEY_SPAWN, defaults.spawn),
-            // An element that no longer exists (the plain wave) falls back to Water.
-            element = getEnum(KEY_ELEMENT, defaults.element),
+            // An element that no longer exists (the plain wave) falls back to Water, the free one,
+            // not to a new install's first element (Air, premium: it would start the trial).
+            element = if (contains(KEY_ELEMENT)) getEnum(KEY_ELEMENT, SpawnElement.WATER) else defaults.element,
             glassBlur = getEnum(KEY_GLASS_BLUR, defaults.glassBlur),
             glassArea = getEnum(KEY_GLASS_AREA, defaults.glassArea),
             glassFrost = getEnum(KEY_GLASS_FROST, defaults.glassFrost),

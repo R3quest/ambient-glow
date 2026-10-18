@@ -109,12 +109,6 @@ internal fun handOffFlashAt(ms: Float): Float {
     return (1f - exp(-t / 15f)) * exp(-t / 120f)
 }
 
-/** The splash's particles live this long after the impact. */
-private const val SPLASH_MS = 560f
-
-/** How far through its life a splash particle is at [ms], 0..1 (it lives [life] ms); outside that it isn't showing. */
-internal fun handOffSplashAt(ms: Float, life: Float = SPLASH_MS): Float = (ms - HANDOFF_LANDED_MS) / life
-
 /** What the last of the light gathers into. */
 internal enum class HandOffToken { SPARK, EMBER, DROP, WISP, GEM }
 

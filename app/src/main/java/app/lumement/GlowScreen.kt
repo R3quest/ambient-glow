@@ -183,10 +183,12 @@ private fun SurfaceLedLayer(
         }
     }
     LaunchedEffect(Unit) {
-        suspendCancellableCoroutine { ready -> surface.whenReady { ready.resume(Unit) } }
         var cycle = 0
         while (true) {
             if (stop) break
+            // Each breath waits for the surface: it goes with the window (the glow screen stopped
+            // behind a screen-off, its LED face left in front in a call) and comes back on the wake.
+            suspendCancellableCoroutine { ready -> surface.whenReady { ready.resume(Unit) } }
             fade(true)
             delay(LED_RATE_PREROLL_MS) // dark: the new rate is in place before the first lit frame
             if (stop) {

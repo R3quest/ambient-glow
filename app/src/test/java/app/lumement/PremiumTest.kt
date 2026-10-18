@@ -60,6 +60,19 @@ class PremiumTest {
         assertFalse(GlowSettings(element = SpawnElement.AIR, arrival = ArrivalMode.LED_ONLY).playsPremium)
     }
 
+    /** The defaults (Air over the lock screen) with GlowShield skipped in setup: a plain lock screen, no trial spent. */
+    @Test
+    fun theTrialStartsOnlyWithPremiumOnTheScreen() {
+        val air = GlowSettings(element = SpawnElement.AIR, arrival = ArrivalMode.LOCK_SCREEN)
+        assertFalse(messageShowsPremium(air, ArrivalMode.LOCK_SCREEN, shieldOn = false, ownColor = false))
+        assertTrue(messageShowsPremium(air, ArrivalMode.LOCK_SCREEN, shieldOn = true, ownColor = false))
+        assertTrue(messageShowsPremium(air.copy(arrival = ArrivalMode.BLACK), ArrivalMode.BLACK, shieldOn = false, ownColor = false))
+        // Do Not Disturb turns a black arrival into the lock screen's.
+        assertFalse(messageShowsPremium(air.copy(arrival = ArrivalMode.BLACK), ArrivalMode.LOCK_SCREEN, shieldOn = false, ownColor = false))
+        // An app's own colour is on the LED whatever the arrival.
+        assertTrue(messageShowsPremium(air, ArrivalMode.LOCK_SCREEN, shieldOn = false, ownColor = true))
+    }
+
     @Test
     fun aBuildCanStageEachStepOfTheTrial() {
         assertEquals(null, trialStage(""))

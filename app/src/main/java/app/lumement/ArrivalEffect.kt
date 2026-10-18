@@ -595,16 +595,6 @@ private fun frostLight(origin: Offset, reach: Float, light: Color): Brush {
 private fun frostAt(ms: Float, area: GlassArea): Float = hazeAt(ms, area) * smoothstep(0f, FROST_RISE_MS, ms)
 
 /**
- * One glass ripple at wave scale [s]: the crest band only (a stroke over the lit part of the
- * gradient, so the clear middle is never painted), turned [turn] degrees for the shimmer.
- */
-private fun DrawScope.drawGlassRipple(brush: Brush, s: Float, turn: Float, origin: Offset, radius: Float, band: Stroke, alpha: Float) {
-    rotate(turn, origin) {
-        scale(s, origin) { drawCircle(brush, radius, origin, alpha = alpha, style = band) }
-    }
-}
-
-/**
  * The AirDrop part: light gathers in the camera and flashes, releasing a ring of light, brand
  * colour with a hot white rim, that washes over the whole screen and fades as it reaches the
  * bottom ([crestEnergyAt]). Only the ring's band is drawn, never the clear middle.
@@ -760,13 +750,13 @@ private fun SpawnWave(
                         val echoAlpha = GLASS_ECHO_ALPHA * crestEnergyAt(ms, wave) * smoothstep(0.15f, 0.4f, wave)
                         if (echoAlpha > 0f) {
                             val echo = wave * (1f - GLASS_ECHO_GAP)
-                            drawGlassRipple(crest, echo, turn + GLASS_ECHO_TURN, origin, crestRadius, crestBand, echoAlpha)
+                            drawBand(crest, echo, turn + GLASS_ECHO_TURN, origin, crestRadius, crestBand, echoAlpha)
                         }
                         if (wave >= MIN_WAVE && energy > 0f) {
-                            drawGlassRipple(crest, wave, turn, origin, crestRadius, crestBand, energy)
+                            drawBand(crest, wave, turn, origin, crestRadius, crestBand, energy)
                         }
                     } else if (wave >= MIN_WAVE && energy > 0f) {
-                        drawGlassRipple(wash, wave, 0f, origin, washRadius, washBand, energy)
+                        drawBand(wash, wave, 0f, origin, washRadius, washBand, energy)
                     }
                     drawSpawnFlash(flash, origin, scale, ms)
                 }

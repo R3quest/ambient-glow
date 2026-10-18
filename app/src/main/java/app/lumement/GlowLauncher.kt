@@ -218,8 +218,15 @@ object GlowLauncher {
             return
         }
         GlowLog.d { "message pop-up post" }
+        // The copy keeps the sender's content:// URIs (an image, an avatar), and the system refuses
+        // a post with URIs we can't grant it (SecurityException): no pop-up then, not a crash.
+        try {
+            post(context, MESSAGE_NOTIFICATION_ID, copy)
+        } catch (e: RuntimeException) {
+            GlowLog.d { "message pop-up refused: $e" }
+            return
+        }
         shownMessageKey = original.key
-        post(context, MESSAGE_NOTIFICATION_ID, copy)
     }
 
     /** Removes the re-posted message; with [originalKey], only if it is that message's copy. */

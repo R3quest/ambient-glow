@@ -144,6 +144,23 @@ class LockFlowTest {
         logged("lit LED down", "restart timeout", "release panel")
     }
 
+    /**
+     * A call rang over the lit LED, its window made way, and the sleep watch kept polling: at the
+     * ear the call keeps the phone awake, so it ran 20 times a second for the whole call.
+     */
+    @Test
+    fun aCallStopsTheSleepWatch() {
+        readyUnderLed()
+        phone.callTurns(true)
+        GlowSession.screenTakers += "call"
+        phone.host { onScreenTakersChanged() }
+        phone.advance(1_000)
+
+        assertTrue(phone.interactive)
+        assertFalse(flow.ledInWindow.value)
+        assertFalse("no sleep watch in a call", LockTimer.SLEEP_WATCH in phone.timersOf())
+    }
+
     /** Samsung Clock opens its ringing screen itself, under the window (2026-10-12). */
     @Test
     fun anAlarmClockRingingLiftsTheWindow() {

@@ -51,7 +51,18 @@ object GlowPending {
     /** Where the list is kept across a restart of the process; set by the listener ([keepIn]). */
     private var store: SharedPreferences? = null
 
-    fun put(entry: PendingGlow) {
+    /**
+     * [entry] as the newest. A [quiet] update ([isQuietUpdate]) brought no new message: it keeps its
+     * place in the round and its newest message's time, which an edit or a deletion could lower.
+     */
+    fun put(entry: PendingGlow, quiet: Boolean = false) {
+        val at = if (quiet) entries.indexOfFirst { it.key == entry.key } else -1
+        if (at >= 0) {
+            val kept = entries[at]
+            entries[at] = entry.copy(newestAt = maxOf(entry.newestAt, kept.newestAt))
+            if (kept.color != entry.color) save()
+            return
+        }
         val was = entries.firstOrNull()
         entries.removeAll { it.key == entry.key }
         entries.add(0, entry)
