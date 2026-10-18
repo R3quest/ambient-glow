@@ -23,6 +23,14 @@ class FrameTraceTest {
     }
 
     @Test
+    fun mostFramesDroppedStillCount() {
+        // Sustained jank at 120 Hz: more than half the gaps are two frames long, so the median is
+        // the slow gap, but each of them is still a dropped frame.
+        val trace = LongArray(400) { if (it % 2 == 0 || it == 1) 16_666_667L else 8_333_333L }
+        assertEquals(201, stuttersIn(trace, trace.size))
+    }
+
+    @Test
     fun aSmoothRunHasNone() {
         assertEquals(0, stuttersIn(gaps(8_333_333L, 400), 400))
         assertEquals(0, stuttersIn(gaps(16_666_667L, 200), 200))

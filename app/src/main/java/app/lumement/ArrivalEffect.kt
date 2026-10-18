@@ -437,13 +437,15 @@ private const val TRACED_GAPS = 1_024
 
 /**
  * How many of the first [count] frame gaps in [gaps] were stutters: longer than one and a half
- * of the panel's frame, taken as the median gap, so one dropped frame counts at 120 Hz (8.3 ms
- * frames, a 16.7 ms gap) as it does at 60 Hz. Gaps past the array's end were not kept.
+ * of the panel's frame, so one dropped frame counts at 120 Hz (8.3 ms frames, a 16.7 ms gap) as
+ * it does at 60 Hz. The panel's frame is taken from the fast end, the gap a tenth of the way up,
+ * not the median: when half the frames drop, the median is the slow gap and they would all pass.
+ * Gaps past the array's end were not kept.
  */
 internal fun stuttersIn(gaps: LongArray, count: Int): Int {
     val kept = min(count, gaps.size)
     if (kept == 0) return 0
-    val frame = gaps.copyOf(kept).apply { sort() }[kept / 2]
+    val frame = gaps.copyOf(kept).apply { sort() }[kept / 10]
     var stutters = 0
     for (i in 0 until kept) if (gaps[i] * 2 > frame * 3) stutters++
     return stutters
