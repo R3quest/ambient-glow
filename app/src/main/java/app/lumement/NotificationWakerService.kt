@@ -193,11 +193,12 @@ class NotificationWakerService : NotificationListenerService() {
     override fun onListenerConnected() {
         GlowLauncher.ensureChannel(this)
         GlowPrefs.warm(this)
-        GlowSession.resting = restsUnder(currentInterruptionFilter)
+        GlowSession.resting = restsUnder(interruptionFilterNow())
         brandColors.prepare()
-        GlowSession.screenTakers.clear()
-        activeNotifications?.forEach(::noteScreenTaker)
-        learnApps()
+        // One look at the shade for both: the full list parcels every notification in it.
+        val active = activeNow()
+        noteScreenTakers(active)
+        learnApps(active)
         GlowPending.keepIn(getSharedPreferences(PENDING_FILE, MODE_PRIVATE))
         // A new process (an app update, or the system had killed it): the messages still unread
         // wait on the LED again, which then lights as the screen-off would have had it.
@@ -318,11 +319,47 @@ class NotificationWakerService : NotificationListenerService() {
 
     /** Keeps [GlowSession.screenTakers] in step with [sbn], a post or an update to one; tells the glow screen of a change. */
     private fun noteScreenTaker(sbn: StatusBarNotification) {
-        val takes = sbn.packageName != packageName && takesScreen(sbn.notification.category, sbn.notification.fullScreenIntent != null, sbn.isOngoing)
+        val takes = isScreenTaker(sbn)
         val changed = if (takes) GlowSession.screenTakers.add(sbn.key) else GlowSession.screenTakers.remove(sbn.key)
         if (!changed) return
         GlowLog.d { "svc screen taker ${if (takes) "up" else "gone"} ${sbn.packageName} ${sbn.notification.category}" }
         GlowSession.host?.onScreenTakersChanged()
+    }
+
+    /** Another app's post that wants the screen ([takesScreen]). */
+    private fun isScreenTaker(sbn: StatusBarNotification): Boolean =
+        sbn.packageName != packageName && takesScreen(sbn.notification.category, sbn.notification.fullScreenIntent != null, sbn.isOngoing)
+
+    /**
+     * [GlowSession.screenTakers] afresh from the shade at a connection ([active]): posts and
+     * removals while the listener was away never came, so a ringing call that ended meanwhile
+     * would hold the LED's window back for good. The glow screen hears of a change. Kept as it
+     * was when the system can't say (null).
+     */
+    private fun noteScreenTakers(active: Array<StatusBarNotification>?) {
+        val takers = active?.filter(::isScreenTaker)?.mapTo(HashSet()) { it.key } ?: return
+        if (takers == GlowSession.screenTakers) return
+        GlowSession.screenTakers.clear()
+        GlowSession.screenTakers.addAll(takers)
+        GlowLog.d { "svc screen takers afresh: ${takers.size}" }
+        GlowSession.host?.onScreenTakersChanged()
+    }
+
+    /**
+     * Everything in the shade, or null if the system can't say: it refuses a listener it no
+     * longer counts as connected (unbound again already, or access just turned off).
+     */
+    private fun activeNow(): Array<StatusBarNotification>? = try {
+        activeNotifications
+    } catch (_: SecurityException) {
+        null
+    }
+
+    /** Do Not Disturb's filter now, or unknown (it doesn't rest the LED) when the system refuses, as [activeNow]. */
+    private fun interruptionFilterNow(): Int = try {
+        currentInterruptionFilter
+    } catch (_: SecurityException) {
+        INTERRUPTION_FILTER_UNKNOWN
     }
 
     private fun relightIfWaiting() {
@@ -393,16 +430,12 @@ class NotificationWakerService : NotificationListenerService() {
     private enum class LockWait { NONE, WAITING, DONE }
 
     /**
-     * Lists the apps whose messages are in the shade now, so the Apps screen isn't empty before the
-     * next message (on a fresh install, or the first run after an update). Once per connection:
-     * the full list parcels every notification in the shade.
+     * Lists the apps whose messages are in the shade now ([active]), so the Apps screen isn't empty
+     * before the next message (on a fresh install, or the first run after an update). Once per
+     * connection: the full list parcels every notification in the shade.
      */
-    private fun learnApps() {
-        val active = try {
-            activeNotifications ?: return
-        } catch (_: SecurityException) {
-            return // not connected yet
-        }
+    private fun learnApps(active: Array<StatusBarNotification>?) {
+        active ?: return
         val rankingMap = currentRanking
         for (sbn in active) {
             if (sbn.packageName == packageName) continue
