@@ -391,13 +391,15 @@ half4 main(float2 xy) {
             float m = mod(i, lines);
             float weight = mod(m, 2.0) > 0.5 ? finer : 1.0;
             if (weight > 0.0) {
-                // The columns there were when this one rose: halve until odd.
+                // The columns there were when this one rose: halve until odd. Most columns are
+                // odd within a halving or two, so the loop stops there rather than running all
+                // twelve for every column of every pixel the front covers.
                 float odd = m;
                 float span = lines;
                 for (int t = 0; t < 12; t++) {
-                    float even = (odd > 0.5 && mod(odd, 2.0) < 0.5) ? 1.0 : 0.0;
-                    odd = mix(odd, 0.5 * odd, even);
-                    span = mix(span, 0.5 * span, even);
+                    if (odd <= 0.5 || mod(odd, 2.0) >= 0.5) break;
+                    odd *= 0.5;
+                    span *= 0.5;
                 }
                 if (m < 0.5) span = 4.0;
                 float key = m / lines * 4096.0;
