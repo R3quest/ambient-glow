@@ -1,6 +1,7 @@
 package app.lumement.dashboard
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -28,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,10 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -57,18 +63,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import app.lumement.DOT_HALO_FACTOR
 import app.lumement.DotSize
+import app.lumement.EdgeColor
+import app.lumement.EdgeGlow
+import app.lumement.EdgeWidth
+import app.lumement.GlowForm
 import app.lumement.GlowGraphic
 import app.lumement.GlowMetrics
 import app.lumement.GlowSettings
 import app.lumement.GlowStyle
+import app.lumement.LedDot
+import app.lumement.LedForm
 import app.lumement.R
 import app.lumement.dotCenter
 import app.lumement.dotFraction
 import app.lumement.ui.components.BladeChip
 import app.lumement.ui.components.CardDivider
 import app.lumement.ui.components.ChipLabel
+import app.lumement.ui.components.ChipRow
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.Fold
+import app.lumement.ui.components.OptionBody
 import app.lumement.ui.components.OptionGroup
 import app.lumement.ui.components.Readout
 import app.lumement.ui.components.SectionLabel
@@ -76,6 +90,7 @@ import app.lumement.ui.components.SelectionRow
 import app.lumement.ui.components.StepButton
 import app.lumement.ui.components.glowCard
 import app.lumement.ui.components.glowSliderColors
+import app.lumement.ui.theme.GlowMotion
 import app.lumement.ui.theme.GlowPalette
 import app.lumement.ui.theme.GlowShapes
 import kotlin.math.abs
@@ -83,11 +98,13 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 // ---------------------------------------------------------------------------------------------
-// The LED tab: where it sits (drag, spots, then folded: the camera fit, sliders and steps), and
-// its size and brightness.
+// The LED tab: its shape (a dot, a ring round the camera, or a frame round the screen's edge),
+// where the dot sits (drag, spots, then folded: sliders and steps) and the ring's camera fit, and
+// its look: the dot's or the ring's size, or the frame's colour, width and glow.
 // ---------------------------------------------------------------------------------------------
 
 private val PanelHeight: Dp = 280.dp
+private val FormTileHeight: Dp = 60.dp
 
 private const val SNAP_PRESET = 0.03f
 private const val SNAP_RULER = 0.012f
@@ -109,9 +126,10 @@ internal fun snapDot(x: Float, y: Float, spots: List<DotSpot>): Snapped {
 
 /**
  * A one-tap LED position; [onCameraLine] spots sit at the exact height of the lens centre.
- * The [camera] spot is the lens itself: the LED there lights as a ring around it. [atLens] marks
+ * The [camera] spot is the lens itself: the LED there lights as a ring round it. [atLens] marks
  * the lens centre: the ring, or on a screen without a camera the dot that stands in for it.
- * [label] names it on its chip, [phrase] in a sentence ("Just left of the camera").
+ * [label] names it on its chip (the ring has none: it is picked as a shape), [phrase] in a
+ * sentence ("Just left of the camera").
  */
 @Immutable
 internal data class DotSpot(
@@ -158,7 +176,7 @@ internal fun dotSpots(camera: ScreenCamera, window: IntSize, dotSize: DotSize, d
         return listOf(edgeLeft, centre, edgeRight)
     }
     listOf(
-        DotSpot(R.string.dot_spot_ring, R.string.led_place_ring, fx(camX), line, onCameraLine = false, camera = true, atLens = true),
+        DotSpot(R.string.led_form_ring, R.string.led_place_ring, fx(camX), line, onCameraLine = false, camera = true, atLens = true),
         edgeLeft,
         DotSpot(R.string.dot_spot_cam_left, R.string.led_place_cam_left, fx(camX - clear), line, onCameraLine = true),
         DotSpot(R.string.dot_spot_cam_right, R.string.led_place_cam_right, fx(camX + clear), line, onCameraLine = true),
@@ -175,10 +193,13 @@ private val PLACE_GRID = arrayOf(
 
 /**
  * Where the LED waits, in words: its spot's phrase, or else the third of the screen it is in
- * ("Bottom right"), so other tabs can say where it is without a picture.
+ * ("Bottom right"), so other tabs can say where it is without a picture. The frame is round the
+ * screen's edge, wherever the dot was left.
  */
 @StringRes
-internal fun ledPlace(dotX: Float, dotY: Float, onCamera: Boolean, spots: List<DotSpot>): Int {
+internal fun ledPlace(dotX: Float, dotY: Float, form: LedForm, spots: List<DotSpot>): Int {
+    if (form == LedForm.FRAME) return R.string.led_place_frame
+    val onCamera = form == LedForm.RING
     val spot = if (onCamera) spots.firstOrNull { it.camera } else spots.firstOrNull { !it.camera && it.matches(dotX, dotY) }
     if (spot != null) return spot.phrase
     if (onCamera) return R.string.led_place_ring
@@ -186,18 +207,35 @@ internal fun ledPlace(dotX: Float, dotY: Float, onCamera: Boolean, spots: List<D
     return PLACE_GRID[third(dotY)][third(dotX)]
 }
 
-/** The LED as a 14 dp glyph: a ring round a lens, or a dot in its glow. */
+/** The LED as a 14 dp glyph: a ring round a lens, a dot in its glow, or a phone's edge lit all round. */
 @Composable
-internal fun LedGlyph(onCamera: Boolean, modifier: Modifier = Modifier) {
+internal fun LedGlyph(form: LedForm, modifier: Modifier = Modifier) {
     Canvas(modifier.size(14.dp)) {
         val r = size.minDimension / 2f
-        if (onCamera) {
-            val line = 2.dp.toPx()
-            drawCircle(GlowPalette.SurfaceHighest, radius = r - line * 1.5f)
-            drawCircle(GlowPalette.Cyan, radius = r - line / 2f, style = Stroke(line))
-        } else {
-            drawCircle(GlowPalette.Cyan, radius = r, alpha = 0.18f)
-            drawCircle(GlowPalette.Cyan, radius = r * 0.4f)
+        when (form) {
+            LedForm.RING -> {
+                val line = 2.dp.toPx()
+                drawCircle(GlowPalette.SurfaceHighest, radius = r - line * 1.5f)
+                drawCircle(GlowPalette.Cyan, radius = r - line / 2f, style = Stroke(line))
+            }
+            LedForm.DOT -> {
+                drawCircle(GlowPalette.Cyan, radius = r, alpha = 0.18f)
+                drawCircle(GlowPalette.Cyan, radius = r * 0.4f)
+            }
+            LedForm.FRAME -> {
+                val line = 1.5.dp.toPx()
+                val phone = Size(size.width * 0.68f, size.height)
+                val at = Offset((size.width - phone.width) / 2f, 0f)
+                val corner = CornerRadius(3.dp.toPx())
+                drawRoundRect(GlowPalette.Cyan, at, phone, corner, alpha = 0.14f)
+                drawRoundRect(
+                    GlowPalette.Cyan,
+                    at + Offset(line / 2f, line / 2f),
+                    Size(phone.width - line, phone.height - line),
+                    CornerRadius(corner.x - line / 2f),
+                    style = Stroke(line),
+                )
+            }
         }
     }
 }
@@ -207,7 +245,7 @@ internal fun LedGlyph(onCamera: Boolean, modifier: Modifier = Modifier) {
 @StringRes
 internal fun ledPlaceOf(settings: GlowSettings): Int {
     val spots = rememberDotSpots(settings.dotSize)
-    return ledPlace(settings.dotX, settings.dotY, settings.ledOnCamera, spots)
+    return ledPlace(settings.dotX, settings.dotY, settings.ledForm, spots)
 }
 
 @Composable
@@ -218,10 +256,14 @@ private fun rememberDotSpots(dotSize: DotSize): List<DotSpot> {
     return remember(camera, window, dotSize, density) { dotSpots(camera, window, dotSize, density) }
 }
 
+/**
+ * The LED's shape and place. [onMove] takes it to a spot in a form: a pick (a chip, a tap) is
+ * followed by [onCommit], a drag or a run of steps by [onCommit] once it settles.
+ */
 @Composable
 internal fun LedCard(
     settings: GlowSettings,
-    onMove: (x: Float, y: Float, onCamera: Boolean) -> Unit,
+    onMove: (x: Float, y: Float, form: LedForm) -> Unit,
     onCommit: () -> Unit,
     onLensFit: (fit: (GlowSettings) -> GlowSettings) -> Unit,
     onLensFitDone: () -> Unit,
@@ -241,7 +283,7 @@ internal fun LedCard(
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
         lastSnap = snapped.target
-        onMove(snapped.x, snapped.y, (snapped.target as? DotSpot)?.camera == true)
+        onMove(snapped.x, snapped.y, if ((snapped.target as? DotSpot)?.camera == true) LedForm.RING else LedForm.DOT)
     }
 
     // The − / + steps: 1 dp per tap, past the snap so small steps are not pulled back. The LED
@@ -253,7 +295,7 @@ internal fun LedCard(
     val settleSteps = rememberSettle(STEP_SETTLE_MS, onCommit)
     val step: (Float, Float) -> Unit = { dx, dy ->
         lastSnap = null
-        onMove((dotX + dx).coerceIn(0f, 1f), (dotY + dy).coerceIn(0f, 1f), false)
+        onMove((dotX + dx).coerceIn(0f, 1f), (dotY + dy).coerceIn(0f, 1f), LedForm.DOT)
         settleSteps()
     }
 
@@ -262,107 +304,167 @@ internal fun LedCard(
     val previewScale = (PanelHeight / screenHeightDp.coerceAtLeast(PanelHeight)).coerceIn(0.1f, 1f)
     val previewRadius = previewDotRadius(settings.dotSize, previewScale)
 
-    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionLabel(stringResource(R.string.section_dot), GlowPalette.TextMuted)
+    val pick: (DotSpot) -> Unit = { spot ->
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        lastSnap = spot
+        onMove(spot.x, spot.y, if (spot.camera) LedForm.RING else LedForm.DOT)
+        onCommit()
+    }
+    val ring = spots.firstOrNull { it.camera }
+    val frame = settings.ledOnEdge
 
-        // Dragging or tapping the mock-up is the main way; the readouts and how-to sit beside it.
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            val previewLabel = stringResource(R.string.dot_preview_label)
-            PhoneMock(
-                modifier = Modifier
-                    .height(PanelHeight)
-                    .aspectRatio(0.48f)
-                    .semantics { contentDescription = previewLabel },
-            ) { mockGeometry ->
-                DotRuler(
-                    dotX = dotX,
-                    dotY = dotY,
-                    dotRadius = previewRadius,
-                    spots = spots,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                GlowGraphic(
-                    form = settings.ledForm,
-                    color = GlowPalette.Cyan,
-                    alpha = { 1f },
-                    dotX = dotX,
-                    dotY = dotY,
-                    metrics = GlowMetrics.Panel,
-                    geometry = mockGeometry,
-                    dotRadius = previewRadius,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                val margin = with(density) { previewRadius.toPx() * DOT_HALO_FACTOR }
-                // The gestures outlive a recomposition: they read the newest snap spots (a lens fit
-                // moves them) rather than those of the first touch.
-                val currentMove by rememberUpdatedState(move)
-                val currentCommit by rememberUpdatedState(onCommit)
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(margin) {
-                            detectTapGestures { position ->
-                                val f = dotFraction(position, size.toSize(), margin)
-                                currentMove(f.x, f.y)
-                                currentCommit()
+    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SectionLabel(stringResource(R.string.section_led), GlowPalette.TextMuted)
+
+        // Tiles, a glyph over its name, so "Edge Frame" has the width.
+        OptionGroup(stringResource(R.string.led_form)) {
+            val forms = ledForms(camera = ring != null)
+            SelectionRow(
+                count = forms.size,
+                selected = forms.indexOf(settings.ledForm).coerceAtLeast(0),
+                height = FormTileHeight,
+                inset = 2.dp,
+                onSelect = { index ->
+                    val (x, y, form) = ledFormMove(forms[index], dotX, dotY, spots) ?: return@SelectionRow
+                    // Onto a spot (the ring, or beside the lens) it snaps as a drag would; else only its shape changes.
+                    val moved = form == LedForm.RING || x != dotX || y != dotY
+                    val spot = if (moved) spots.firstOrNull { it.matches(x, y) && it.camera == (form == LedForm.RING) } else null
+                    if (spot != null) pick(spot) else {
+                        onMove(x, y, form)
+                        onCommit()
+                    }
+                },
+            ) { index, lit ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LedGlyph(forms[index])
+                    ChipLabel(stringResource(forms[index].label), lit, compact = true)
+                }
+            }
+        }
+
+        Column {
+            // Dragging or tapping the mock-up is the main way; the readouts and how-to sit beside it.
+            // The frame has no place to choose: the mock-up only shows it.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val previewLabel = stringResource(if (frame) R.string.led_frame_preview_label else R.string.dot_preview_label)
+                PhoneMock(
+                    modifier = Modifier
+                        .height(PanelHeight)
+                        .aspectRatio(0.48f)
+                        .semantics { contentDescription = previewLabel },
+                ) { mockGeometry ->
+                    // A new shape takes over from the old in place, as the real one does over the
+                    // dashboard; the ruler goes with the dot and the ring, which it places.
+                    val shapes = ledFormLevels(settings.ledForm)
+                    val frameShape = shapes.first { it.first == LedForm.FRAME }.second
+                    DotRuler(
+                        dotX = dotX,
+                        dotY = dotY,
+                        dotRadius = previewRadius,
+                        spots = spots,
+                        modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - frameShape.level },
+                    )
+                    for ((form, shape) in shapes) {
+                        if (!shape.shows) continue
+                        key(form) {
+                            if (form == LedForm.FRAME) {
+                                // The real frame scaled down: the Edge Frame's line and colours, waiting.
+                                val corner = with(density) { PhoneCorner.toPx() }
+                                LedDot(
+                                    color = GlowPalette.Cyan,
+                                    alpha = { shape.level },
+                                    dotX = dotX,
+                                    dotY = dotY,
+                                    radius = previewRadius,
+                                    form = LedForm.FRAME,
+                                    geometry = mockGeometry.copy(cornerRadiusPx = corner),
+                                    frameOf = settings,
+                                    scale = previewScale,
+                                    modifier = Modifier.fillMaxSize().frameOpening(form) { shape.level },
+                                )
+                            } else {
+                                GlowGraphic(
+                                    form = if (form == LedForm.RING) GlowForm.RING else GlowForm.DOT,
+                                    color = GlowPalette.Cyan,
+                                    alpha = { shape.level },
+                                    dotX = dotX,
+                                    dotY = dotY,
+                                    metrics = GlowMetrics.Panel,
+                                    geometry = mockGeometry,
+                                    dotRadius = previewRadius,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                             }
                         }
-                        .pointerInput(margin) {
-                            detectDragGestures(onDragEnd = { currentCommit() }, onDragCancel = { currentCommit() }) { change, _ ->
-                                change.consume()
-                                val f = dotFraction(change.position, size.toSize(), margin)
-                                currentMove(f.x, f.y)
+                    }
+                    val margin = with(density) { previewRadius.toPx() * DOT_HALO_FACTOR }
+                    // The gestures outlive a recomposition: they read the newest snap spots (a lens fit
+                    // moves them) rather than those of the first touch.
+                    val currentMove by rememberUpdatedState(move)
+                    val currentCommit by rememberUpdatedState(onCommit)
+                    if (!frame) Box(
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(margin) {
+                                detectTapGestures { position ->
+                                    val f = dotFraction(position, size.toSize(), margin)
+                                    currentMove(f.x, f.y)
+                                    currentCommit()
+                                }
                             }
-                        },
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Readout(stringResource(R.string.dot_readout_x, (dotX * 100).roundToInt()))
-                Readout(stringResource(R.string.dot_readout_y, (dotY * 100).roundToInt()))
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = stringResource(R.string.dot_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GlowPalette.TextMuted,
-                )
-                // With the beacon, moving the LED moves how a message arrives too: say so here.
-                if (settings.style == GlowStyle.BEACON && settings.arrival.playsEffect) {
-                    Text(
-                        text = stringResource(R.string.dot_beacon_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GlowPalette.TextMuted,
+                            .pointerInput(margin) {
+                                detectDragGestures(onDragEnd = { currentCommit() }, onDragCancel = { currentCommit() }) { change, _ ->
+                                    change.consume()
+                                    val f = dotFraction(change.position, size.toSize(), margin)
+                                    currentMove(f.x, f.y)
+                                }
+                            },
                     )
                 }
-            }
-        }
-
-        val pick: (DotSpot) -> Unit = { spot ->
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            lastSnap = spot
-            onMove(spot.x, spot.y, spot.camera)
-            onCommit()
-        }
-        // The camera fit unfolds under the lens chip, carrying its own gap; no camera, no gap.
-        spots.firstOrNull { it.camera }?.let { ring ->
-            Column {
-                OptionGroup(stringResource(R.string.dot_spots_lens)) {
-                    BladeChip(
-                        label = stringResource(ring.label),
-                        selected = settings.ledOnCamera,
-                        onClick = { pick(ring) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        LedGlyph(onCamera = true)
-                        Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(16.dp))
+                // The words change with the frame: the old ones go, the new fade in where they were.
+                AnimatedContent(
+                    targetState = frame,
+                    transitionSpec = { GlowMotion.swap() },
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier.weight(1f),
+                    label = "led-form-words",
+                ) { framed ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (!framed) {
+                            Readout(stringResource(R.string.dot_readout_x, (dotX * 100).roundToInt()))
+                            Readout(stringResource(R.string.dot_readout_y, (dotY * 100).roundToInt()))
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Text(
+                            text = stringResource(if (framed) R.string.led_frame_body else R.string.dot_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GlowPalette.TextMuted,
+                        )
+                        // With the beacon, moving the LED moves how a message arrives too: say so here.
+                        // Round the frame it lights at the camera, or at the top without one.
+                        if (settings.style == GlowStyle.BEACON && settings.arrival.playsEffect) {
+                            val note = when {
+                                !framed -> R.string.dot_beacon_note
+                                LocalCamera.current.present -> R.string.led_frame_beacon_note
+                                else -> R.string.led_frame_beacon_note_no_camera
+                            }
+                            Text(
+                                text = stringResource(note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = GlowPalette.TextMuted,
+                            )
+                        }
                     }
                 }
+            }
+
+            // The ring's camera fit; no camera, no ring. Each carries its own gap, so nothing is left
+            // behind as they fold away.
+            if (ring != null) {
                 Disclosure(visible = settings.ledOnCamera) {
                     val adjusted = settings.lensOffsetXDp != 0f || settings.lensOffsetDp != 0f || settings.lensGrowDp != 0f
-                    Box(Modifier.padding(top = 10.dp)) {
+                    Box(Modifier.padding(top = 16.dp)) {
                         Fold(
                             title = stringResource(R.string.fold_lens),
                             summary = stringResource(if (adjusted) R.string.fold_lens_adjusted else R.string.fold_lens_reported),
@@ -372,62 +474,139 @@ internal fun LedCard(
                     }
                 }
             }
-        }
-        OptionGroup(stringResource(if (LocalCamera.current.present) R.string.dot_spots_camera_line else R.string.dot_spots_top_line)) {
-            SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
-        }
-
-        CardDivider()
-        Fold(title = stringResource(R.string.fold_precise), summary = stringResource(R.string.fold_precise_summary)) {
-            val sliderColors = glowSliderColors()
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                AxisRow(
-                    label = stringResource(R.string.dot_horizontal),
-                    value = dotX,
-                    onValue = { move(it, dotY) },
-                    onDone = onCommit,
-                    minus = stringResource(R.string.dot_step_left),
-                    plus = stringResource(R.string.dot_step_right),
-                    onStep = { step(it * stepX, 0f) },
-                    colors = sliderColors,
-                )
-                // Left to right is top to bottom, as the Y readout counts.
-                AxisRow(
-                    label = stringResource(R.string.dot_vertical),
-                    value = dotY,
-                    onValue = { move(dotX, it) },
-                    onDone = onCommit,
-                    minus = stringResource(R.string.dot_step_up),
-                    plus = stringResource(R.string.dot_step_down),
-                    onStep = { step(0f, it * stepY) },
-                    colors = sliderColors,
-                )
+            // Where the dot goes: a spot picked here from the ring makes it a dot again.
+            Disclosure(visible = !frame) {
+                Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OptionGroup(stringResource(if (LocalCamera.current.present) R.string.dot_spots_camera_line else R.string.dot_spots_top_line)) {
+                        SpotRow(spots.filter { it.onCameraLine }, dotX, dotY, pick)
+                    }
+                    CardDivider()
+                    Fold(title = stringResource(R.string.fold_precise), summary = stringResource(R.string.fold_precise_summary)) {
+                        val sliderColors = glowSliderColors()
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            AxisRow(
+                                label = stringResource(R.string.dot_horizontal),
+                                value = dotX,
+                                onValue = { move(it, dotY) },
+                                onDone = onCommit,
+                                minus = stringResource(R.string.dot_step_left),
+                                plus = stringResource(R.string.dot_step_right),
+                                onStep = { step(it * stepX, 0f) },
+                                colors = sliderColors,
+                            )
+                            // Left to right is top to bottom, as the Y readout counts.
+                            AxisRow(
+                                label = stringResource(R.string.dot_vertical),
+                                value = dotY,
+                                onValue = { move(dotX, it) },
+                                onDone = onCommit,
+                                minus = stringResource(R.string.dot_step_up),
+                                plus = stringResource(R.string.dot_step_down),
+                                onStep = { step(0f, it * stepY) },
+                                colors = sliderColors,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 /**
- * How the LED looks wherever it sits: its size (on the camera, the ring's thickness). It lights at
- * the system brightness, so the room's light and the system slider set how bright it is.
+ * How the LED looks, one card whatever its shape: the dot's size or the ring's thickness, or the
+ * frame's colour, width and glow, open as soon as the frame is picked. The frame's are the Edge
+ * Frame's own ([EdgeColor], [EdgeWidth], [EdgeGlow]), set here alone and the same whatever the
+ * effect's style: with the Edge Frame effect its frame arrives in them too, as the effect's card
+ * says ([EdgeFrameCard]); made of the element, in their width and glow only. It lights at the system
+ * brightness, so the room's light and the system slider set how bright it is. While [reveal] (the
+ * Edge Frame card's link, once the tab is in place) it scrolls into view, then [onRevealed] lets
+ * it go, so coming back to the tab later doesn't scroll again.
  */
 @Composable
-internal fun LedLookCard(settings: GlowSettings, onSize: (DotSize) -> Unit) {
-    Column(Modifier.glowCard(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+internal fun LedLookCard(
+    settings: GlowSettings,
+    onLook: (GlowSettings) -> Unit,
+    reveal: Boolean = false,
+    onRevealed: () -> Unit = {},
+) {
+    val view = remember { BringIntoViewRequester() }
+    val revealed by rememberUpdatedState(onRevealed)
+    LaunchedEffect(reveal) {
+        if (!reveal) return@LaunchedEffect
+        try {
+            view.bringIntoView()
+        } finally {
+            revealed()
+        }
+    }
+    Column(Modifier.bringIntoViewRequester(view).glowCard()) {
         SectionLabel(stringResource(R.string.section_led_look), GlowPalette.TextMuted)
-        OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
-            SelectionRow(
-                count = DotSize.entries.size,
-                selected = settings.dotSize.ordinal,
-                onSelect = { onSize(DotSize.entries[it]) },
-            ) { index, lit ->
-                val size = DotSize.entries[index]
-                Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
-                Spacer(Modifier.width(8.dp))
-                ChipLabel(stringResource(size.label), lit)
+        // The dot's and the ring's size, or the frame's look; each carries its own gap.
+        Disclosure(visible = !settings.ledOnEdge) {
+            Box(Modifier.padding(top = 16.dp)) {
+                OptionGroup(stringResource(if (settings.ledOnCamera) R.string.dot_ring_thickness else R.string.dot_size)) {
+                    SelectionRow(
+                        count = DotSize.entries.size,
+                        selected = settings.dotSize.ordinal,
+                        onSelect = { onLook(settings.copy(dotSize = DotSize.entries[it])) },
+                    ) { index, lit ->
+                        val size = DotSize.entries[index]
+                        Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
+                        Spacer(Modifier.width(8.dp))
+                        ChipLabel(stringResource(size.label), lit)
+                    }
+                }
+            }
+        }
+        Disclosure(visible = settings.ledOnEdge) {
+            // The same whatever the effect's style; the Edge Frame card says it shares them.
+            Column(Modifier.padding(top = 16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OptionGroup(stringResource(R.string.edge_color)) {
+                        ChipRow(EdgeColor.entries, settings.edgeColor) { onLook(settings.copy(edgeColor = it)) }
+                        OptionBody(settings.edgeColor) { stringResource(frameLedColorBody(it)) }
+                    }
+                    OptionGroup(stringResource(R.string.edge_width)) {
+                        ChipRow(EdgeWidth.entries, settings.edgeWidth) { onLook(settings.copy(edgeWidth = it)) }
+                    }
+                    OptionGroup(stringResource(R.string.edge_glow)) {
+                        ChipRow(EdgeGlow.entries, settings.edgeGlow) { onLook(settings.copy(edgeGlow = it)) }
+                    }
+                }
             }
         }
     }
+}
+
+/** The shapes the LED can take: the ring needs a [camera] to go round; without one, a dot or the frame. */
+internal fun ledForms(camera: Boolean): List<LedForm> = if (camera) LedForm.entries else listOf(LedForm.DOT, LedForm.FRAME)
+
+/**
+ * Where the LED goes when its shape tile picks [form], from the dot's place [dotX], [dotY]: as
+ * (x, y, form), or null when it can't take it (the ring, with no camera among [spots]). The ring
+ * goes onto the lens. The dot keeps its place, unless that is the lens, which can't light: then
+ * just beside it. The frame keeps the dot's place, for coming back to it.
+ */
+internal fun ledFormMove(form: LedForm, dotX: Float, dotY: Float, spots: List<DotSpot>): Triple<Float, Float, LedForm>? {
+    val ring = spots.firstOrNull { it.camera }
+    return when (form) {
+        LedForm.RING -> ring?.let { Triple(it.x, it.y, LedForm.RING) }
+        LedForm.DOT -> {
+            val beside = spots.firstOrNull { it.label == R.string.dot_spot_cam_right }
+            val inLens = ring != null && ring.matches(dotX, dotY)
+            if (inLens && beside != null) Triple(beside.x, beside.y, LedForm.DOT) else Triple(dotX, dotY, LedForm.DOT)
+        }
+        LedForm.FRAME -> Triple(dotX, dotY, LedForm.FRAME)
+    }
+}
+
+/** What [color] looks like on the waiting frame: drawn once per blink, its hues hold still round the edge. */
+@StringRes
+internal fun frameLedColorBody(color: EdgeColor): Int = when (color) {
+    EdgeColor.APP -> color.body
+    EdgeColor.DUO -> R.string.edge_color_duo_body_led
+    EdgeColor.SPECTRUM -> R.string.edge_color_spectrum_body_led
 }
 
 /**

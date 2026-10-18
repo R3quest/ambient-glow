@@ -260,7 +260,10 @@ internal class LedRound(
             stop()
             return
         }
-        surface.show(settings, geometry, palette[cycle % palette.size], cycle)
+        // On the always-on display the frame waits at its calmest; over the lit panel it quiets
+        // down through the bright phase.
+        val calm = if (dozing) 1f else GlowSession.bright.settledAt(SystemClock.elapsedRealtime())
+        surface.show(settings, geometry, palette[cycle % palette.size], cycle, calm)
         if (dozing) {
             rise()
         } else {

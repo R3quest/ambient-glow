@@ -22,11 +22,14 @@ import app.lumement.GlassArea
 import app.lumement.GlassBlur
 import app.lumement.GlassFrost
 import app.lumement.GlowSettings
+import app.lumement.GlowStyle
+import app.lumement.LedForm
 import app.lumement.R
 import app.lumement.SpawnElement
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/** The dashboard's sentences: each card's options said in order, leaving out what is off or can't show. */
 class SummaryTest {
 
     private val glass = GlowSettings(
@@ -88,6 +91,68 @@ class SummaryTest {
             materialBody(settings.copy(element = SpawnElement.FIRE), shaders = true),
         )
         assertEquals(listOf(R.string.edge_material_water_body), materialBody(settings.copy(element = SpawnElement.WATER), shaders = true))
+    }
+
+    @Test
+    fun theFrameLedSaysItsColourLineAndGlowInOrder() {
+        val settings = GlowSettings(edgeColor = EdgeColor.DUO, edgeWidth = EdgeWidth.THIN, edgeGlow = EdgeGlow.OFF)
+        assertEquals(
+            Phrasing(
+                R.string.frame_led_summary,
+                listOf(R.string.edge_color_duo_phrase, R.string.edge_width_thin_phrase, R.string.edge_glow_off_phrase),
+            ),
+            frameLedPhrasing(settings),
+        )
+        // Its rainbow holds still: said without the effect's turning. The app's colour is said as the effect says it.
+        assertEquals(R.string.edge_color_spectrum_led_phrase, frameLedPhrasing(settings.copy(edgeColor = EdgeColor.SPECTRUM)).phrases[0])
+        assertEquals(R.string.edge_color_app_phrase, frameLedPhrasing(settings.copy(edgeColor = EdgeColor.APP)).phrases[0])
+    }
+
+    @Test
+    fun theFrameLedsColoursAreToldAsHoldingStill() {
+        assertEquals(R.string.edge_color_app_body, frameLedColorBody(EdgeColor.APP))
+        assertEquals(R.string.edge_color_duo_body_led, frameLedColorBody(EdgeColor.DUO))
+        assertEquals(R.string.edge_color_spectrum_body_led, frameLedColorBody(EdgeColor.SPECTRUM))
+    }
+
+    @Test
+    fun eachStyleSaysItEndsInTheFrameLed() {
+        assertEquals(R.string.style_edge_body_frame, styleBody(GlowStyle.EDGE_FRAME, frame = true, camera = true))
+        assertEquals(R.string.style_edge_body_frame, styleBody(GlowStyle.EDGE_FRAME, frame = true, camera = false))
+        assertEquals(R.string.style_beacon_body_frame, styleBody(GlowStyle.BEACON, frame = true, camera = true))
+        // With no punch-hole the beacon lights where one usually is.
+        assertEquals(R.string.style_beacon_body_frame_no_camera, styleBody(GlowStyle.BEACON, frame = true, camera = false))
+        // Ending in the dot or the ring, each style says what it always says.
+        for (style in GlowStyle.entries) {
+            for (camera in listOf(true, false)) assertEquals(style.body, styleBody(style, frame = false, camera = camera))
+        }
+    }
+
+    @Test
+    fun aFrameLedSaysTheEffectSettlesIntoIt() {
+        val frame = GlowSettings(ledForm = LedForm.FRAME)
+        assertEquals(listOf(R.string.edge_material_neon_body_frame), materialBody(frame.copy(edgeMaterial = EdgeMaterial.NEON), shaders = true))
+        val element = frame.copy(edgeMaterial = EdgeMaterial.ELEMENT)
+        val settles = R.string.edge_material_settles_frame
+        assertEquals(
+            listOf(R.string.edge_material_water_body_frame, settles),
+            materialBody(element.copy(element = SpawnElement.WATER), shaders = true),
+        )
+        assertEquals(
+            listOf(R.string.edge_material_fire_body_frame, R.string.edge_material_element_colours, settles),
+            materialBody(element.copy(element = SpawnElement.FIRE), shaders = true),
+        )
+        assertEquals(
+            listOf(R.string.edge_material_air_body_frame, R.string.edge_material_element_colours, settles),
+            materialBody(element.copy(element = SpawnElement.AIR), shaders = true),
+        )
+        assertEquals(
+            listOf(R.string.edge_material_earth_body_frame, R.string.edge_material_element_colours, settles),
+            materialBody(element.copy(element = SpawnElement.EARTH), shaders = true),
+        )
+        // Why it plays as neon is the same whatever the LED's shape.
+        assertEquals(listOf(R.string.edge_material_needs_spawn), materialBody(element.copy(spawn = false), shaders = true))
+        assertEquals(listOf(R.string.edge_material_needs_shaders), materialBody(element, shaders = false))
     }
 
     @Test

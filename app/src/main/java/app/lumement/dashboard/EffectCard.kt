@@ -68,6 +68,7 @@ import app.lumement.GlowGraphic
 import app.lumement.GlowMetrics
 import app.lumement.GlowSettings
 import app.lumement.GlowStyle
+import app.lumement.LedForm
 import app.lumement.R
 import app.lumement.SpawnElement
 import app.lumement.elementFramesSupported
@@ -141,7 +142,8 @@ internal fun EffectCard(
             ) {
                 SectionLabel(stringResource(R.string.effect_style))
                 StylePicker(settings, color, onStyle)
-                OptionBody(settings.style) { stringResource(it.body) }
+                val camera = LocalCamera.current.present
+                OptionBody(settings.style) { stringResource(styleBody(it, settings.ledOnEdge, camera)) }
             }
         }
         // Both styles end in the LED, and the beacon plays where it is: say where, in words, and
@@ -149,10 +151,11 @@ internal fun EffectCard(
         LinkRow(
             title = stringResource(R.string.effect_led_title),
             summary = stringResource(ledPlaceOf(settings)),
-            action = stringResource(R.string.effect_led_action),
+            // The frame has no place to move to: its row leads to its shape and look instead.
+            action = stringResource(if (settings.ledOnEdge) R.string.effect_led_action_frame else R.string.effect_led_action),
             onClick = onMoveLed,
         ) {
-            LedGlyph(onCamera = settings.ledOnCamera)
+            LedGlyph(settings.ledForm)
             Spacer(Modifier.width(12.dp))
         }
         OptionGroup(stringResource(R.string.effect_sample_color)) {
@@ -167,13 +170,29 @@ internal fun EffectCard(
 }
 
 /**
+ * What [style] does, ending in the frame LED ([GlowSettings.ledOnEdge]) or in the dot or the ring.
+ * Without a punch-hole ([camera] false) the beacon lights where one usually is, at the top.
+ */
+@StringRes
+internal fun styleBody(style: GlowStyle, frame: Boolean, camera: Boolean): Int = when {
+    !frame -> style.body
+    style == GlowStyle.EDGE_FRAME -> R.string.style_edge_body_frame
+    camera -> R.string.style_beacon_body_frame
+    else -> R.string.style_beacon_body_frame_no_camera
+}
+
+/**
  * Edge Frame's own options, folded under what they are set to; the other styles have none. The
- * material leads: made of the element, the frame takes the element's colours, so its own
- * colour row steps aside.
+ * material leads: made of the element, the frame takes the element's colours, so its own colour
+ * row steps aside. While the LED waits as the frame, its colour, width and glow are the LED's,
+ * set in the LED tab's Look card ([LedLookCard]): here one row says so and leads there
+ * ([onOpenLedLook]), so none is set in two places. Made of the element, the frame shares only
+ * its width and glow, and the row says so.
  */
 @Composable
-internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit) {
+internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> Unit, onOpenLedLook: () -> Unit) {
     val shaders = elementFramesSupported
+    val elemental = settings.elementalEdge && shaders
     Column(Modifier.glowCard(vertical = 10.dp)) {
         Fold(title = stringResource(R.string.fold_edge), summary = edgePhrasing(settings, shaders).text()) {
             Column {
@@ -187,22 +206,42 @@ internal fun EdgeFrameCard(settings: GlowSettings, onEffect: (GlowSettings) -> U
                     MotionPicker(settings) { onEffect(settings.copy(edgeMotion = it)) }
                     OptionBody(settings.edgeMotion) { stringResource(it.body) }
                 }
-                // Carries its own gap, so nothing jumps as it comes and goes.
-                Disclosure(visible = !(settings.elementalEdge && shaders)) {
+                // Each carries its own gap, so nothing jumps as they come and go.
+                Disclosure(visible = settings.ledOnEdge) {
                     Box(Modifier.padding(top = 14.dp)) {
-                        OptionGroup(stringResource(R.string.edge_color)) {
-                            ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
-                            OptionBody(settings.edgeColor) { stringResource(it.body) }
+                        LinkRow(
+                            title = stringResource(if (elemental) R.string.edge_shared_title_element else R.string.edge_shared_title),
+                            summary = stringResource(
+                                if (elemental) R.string.edge_shared_summary_element else R.string.edge_shared_summary,
+                                frameLedPhrasing(settings).words(),
+                            ),
+                            action = stringResource(R.string.edge_shared_action),
+                            onClick = onOpenLedLook,
+                        ) {
+                            LedGlyph(LedForm.FRAME)
+                            Spacer(Modifier.width(12.dp))
                         }
                     }
                 }
-                Spacer(Modifier.height(14.dp))
-                OptionGroup(stringResource(R.string.edge_width)) {
-                    ChipRow(EdgeWidth.entries, settings.edgeWidth) { onEffect(settings.copy(edgeWidth = it)) }
-                }
-                Spacer(Modifier.height(14.dp))
-                OptionGroup(stringResource(R.string.edge_glow)) {
-                    ChipRow(EdgeGlow.entries, settings.edgeGlow) { onEffect(settings.copy(edgeGlow = it)) }
+                Disclosure(visible = !settings.ledOnEdge) {
+                    Column {
+                        Disclosure(visible = !elemental) {
+                            Box(Modifier.padding(top = 14.dp)) {
+                                OptionGroup(stringResource(R.string.edge_color)) {
+                                    ChipRow(EdgeColor.entries, settings.edgeColor) { onEffect(settings.copy(edgeColor = it)) }
+                                    OptionBody(settings.edgeColor) { stringResource(it.body) }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        OptionGroup(stringResource(R.string.edge_width)) {
+                            ChipRow(EdgeWidth.entries, settings.edgeWidth) { onEffect(settings.copy(edgeWidth = it)) }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        OptionGroup(stringResource(R.string.edge_glow)) {
+                            ChipRow(EdgeGlow.entries, settings.edgeGlow) { onEffect(settings.copy(edgeGlow = it)) }
+                        }
+                    }
                 }
             }
         }
@@ -237,8 +276,11 @@ internal data class Phrasing(@param:StringRes val template: Int, val phrases: Li
 
 /** The phrasing read out, starting with a capital as a sentence does. */
 @Composable
-internal fun Phrasing.text(): String =
-    sentence(stringResource(template, *phrases.map { stringResource(it) }.toTypedArray()))
+internal fun Phrasing.text(): String = sentence(words())
+
+/** The phrasing read out as it stands, to sit inside another sentence. */
+@Composable
+internal fun Phrasing.words(): String = stringResource(template, *phrases.map { stringResource(it) }.toTypedArray())
 
 internal fun sentence(text: String): String = text.replaceFirstChar { it.titlecase() }
 
@@ -256,6 +298,19 @@ internal fun edgePhrasing(settings: GlowSettings, shaders: Boolean) = Phrasing(
     ),
 )
 
+/**
+ * The frame LED's look in a sentence: its colour, width and glow ("In the app's colour; thin
+ * line, soft glow."). Its rainbow holds still, so it says so without the effect's turning.
+ */
+internal fun frameLedPhrasing(settings: GlowSettings) = Phrasing(
+    R.string.frame_led_summary,
+    listOf(
+        if (settings.edgeColor == EdgeColor.SPECTRUM) R.string.edge_color_spectrum_led_phrase else settings.edgeColor.phrase,
+        settings.edgeWidth.phrase,
+        settings.edgeGlow.phrase,
+    ),
+)
+
 /** The element's frame in a phrase: "as a burning fuse". Earth is mended in gold only in its own stone. */
 @StringRes
 private fun elementFramePhrase(settings: GlowSettings): Int = when (settings.element) {
@@ -268,22 +323,30 @@ private fun elementFramePhrase(settings: GlowSettings): Int = when (settings.ele
 
 /**
  * What the chosen material does, as the sentences to say: the element's frame and where its
- * colours come from, or why it plays as Neon for now.
+ * colours come from, or why it plays as Neon for now. Ending in the frame LED, the element's
+ * frame settles into it last, in place of the token it would otherwise hand on, so "its colours"
+ * stays the element's.
  */
-internal fun materialBody(settings: GlowSettings, shaders: Boolean): List<Int> = when {
-    settings.edgeMaterial == EdgeMaterial.NEON -> listOf(R.string.edge_material_neon_body)
-    !shaders -> listOf(R.string.edge_material_needs_shaders)
-    !settings.spawn -> listOf(R.string.edge_material_needs_spawn)
-    // Water's is the app's colour, as its wave is: it has no colours of its own to point to.
-    settings.element == SpawnElement.WATER -> listOf(R.string.edge_material_water_body)
-    else -> listOf(
-        when (settings.element) {
-            SpawnElement.FIRE -> R.string.edge_material_fire_body
-            SpawnElement.AIR -> R.string.edge_material_air_body
-            else -> R.string.edge_material_earth_body
-        },
-        R.string.edge_material_element_colours,
-    )
+internal fun materialBody(settings: GlowSettings, shaders: Boolean): List<Int> {
+    val frame = settings.ledOnEdge
+    fun body(@StringRes plain: Int, @StringRes framed: Int) = if (frame) framed else plain
+    val settles = if (frame) listOf(R.string.edge_material_settles_frame) else emptyList()
+    return when {
+        settings.edgeMaterial == EdgeMaterial.NEON -> listOf(body(R.string.edge_material_neon_body, R.string.edge_material_neon_body_frame))
+        !shaders -> listOf(R.string.edge_material_needs_shaders)
+        !settings.spawn -> listOf(R.string.edge_material_needs_spawn)
+        // Water's is the app's colour, as its wave is: it has no colours of its own to point to.
+        settings.element == SpawnElement.WATER ->
+            listOf(body(R.string.edge_material_water_body, R.string.edge_material_water_body_frame)) + settles
+        else -> listOf(
+            when (settings.element) {
+                SpawnElement.FIRE -> body(R.string.edge_material_fire_body, R.string.edge_material_fire_body_frame)
+                SpawnElement.AIR -> body(R.string.edge_material_air_body, R.string.edge_material_air_body_frame)
+                else -> body(R.string.edge_material_earth_body, R.string.edge_material_earth_body_frame)
+            },
+            R.string.edge_material_element_colours,
+        ) + settles
+    }
 }
 
 /**
@@ -406,10 +469,15 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                 PhoneMock(
                     modifier = Modifier.height(PickerPhoneHeight).aspectRatio(0.55f),
                     shape = RoundedCornerShape(PickerPhoneCorner),
-                    cameraDrop = if (settings.ledOnCamera) PickerCameraDrop else 0.dp,
+                    cameraDrop = if (settings.ledOnCamera || settings.ledOnEdge) PickerCameraDrop else 0.dp,
                 ) { mockGeometry ->
                     GlowGraphic(
-                        form = if (style == GlowStyle.EDGE_FRAME) GlowForm.EDGE else settings.ledForm,
+                        // The beacon plays where the LED waits: round the camera for the ring and the frame.
+                        form = when {
+                            style == GlowStyle.EDGE_FRAME -> GlowForm.EDGE
+                            settings.ledForm == LedForm.DOT -> GlowForm.DOT
+                            else -> GlowForm.RING
+                        },
                         color = glyph,
                         alpha = { 1f },
                         dotX = settings.dotX,

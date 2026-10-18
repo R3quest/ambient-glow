@@ -55,6 +55,20 @@ internal val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f
 /** The ring's burn-in guard: it breathes 1 px in and out instead, so it stays centred on the lens. */
 internal val RING_SHIFTS = listOf(0f, 1f, 0f, -1f)
 
+/** The frame's burn-in guard: it steps up to 2 px in from the screen's edge and back, as it can't go out past it. */
+internal val FRAME_SHIFTS = listOf(0f, 1f, 2f, 1f)
+
+/** The burn-in step for breath [cycle] of [form]: the dot's offset, the ring's growth, or the frame's inset ([ledStepPx]). */
+internal fun ledShiftAt(form: LedForm, cycle: Int): Offset =
+    if (form == LedForm.DOT) PIXEL_SHIFTS[cycle % PIXEL_SHIFTS.size] else Offset.Zero
+
+/** The ring's growth or the frame's inset at breath [cycle], in px; nothing for the dot, which moves instead ([ledShiftAt]). */
+internal fun ledStepPx(form: LedForm, cycle: Int): Float = when (form) {
+    LedForm.DOT -> 0f
+    LedForm.RING -> RING_SHIFTS[cycle % RING_SHIFTS.size]
+    LedForm.FRAME -> FRAME_SHIFTS[cycle % FRAME_SHIFTS.size]
+}
+
 private val LedRise = CubicBezierEasing(0.45f, 0f, 0.3f, 1f)
 private val LedFall = CubicBezierEasing(0.45f, 0f, 0.35f, 1f)
 
@@ -76,7 +90,10 @@ internal object RealTimeMotion : MotionDurationScale {
     override val scaleFactor: Float = 1f
 }
 
-/** Ring LED: line thickness as a share of the dot radius, and its clearance from the lens. */
+/**
+ * Ring LED: line thickness as a share of the dot radius (a frame's core is sized back from its
+ * line by it), and its clearance from the lens.
+ */
 internal const val LED_RING_STROKE_FACTOR = 0.6f
 internal val LED_RING_GAP = 1.5.dp
 
@@ -103,11 +120,14 @@ internal fun ledRingGapAt(scale: Float): Dp = (LED_RING_GAP * scale).coerceAtLea
  * window (and its alpha needs an offscreen buffer only that big). It is centred on the light with
  * a sub-pixel translation, so the light lands exactly where a full-size layer drew it.
  *
- * [onCamera]: the same light as a ring hugging the punch-hole, whose pixels cannot light;
- * [radius] then sets the ring's thickness and [ringGap] its clearance from the lens (the mock-up
- * scales it with its lens).
+ * [form]: the dot, or the same light as a ring hugging the punch-hole, whose pixels cannot light
+ * ([radius] then sets the ring's thickness and [ringGap] its clearance from the lens, which the
+ * mock-up scales with its lens), or as a frame round the screen's edge, whose layer is the whole
+ * screen. [stepPx] is the ring's or the frame's burn-in step ([ledStepPx]).
  *
- * [material]: what it is made of ([LedLook]); one that moves reads [clock], ms into the breath.
+ * [material]: what it is made of ([LedLook]); one that moves reads [clock], ms into the breath. A
+ * frame is the Edge Frame of [frameOf] waiting (its width, glow and colour), sized at [scale] (a
+ * mock-up's), not by [radius]; it quiets down as [calm] goes from 0 to 1.
  */
 @Composable
 internal fun LedDot(
@@ -117,17 +137,23 @@ internal fun LedDot(
     dotY: Float,
     radius: Dp,
     modifier: Modifier = Modifier,
-    onCamera: Boolean = false,
+    form: LedForm = LedForm.DOT,
     geometry: ScreenGeometry = ScreenGeometry.Unknown,
-    ringGrowPx: Float = 0f,
+    stepPx: Float = 0f,
     ringGap: Dp = LED_RING_GAP,
     material: LedMaterial = LedMaterial.NEON,
     clock: () -> Float = { 0f },
+    scale: Float = 1f,
+    frameOf: GlowSettings,
+    calm: Float = 0f,
 ) {
     val density = LocalDensity.current
-    val light = remember(density, radius, onCamera, geometry, ringGrowPx, ringGap) {
-        with(density) {
-            ledLight(radius.toPx(), onCamera, geometry.lensRadius(this.density), ringGrowPx, ringGap.toPx())
+    // The frame's light depends on the screen's size too, so it is built with the layer below.
+    val light = remember(density, radius, form, geometry, stepPx, ringGap) {
+        if (form == LedForm.FRAME) {
+            null
+        } else {
+            with(density) { ledLight(radius.toPx(), form == LedForm.RING, geometry.lensRadius(this.density), stepPx, ringGap.toPx()) }
         }
     }
     Spacer(
@@ -135,7 +161,13 @@ internal fun LedDot(
             .layout { measurable, constraints ->
                 val width = if (constraints.hasBoundedWidth) constraints.maxWidth else constraints.minWidth
                 val height = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
-                val center = ledCenter(onCamera, geometry, dotX, dotY, light, Size(width.toFloat(), height.toFloat()), this.density)
+                if (light == null) {
+                    val placeable = measurable.measure(Constraints.fixed(width, height))
+                    return@layout layout(width, height) {
+                        placeable.placeWithLayer(0, 0) { this.alpha = alpha() }
+                    }
+                }
+                val center = ledCenter(form, geometry, dotX, dotY, light, Size(width.toFloat(), height.toFloat()), this.density)
                 val side = light.side
                 val placeable = measurable.measure(Constraints.fixed(side, side))
                 layout(width, height) {
@@ -147,7 +179,14 @@ internal fun LedDot(
                 }
             }
             .drawWithCache {
-                val look = LedLook(material, color, light, onCamera)
+                val shown = light ?: ledFrameLight(
+                    frameOf,
+                    size,
+                    geometry.frameCornerPx(this.density, scale),
+                    stepPx,
+                    this.density * scale,
+                )
+                val look = LedLook(material, color, shown, form, frameOf, calm)
                 // Neon changes only its layer's alpha; a material that moves redraws its square.
                 onDrawBehind { look.draw(this, size.center, 1f, if (look.moves) clock() else 0f) }
             },
@@ -155,11 +194,22 @@ internal fun LedDot(
 }
 
 /**
- * The LED's light in px: the dot's [core] (the ring's thickness), the [ring] of [line] width
- * round a [lens] of that radius, and the [bloom] that bounds all of it.
+ * The LED's light in px: the dot's [core] (sets the ring's thickness; a frame's is sized back from
+ * its [line]), the [ring] of [line] width round a [lens] of that radius, and the [bloom] that
+ * bounds all of it. A frame's [line] runs round a rounded rectangle [frame] across (through the
+ * line's middle) with [corner] radius, centred on the screen; its [bloom] is how far its glow
+ * reaches in from the line.
  */
 @Immutable
-internal class LedLight(val core: Float, val lens: Float, val line: Float, val ring: Float, val bloom: Float) {
+internal class LedLight(
+    val core: Float,
+    val lens: Float,
+    val line: Float,
+    val ring: Float,
+    val bloom: Float,
+    val frame: Size = Size.Zero,
+    val corner: Float = 0f,
+) {
     /** The layer's side: the bloom plus room for antialiasing all round, even so the light sits at its centre. */
     val side: Int = 2 * ceil(bloom + LED_LAYER_MARGIN_PX).toInt()
 }
@@ -173,9 +223,51 @@ internal fun ledLight(core: Float, onCamera: Boolean, lens: Float, ringGrowPx: F
     return LedLight(core, lens, line, ring, bloom = ring + line / 2f + core * (LED_HALO_FACTOR - 1f))
 }
 
-/** The LED's centre on a canvas of [size]: the lens for the ring, else the dot's spot ([ledDotCenter]). */
-internal fun ledCenter(onCamera: Boolean, geometry: ScreenGeometry, dotX: Float, dotY: Float, light: LedLight, size: Size, density: Float): Offset =
-    if (onCamera) geometry.lens(size.width, density).center else ledDotCenter(dotX, dotY, light.core, size)
+/**
+ * The frame LED is the Edge Frame waiting: its line and glow are the Edge Frame's ([EdgeWidth],
+ * [EdgeGlow]) at about half, a light that waits rather than one arriving. A Hairline frame waits
+ * as a 1.5 dp line, a Heavy one as 5.6 dp; Off has no glow.
+ */
+private const val FRAME_LINE_SHARE = 0.45f
+private val FRAME_LINE_FLOOR = 0.6.dp
+private const val FRAME_GLOW_SHARE = 0.5f
+
+/** The frame LED's line at full screen, from the Edge Frame's width. */
+internal val EdgeWidth.ledLine: Dp get() = stroke * FRAME_LINE_SHARE + FRAME_LINE_FLOOR
+
+/** How far the frame LED's glow reaches in at full screen, from the Edge Frame's glow. */
+internal val EdgeGlow.ledReach: Dp get() = reach * FRAME_GLOW_SHARE
+
+/**
+ * The frame LED round a screen of [size] whose corners have [corner] radius, its line and glow
+ * from [settings]' Edge Frame ([ledLine], [ledReach]) at [dp] px a dp; [inset] is its burn-in
+ * step in from the edge ([FRAME_SHIFTS]). Its core is what a ring of that line would have, for
+ * whatever is sized by it.
+ */
+internal fun ledFrameLight(settings: GlowSettings, size: Size, corner: Float, inset: Float, dp: Float): LedLight {
+    val line = settings.edgeWidth.ledLine.value * dp
+    val edge = inset + line / 2f
+    return LedLight(
+        core = line / LED_RING_STROKE_FACTOR,
+        lens = 0f,
+        line = line,
+        ring = 0f,
+        bloom = settings.edgeGlow.ledReach.value * dp,
+        frame = Size((size.width - 2f * edge).coerceAtLeast(0f), (size.height - 2f * edge).coerceAtLeast(0f)),
+        corner = (corner - edge).coerceAtLeast(0f),
+    )
+}
+
+/** The screen's corner radius in px, or the usual one where the display reports none (previews, older Android). */
+internal fun ScreenGeometry.frameCornerPx(density: Float, scale: Float = 1f): Float =
+    cornerRadiusPx ?: (GlowMetrics.FullScreen.fallbackCornerRadius.value * density * scale)
+
+/** The LED's centre on a canvas of [size]: the lens for the ring, the screen's for the frame, else the dot's spot ([ledDotCenter]). */
+internal fun ledCenter(form: LedForm, geometry: ScreenGeometry, dotX: Float, dotY: Float, light: LedLight, size: Size, density: Float): Offset = when (form) {
+    LedForm.RING -> geometry.lens(size.width, density).center
+    LedForm.FRAME -> size.center
+    LedForm.DOT -> ledDotCenter(dotX, dotY, light.core, size)
+}
 
 /**
  * The dot LED's centre on a canvas of [size]: kept on screen by its halo, with the same margin as
@@ -191,9 +283,14 @@ internal class LedLanding(val center: Offset, val light: LedLight)
 /**
  * The LED as an effect at [scale] lands on it, round [lens] as that effect places the camera: lit
  * as [LedDot] lights its first breath (no burn-in shift yet). The beacon's ember and the Edge
- * Frame's hand-off both end in exactly this, so the LED that lights next doesn't jump.
+ * Frame's hand-off both end in exactly this, so the LED that lights next doesn't jump. A frame
+ * lands round the whole screen, its corners [corner] in radius ([frameCornerPx]), which every
+ * frame landing passes ([frameLanding]); the dot and the ring don't use it.
  */
-internal fun Density.ledLanding(settings: GlowSettings, lens: CutoutSpot, size: Size, scale: Float): LedLanding {
+internal fun Density.ledLanding(settings: GlowSettings, lens: CutoutSpot, size: Size, scale: Float, corner: Float = 0f): LedLanding {
+    if (settings.ledOnEdge) {
+        return LedLanding(size.center, ledFrameLight(settings, size, corner, inset = 0f, dp = density * scale))
+    }
     val core = ledRadiusAt(settings.dotSize, scale).toPx()
     val onCamera = settings.ledOnCamera
     val light = ledLight(core, onCamera, lens.radius, ringGrowPx = 0f, ringGap = ledRingGapAt(scale).toPx())

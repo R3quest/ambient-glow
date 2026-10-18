@@ -15,7 +15,7 @@ class GlowPrefsTest {
         dotX = 0.3f,
         dotY = 0.7f,
         dotSize = DotSize.LARGE,
-        ledOnCamera = false,
+        ledForm = LedForm.FRAME,
         lensOffsetDp = 1.5f,
         lensOffsetXDp = -2f,
         lensGrowDp = 0.5f,
@@ -87,6 +87,49 @@ class GlowPrefsTest {
         assertEquals(0.9f, loaded.dotX, 0f)
         val ring = GlowPrefs.load(FakePrefs(mapOf("style" to "CAMERA_RING", "led_camera" to true)))
         assertTrue(ring.ledOnCamera)
+    }
+
+    @Test
+    fun theOldCameraSwitchLoadsAsTheRingOrTheDotAndIsClearedOnSave() {
+        assertEquals(LedForm.RING, GlowPrefs.load(FakePrefs(mapOf("led_camera" to true))).ledForm)
+        assertEquals(LedForm.DOT, GlowPrefs.load(FakePrefs(mapOf("led_camera" to false))).ledForm)
+        assertEquals(GlowSettings().ledForm, GlowPrefs.load(FakePrefs()).ledForm)
+        // Once a form is saved, the switch no longer has a say.
+        val prefs = FakePrefs(mapOf("led_camera" to true))
+        GlowPrefs.save(prefs, GlowSettings(ledForm = LedForm.FRAME))
+        assertFalse(prefs.contains("led_camera"))
+        assertEquals(LedForm.FRAME, GlowPrefs.load(prefs).ledForm)
+    }
+
+    @Test
+    fun theMigratedFormIsKeptOnceSaved() {
+        // The dashboard opened and saved: the old switch is gone, its answer kept.
+        val prefs = FakePrefs(mapOf("led_camera" to false))
+        GlowPrefs.save(prefs, GlowPrefs.load(prefs))
+        assertFalse(prefs.contains("led_camera"))
+        assertEquals(LedForm.DOT, GlowPrefs.load(prefs).ledForm)
+    }
+
+    @Test
+    fun anUnknownFormFallsBackToTheOldSwitchThenTheDefault() {
+        // A form from a newer version, after a downgrade.
+        assertEquals(LedForm.DOT, GlowPrefs.load(FakePrefs(mapOf("led_form" to "HALO", "led_camera" to false))).ledForm)
+        assertEquals(GlowSettings().ledForm, GlowPrefs.load(FakePrefs(mapOf("led_form" to "HALO"))).ledForm)
+    }
+
+    @Test
+    fun theSavedFormWinsOverAStaleSwitch() {
+        // A backup restored beside the old switch.
+        assertEquals(LedForm.FRAME, GlowPrefs.load(FakePrefs(mapOf("led_form" to "FRAME", "led_camera" to true))).ledForm)
+    }
+
+    @Test
+    fun everyFormSurvivesSaveAndLoad() {
+        for (form in LedForm.entries) {
+            val prefs = FakePrefs()
+            GlowPrefs.save(prefs, GlowSettings(ledForm = form))
+            assertEquals(form, GlowPrefs.load(prefs).ledForm)
+        }
     }
 
     @Test

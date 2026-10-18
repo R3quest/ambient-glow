@@ -19,6 +19,50 @@ class BrightTest {
     }
 
     @Test
+    fun theFrameQuietsDownOverThePhaseAndANewMessageMakesItVividAgain() {
+        val streak = BrightStreak().onMessage(0L, ten)
+        assertEquals(0f, streak.settledAt(0L), 0f)
+        assertEquals(0.5f, streak.settledAt(5 * min), 1e-6f)
+        assertEquals(1f, streak.settledAt(10 * min), 0f)
+        assertEquals(1f, streak.settledAt(40 * min), 0f)
+        // A look doesn't start it over; a message does.
+        assertEquals(0.5f, streak.looked(5 * min).settledAt(5 * min), 1e-6f)
+        assertEquals(0f, streak.onMessage(6 * min, ten).settledAt(6 * min), 0f)
+        // No phase (none chosen, or none yet): at its calmest.
+        assertEquals(1f, BrightStreak().settledAt(0L), 0f)
+        assertEquals(1f, BrightStreak().onMessage(0L, BrightFor.OFF.ms).settledAt(0L), 0f)
+    }
+
+    @Test
+    fun theFrameIsCalmestWhenTheStreakHasNoBrightTimeLeft() {
+        // 10 + 10 + 10 minutes spend the streak: the message at 30 has no phase, so the frame waits at its calmest.
+        var spent = BrightStreak()
+        for (at in 0..30 step 10) spent = spent.onMessage(at * min, ten)
+        assertEquals(1f, spent.settledAt(30 * min), 0f)
+
+        // 10 + 10 + 5 leave 5 minutes for the message at 25: it calms over those 5.
+        var short = BrightStreak()
+        for (at in listOf(0L, 10L, 20L, 25L)) short = short.onMessage(at * min, ten)
+        assertEquals(30 * min, short.until)
+        assertEquals(0f, short.settledAt(25 * min), 0f)
+        assertEquals(0.5f, short.settledAt(55 * min / 2), 1e-6f)
+        assertEquals(1f, short.settledAt(30 * min), 0f)
+    }
+
+    @Test
+    fun aLookKeepsTheMessageTheFrameCalmsFrom() {
+        val streak = BrightStreak().onMessage(0L, ten)
+        // While lit, a look starts a new streak but the frame still calms from the message.
+        val looked = streak.looked(5 * min)
+        assertEquals(streak.messageAt, looked.messageAt)
+        assertEquals(5 * min, looked.from)
+        // After the phase, a look leaves none: at its calmest.
+        assertEquals(1f, streak.looked(11 * min).settledAt(11 * min), 0f)
+        // A clock read a moment before the message's (elapsed time read in another order): still at its most vivid.
+        assertEquals(0f, streak.onMessage(1000L, ten).settledAt(999L), 0f)
+    }
+
+    @Test
     fun offMeansNoBrightPhaseAtAll() {
         assertFalse(BrightStreak().onMessage(now = 0L, brightForMs = BrightFor.OFF.ms).lit(0L))
     }

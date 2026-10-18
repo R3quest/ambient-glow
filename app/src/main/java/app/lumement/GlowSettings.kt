@@ -23,11 +23,24 @@ interface Labeled {
 
 /**
  * How a new message arrives. [BEACON] lights where the LED waits, so it takes the LED's form: a
- * dot, or a ring round the camera ([GlowSettings.ledOnCamera]). Every phone has a place for it.
+ * dot, or a ring round the camera ([GlowSettings.ledForm]); for the frame it lights round the
+ * camera and runs out round the edge into it. Every phone has a place for it.
  */
 enum class GlowStyle(@param:StringRes override val label: Int, @param:StringRes val body: Int) : Labeled {
     BEACON(R.string.style_beacon_title, R.string.style_beacon_body),
     EDGE_FRAME(R.string.style_edge_title, R.string.style_edge_body),
+}
+
+/**
+ * What the waiting LED is: a [DOT] where the user placed it, a [RING] round the punch-hole camera,
+ * or a [FRAME], a line of light round the screen's edge. [DotSize] sets the dot's size and the
+ * ring's thickness. The frame is the Edge Frame waiting, in plain light: its colours, line and
+ * glow ([EdgeColor], [EdgeWidth], [EdgeGlow]) shape it too, quieter.
+ */
+enum class LedForm(@param:StringRes override val label: Int) : Labeled {
+    DOT(R.string.led_form_dot),
+    RING(R.string.led_form_ring),
+    FRAME(R.string.led_form_frame),
 }
 
 /**
@@ -436,8 +449,8 @@ data class GlowSettings(
     val dotX: Float = DEFAULT_DOT_X,
     val dotY: Float = DEFAULT_DOT_Y,
     val dotSize: DotSize = DotSize.LED,
-    /** The LED lights as a ring around the punch-hole camera instead of a dot; [dotSize] sets its thickness. */
-    val ledOnCamera: Boolean = true,
+    /** A dot at [dotX], [dotY], a ring round the punch-hole camera, or a frame round the screen's edge. */
+    val ledForm: LedForm = LedForm.RING,
     /**
      * The user's fit of the camera hole, applied to the reported cutout ([ScreenGeometry.fitted]):
      * some OEMs (Samsung) report only a rectangle from the top edge, not where the lens is.
@@ -496,12 +509,18 @@ data class GlowSettings(
     /** The spawn wave strikes the ground: a shock ring runs out of the camera and the ground behind it breaks open in light and stone. */
     val earth: Boolean get() = element == SpawnElement.EARTH
 
-    /** How the waiting LED looks in mock-ups: the dot, or the ring around the camera. */
-    val ledForm: GlowForm get() = if (ledOnCamera) GlowForm.RING else GlowForm.DOT
+    /** The LED lights as a ring round the punch-hole camera; [dotSize] sets its thickness. */
+    val ledOnCamera: Boolean get() = ledForm == LedForm.RING
+
+    /**
+     * The LED lights as a frame round the screen's edge: the Edge Frame waiting, its [edgeColor],
+     * [edgeWidth] and [edgeGlow] shaping it, quieter ([ledFrameLight]).
+     */
+    val ledOnEdge: Boolean get() = ledForm == LedForm.FRAME
 
     /** On a screen with no camera (the default ring, or one restored from another phone), the ring is a dot where it sat. */
     fun forScreen(geometry: ScreenGeometry): GlowSettings =
-        if (ledOnCamera && geometry.noCamera) copy(ledOnCamera = false) else this
+        if (ledOnCamera && geometry.noCamera) copy(ledForm = LedForm.DOT) else this
 
     companion object {
         // Top centre on the status bar's line: where the lens usually is, so a phone without one

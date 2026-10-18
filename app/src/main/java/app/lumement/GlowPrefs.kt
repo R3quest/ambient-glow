@@ -15,6 +15,9 @@ object GlowPrefs {
     private const val KEY_DOT_X = "dot_x"
     private const val KEY_DOT_Y = "dot_y"
     private const val KEY_DOT_SIZE = "dot_size"
+    private const val KEY_LED_FORM = "led_form"
+
+    /** Before the frame, the LED was a dot or a ring round the camera: read once into [KEY_LED_FORM], then cleared. */
     private const val KEY_LED_CAMERA = "led_camera"
     private const val KEY_LENS_OFFSET = "lens_offset_dp"
     private const val KEY_LENS_OFFSET_X = "lens_offset_x_dp"
@@ -97,7 +100,7 @@ object GlowPrefs {
             dotX = getFloat(KEY_DOT_X, defaults.dotX).coerceIn(0f, 1f),
             dotY = getFloat(KEY_DOT_Y, defaults.dotY).coerceIn(0f, 1f),
             dotSize = getEnum(KEY_DOT_SIZE, defaults.dotSize),
-            ledOnCamera = getBoolean(KEY_LED_CAMERA, defaults.ledOnCamera),
+            ledForm = getEnum(KEY_LED_FORM, ledFormBefore(prefs)),
             lensOffsetDp = getFloat(KEY_LENS_OFFSET, defaults.lensOffsetDp),
             lensOffsetXDp = getFloat(KEY_LENS_OFFSET_X, defaults.lensOffsetXDp),
             lensGrowDp = getFloat(KEY_LENS_GROW, defaults.lensGrowDp),
@@ -131,13 +134,18 @@ object GlowPrefs {
         )
     }
 
+    /** The form saved before the frame: the camera switch's ring or dot, or the default where none was. */
+    private fun ledFormBefore(prefs: SharedPreferences): LedForm =
+        if (!prefs.contains(KEY_LED_CAMERA)) defaults.ledForm else if (prefs.getBoolean(KEY_LED_CAMERA, true)) LedForm.RING else LedForm.DOT
+
     internal fun save(prefs: SharedPreferences, settings: GlowSettings) {
         prefs.edit {
             putString(KEY_STYLE, settings.style.name)
             putFloat(KEY_DOT_X, settings.dotX.coerceIn(0f, 1f))
             putFloat(KEY_DOT_Y, settings.dotY.coerceIn(0f, 1f))
             putString(KEY_DOT_SIZE, settings.dotSize.name)
-            putBoolean(KEY_LED_CAMERA, settings.ledOnCamera)
+            putString(KEY_LED_FORM, settings.ledForm.name)
+            remove(KEY_LED_CAMERA)
             putFloat(KEY_LENS_OFFSET, settings.lensOffsetDp)
             putFloat(KEY_LENS_OFFSET_X, settings.lensOffsetXDp)
             putFloat(KEY_LENS_GROW, settings.lensGrowDp)

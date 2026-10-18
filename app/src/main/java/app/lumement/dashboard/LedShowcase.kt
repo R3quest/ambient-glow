@@ -6,13 +6,18 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -20,10 +25,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import app.lumement.GlowSettings
 import app.lumement.LED_BREATH_MS
 import app.lumement.LED_RISE_MS
 import app.lumement.LedDot
+import app.lumement.LedForm
 import app.lumement.RealTimeMotion
 import app.lumement.ScreenGeometry
 import app.lumement.elementFramesSupported
@@ -32,6 +39,7 @@ import app.lumement.ledBreathAt
 import app.lumement.ledMaterial
 import app.lumement.showBars
 import app.lumement.solveRising
+import app.lumement.ui.theme.GlowMotion
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -126,16 +134,63 @@ internal fun LedShowcase(
         onDispose { if (hidden) window?.showBars() }
     }
     Spacer(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = scrim.value) })
-    LedDot(
-        color = color,
-        alpha = { maxOf(glow.value, ledBreathAt(clock.value)) },
-        dotX = settings.dotX,
-        dotY = settings.dotY,
-        radius = settings.dotSize.radius,
-        onCamera = settings.ledOnCamera,
-        geometry = geometry,
-        material = ledMaterial(settings, elementFramesSupported),
-        clock = { clock.value },
-        modifier = Modifier.fillMaxSize(),
-    )
+    // A new shape takes over from the old in place, both on the same breath.
+    for ((form, shape) in ledFormLevels(settings.ledForm)) {
+        if (!shape.shows) continue
+        key(form) {
+            LedDot(
+                color = color,
+                alpha = { maxOf(glow.value, ledBreathAt(clock.value)) * shape.level },
+                dotX = settings.dotX,
+                dotY = settings.dotY,
+                radius = settings.dotSize.radius,
+                form = form,
+                geometry = geometry,
+                material = ledMaterial(settings.copy(ledForm = form), elementFramesSupported),
+                clock = { clock.value },
+                frameOf = settings,
+                modifier = Modifier.fillMaxSize().frameOpening(form) { shape.level },
+            )
+        }
+    }
 }
+
+/** How much of one LED shape shows, 0..1, read in draw; [shows] changes only as it appears or goes. */
+@Stable
+internal class FormLevel(private val animated: State<Float>) {
+    val level: Float get() = animated.value
+    val shows: Boolean by derivedStateOf { animated.value > 0f }
+}
+
+/**
+ * Each LED shape's [FormLevel] as the shape turns to [form]: the chosen one rises, the one it
+ * leaves dims, overlapping ([GlowMotion.lightIn], [GlowMotion.lightOut]). At first only [form] shows.
+ */
+@Composable
+internal fun ledFormLevels(form: LedForm): List<Pair<LedForm, FormLevel>> = LedForm.entries.map { each ->
+    val on = each == form
+    val animated = animateFloatAsState(
+        targetValue = if (on) 1f else 0f,
+        animationSpec = if (on) GlowMotion.lightIn() else GlowMotion.lightOut(),
+        label = "led-form",
+    )
+    each to remember(animated) { FormLevel(animated) }
+}
+
+/** The frame's scale as it starts to rise. */
+private const val FRAME_OPEN_FROM = 0.97f
+
+/**
+ * The frame opens out to the screen's edges as it rises, and draws back in as it goes; [level] is
+ * read in the layer. The other shapes are left as they are.
+ */
+internal fun Modifier.frameOpening(form: LedForm, level: () -> Float): Modifier =
+    if (form != LedForm.FRAME) {
+        this
+    } else {
+        graphicsLayer {
+            val s = FRAME_OPEN_FROM + (1f - FRAME_OPEN_FROM) * level()
+            scaleX = s
+            scaleY = s
+        }
+    }
