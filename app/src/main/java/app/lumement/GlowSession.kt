@@ -365,6 +365,16 @@ object GlowSession {
     /** Keys of other apps' posts showing now that want the screen ([takesScreen]). Set by the listener, main thread only. */
     val screenTakers = mutableSetOf<String>()
 
+    /**
+     * Nothing waits any more ([GlowPending] empty: read, dismissed, read unseen, or its app muted):
+     * the next message starts a new streak, and with no glow screen up to take the LED's windows
+     * down, they go here. Main thread only.
+     */
+    fun allRead() {
+        bright = BrightStreak()
+        if (host == null) GlowShield.removeLed()
+    }
+
     fun attach(host: Host) {
         this.host = host
     }
