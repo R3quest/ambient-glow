@@ -651,6 +651,22 @@ internal class LockFlow(
         }
     }
 
+    /**
+     * Woken by hand while put away, with the LED's face in front (asleep in a pocket): the lit LED
+     * in its bright phase, which ends as ever. After it (its end waited while put away,
+     * [brightEnded]) there is no lit LED to wake into: the lock screen, as a tap on the LED opens
+     * it. The LED's face, or its window over the ready lock screen, held the screen on until the
+     * user did something.
+     */
+    private fun wokenPutAway() {
+        // Before unstowing, which may ready the lock screen under the LED's window.
+        if (face.value == Face.LED && !arriving.value && !ending.value && !litAllowed) {
+            userLooked("power")
+            showLockScreen()
+        }
+        unstow()
+    }
+
     private fun unstow() {
         stowed = false
         port.stopStowWatch()
@@ -979,7 +995,7 @@ internal class LockFlow(
     fun onScreenOn() {
         if (finishing) return
         // Woken by the user while put away: they have it in hand; the lock screen as ever.
-        if (stowed) unstow()
+        if (stowed) wokenPutAway()
         revealingAfterPower = false
         ledArmedForSleep = false
         sleepSettling = false

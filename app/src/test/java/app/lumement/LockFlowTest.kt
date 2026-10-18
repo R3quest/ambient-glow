@@ -740,6 +740,37 @@ class LockFlowTest {
         // The invariant check in detach() covers the face and the window together.
     }
 
+    /**
+     * Put away in a pocket with the LED lit, asleep with the LED's face in front, and its bright
+     * phase over meanwhile (its end waited while put away). Taken out and woken by hand before the
+     * stow watch had looked, the LED's face took the screen lock at resume and nothing let go of
+     * it: the screen stayed lit until the user did something, in Battery Saver too (found by
+     * [LockFlowFuzzTest]).
+     */
+    @Test
+    fun wokenByHandAfterTheBrightPhaseWhilePutAwayTheLockScreenShows() {
+        phone.pressPower() // dark when the message comes: its wake starts the screen's timeout
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        assertTrue(flow.ledInWindow.value)
+        phone.cover(true) // into a pocket
+        phone.advance(COVERED_MS + 40_000)
+        assertFalse("put away, asleep at the screen's timeout", phone.interactive)
+        assertEquals("the LED's face in front in the dark, for when it is taken out", Face.LED, flow.face.value)
+        phone.advance(11 * MINUTE) // the bright phase ends while it is put away
+
+        phone.cover(false)
+        phone.pressPower()
+        phone.advance(2_000)
+        assertTrue(phone.interactive)
+        assertEquals("they have it in hand: the lock screen as ever", Face.LOCK_SCREEN, flow.face.value)
+        phone.advance(MINUTE)
+
+        assertFalse("no screen held on after the bright phase", phone.panelLocked)
+        assertFalse("asleep at the lock screen's own timeout", phone.interactive)
+    }
+
     @Test
     fun aLaunchWithNothingWaitingFinishesAtOnce() {
         phone.launch(WakeMode.LED, 500)
