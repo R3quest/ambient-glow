@@ -15,9 +15,14 @@ fail() { log "$*"; exit 1; }
 
 aod_was=$(sh settings get system aod_mode)
 new_was=$(sh settings get system aod_show_for_new_noti)
+# A setting the phone never had reads "null": put back as missing, not as the word.
+put_back() {
+    if [ "$2" = null ]; then sh settings delete system "$1" >/dev/null; else sh settings put system "$1" "$2"; fi ||
+        log "couldn't put $1 back to $2: set it in Settings"
+}
 restore() {
-    sh settings put system aod_mode "$aod_was"
-    sh settings put system aod_show_for_new_noti "$new_was"
+    put_back aod_mode "$aod_was"
+    put_back aod_show_for_new_noti "$new_was"
     log "the always-on display put back (aod_mode $aod_was, for new notifications $new_was)"
 }
 trap restore EXIT

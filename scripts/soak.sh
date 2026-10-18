@@ -8,7 +8,8 @@
 # - each process's CPU time from /proc: Lumement, SurfaceFlinger, system_server, SystemUI, as % of
 #   one core;
 # - batterystats, reset at the start: Lumement's wake locks over the run.
-# One line per run goes to measurements/soak.tsv (committed); the raw dumps to app/build/soak/.
+# One line per run goes to measurements/soak.tsv (committed); the raw dumps to measurements/raw/
+# (kept locally, gitignored: they list every app on the phone).
 #
 # The modes, each with the LED's bright phase (Bright LED) and what follows it (Then) set for it
 # through the soak build's own receiver (SoakSettings), and put back as they were afterwards:
@@ -29,7 +30,7 @@ AFTER=${AFTER:-AOD}
 ADB=${ADB:-adb}
 PKG=app.lumement
 TSV=measurements/soak.tsv
-RAW=app/build/soak
+RAW=measurements/raw
 STAMP=$(date +%Y%m%d-%H%M%S)
 TAG="soak-$STAMP"
 
@@ -49,6 +50,7 @@ dozing() { case "$1" in DOZE | DOZE_SUSPEND) return 0 ;; *) return 1 ;; esac; }
 soakset() { sh am broadcast -n "$PKG/.SoakSettings" "$@" | sed -n 's/.*data="\(.*\)".*/\1/p'; }
 
 case "$MODE" in lit | aod | idle | hybrid) ;; *) fail "MODE is lit, aod, idle or hybrid, not $MODE" ;; esac
+[[ "$MINUTES" =~ ^[1-9][0-9]*$ ]] || fail "MINUTES is a whole number of minutes, not $MINUTES"
 mkdir -p "$RAW" "$(dirname "$TSV")"
 
 # ---- The phone as a run needs it ----------------------------------------------------------------
@@ -74,7 +76,8 @@ trap cleanup EXIT
 echo "soak: $MODE for $MINUTES min, battery $(level) %"
 case "$MODE" in
     lit)
-        [ "$aod" = "0" ] || fail "the always-on display is on (aod_mode $aod): the LED would go onto it. Turn it off in Settings for a lit run"
+        # "null": never switched on on this phone, so off.
+        [ "$aod" = "0" ] || [ "$aod" = "null" ] || fail "the always-on display is on (aod_mode $aod): the LED would go onto it. Turn it off in Settings for a lit run"
         [ "$MINUTES" -le 10 ] || fail "a lit run is 10 minutes at most: the LED's longest bright phase is 15, and the waits for the charge counter's steps come around the run"
         soakset --es bright_for FIFTEEN >/dev/null
         post
@@ -109,7 +112,8 @@ esac
 # ---- The run ------------------------------------------------------------------------------------
 procs=("$PKG" surfaceflinger system_server com.android.systemui)
 pids=()
-for p in "${procs[@]}"; do pids+=("$(sh pidof "$p" | awk '{print $1}')"); done
+# One that isn't running has no pid (pidof fails): "-" in the log, rather than the run ending here.
+for p in "${procs[@]}"; do pids+=("$(sh pidof "$p" | awk '{print $1}' || true)"); done
 
 # utime + stime, in clock ticks (100 a second), of each pid; "-" for one that is gone.
 ticks() {
