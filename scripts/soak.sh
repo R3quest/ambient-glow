@@ -35,7 +35,7 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 TAG="soak-$STAMP"
 
 # Every helper reads adb's output to the end: a reader that stops early (grep -m1) breaks the pipe,
-# and with pipefail that ends the run. sh (adb shell with a timeout), counter, counter_read, step.
+# and with pipefail that ends the run. sh (adb shell with a timeout), sh_once, counter, counter_read, step.
 fail() { echo "soak: $*" >&2; exit 1; }
 # shellcheck source=soak_lib.sh
 . "$(dirname "$0")/soak_lib.sh"
@@ -59,7 +59,8 @@ grep -qE "(AC|USB|Wireless) powered: true" <<<"$battery" && fail "the phone is c
 aod=$(sh settings get system aod_mode)
 
 post() {
-    sh cmd notification post -S messaging --conversation Soak --message "Soak:$TAG" -t Soak "$TAG" soak >/dev/null
+    sh_once cmd notification post -S messaging --conversation Soak --message "Soak:$TAG" -t Soak "$TAG" soak >/dev/null ||
+        fail "the test message's post didn't go through, or may have: the run stops rather than post it twice"
 }
 unpost() {
     sh cmd notification snooze --for 315360000000 "'0|com.android.shell|2020|$TAG|2000'" >/dev/null 2>&1 || true
@@ -97,13 +98,13 @@ case "$MODE" in
         log=$(soakset --es bright_for "$BRIGHT" --es after_bright "$AFTER")
         echo "soak: $log"
         held led && fail "the lit LED is up: messages are waiting; read them first"
-        [ "$(wakefulness)" = "Awake" ] && sh input keyevent KEYCODE_SLEEP
+        [ "$(wakefulness)" = "Awake" ] && sh_once input keyevent KEYCODE_SLEEP
         sleep 10
         [ "$(wakefulness)" != "Awake" ] || fail "the phone is still awake"
         ;;
     idle)
         held led && fail "the lit LED is up: messages are waiting; read them first"
-        [ "$(wakefulness)" = "Awake" ] && sh input keyevent KEYCODE_POWER
+        [ "$(wakefulness)" = "Awake" ] && sh_once input keyevent KEYCODE_POWER
         sleep 10
         [ "$(wakefulness)" != "Awake" ] || fail "the phone is still awake"
         ;;

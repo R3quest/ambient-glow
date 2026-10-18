@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-test of soak_lib.sh (make scripts-test) on a scripted adb: a stall and a lost phone tried
-# again, a remote command's failure not, and the charge counter's step never taken from a failed
-# read. No phone needed.
+# again (never a call with an effect, sh_once), a remote command's failure not, and the charge
+# counter's step never taken from a failed read. No phone needed.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 fake=$(mktemp -d)
@@ -51,6 +51,18 @@ plan stall stall stall
 rc=0
 sh dumpsys battery >/dev/null 2>&1 || rc=$?
 check "$rc:$(calls)" "125:3" "three stalls give up"
+
+# A call with an effect is never tried twice: a stalled post may have gone through.
+plan stall "posted"
+rc=0
+sh_once cmd notification post soak >/dev/null 2>&1 || rc=$?
+check "$rc:$(calls)" "125:1" "a stalled sh_once isn't tried again"
+plan "rc 2"
+rc=0
+sh_once input keyevent KEYCODE_POWER >/dev/null 2>&1 || rc=$?
+check "$rc:$(calls)" "2:1" "sh_once gives back the remote command's own exit code"
+plan stall "mWakefulness=Asleep"
+check "$(sh dumpsys power 2>/dev/null)" "mWakefulness=Asleep" "sh after sh_once still tries again"
 
 # step: from 3700000, a failed read (offline three times) and a held one are no step; 3696300 is.
 plan offline offline offline "  Charge counter: 3700000" "  Charge counter: 3696300"
