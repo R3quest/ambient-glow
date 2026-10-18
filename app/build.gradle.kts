@@ -142,7 +142,11 @@ val checkPlayBundle = tasks.register("checkPlayBundle") {
     val problem = bundleProblem
     doLast { if (problem != null) throw GradleException(problem) }
 }
-tasks.named { it == "bundleRelease" }.configureEach { dependsOn(checkPlayBundle) }
+// On every task that writes the .aab, not only bundleRelease: with --continue, or run by its own
+// name, packageReleaseBundle or signReleaseBundle would otherwise write a refused bundle anyway.
+tasks.named { it in setOf("bundleRelease", "packageReleaseBundle", "signReleaseBundle") }.configureEach {
+    dependsOn(checkPlayBundle)
+}
 
 // The release APK is for testing: say once per build when there is no key for the Play bundle yet.
 val uploadKeyNotice = tasks.register("uploadKeyNotice") {
