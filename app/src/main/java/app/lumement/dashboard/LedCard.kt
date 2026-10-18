@@ -184,6 +184,18 @@ internal fun dotSpots(camera: ScreenCamera, window: IntSize, dotSize: DotSize, d
     )
 }
 
+/**
+ * The LED at [size]. A spot's place depends on the dot's size, whose glow keeps it clear of the
+ * screen's edge, so a dot on one of [before]'s spots (the old size's) moves onto the same spot
+ * among [after]'s (the new size's), and stays on it; anywhere else it keeps its place.
+ */
+internal fun resized(settings: GlowSettings, size: DotSize, before: List<DotSpot>, after: List<DotSpot>): GlowSettings {
+    val sized = settings.copy(dotSize = size)
+    val spot = before.firstOrNull { it.matches(settings.dotX, settings.dotY) } ?: return sized
+    val same = after.firstOrNull { it.label == spot.label && it.camera == spot.camera } ?: return sized
+    return sized.copy(dotX = same.x, dotY = same.y)
+}
+
 /** The screen in thirds, top row first, for an LED that sits on no spot. */
 private val PLACE_GRID = arrayOf(
     intArrayOf(R.string.led_place_top_left, R.string.led_place_top_centre, R.string.led_place_top_right),
@@ -532,6 +544,11 @@ internal fun LedLookCard(
 ) {
     val view = remember { BringIntoViewRequester() }
     val revealed by rememberUpdatedState(onRevealed)
+    // A new size moves a dot left on a spot onto that spot as the new size places it.
+    val spots = rememberDotSpots(settings.dotSize)
+    val camera = LocalCamera.current
+    val window = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
     LaunchedEffect(reveal) {
         if (!reveal) return@LaunchedEffect
         try {
@@ -549,7 +566,10 @@ internal fun LedLookCard(
                     SelectionRow(
                         count = DotSize.entries.size,
                         selected = settings.dotSize.ordinal,
-                        onSelect = { onLook(settings.copy(dotSize = DotSize.entries[it])) },
+                        onSelect = {
+                            val size = DotSize.entries[it]
+                            onLook(resized(settings, size, spots, dotSpots(camera, window, size, density)))
+                        },
                     ) { index, lit ->
                         val size = DotSize.entries[index]
                         Canvas(Modifier.size(size.radius * 2)) { drawCircle(GlowPalette.Cyan) }
