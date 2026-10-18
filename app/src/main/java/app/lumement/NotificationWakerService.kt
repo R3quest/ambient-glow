@@ -280,7 +280,12 @@ class NotificationWakerService : NotificationListenerService() {
         }
         // Unlocked and in use: the heads-up is enough; the LED waits for screen-off.
         if (inUse) return
-        if (audio.inCall) return
+        // In a call: dark, the LED comes once the call is over ([relightPlan]'s AFTER_CALL); no
+        // glow screen may be left to do it, as one that finished let go of its own call watch.
+        if (audio.inCall) {
+            relightIfWaiting()
+            return
+        }
         if (SystemClock.elapsedRealtime() - lastWakeAt < WAKE_DEBOUNCE_MS) return
         // Put the glow screen on top of the lock screen (lighting the panel if it is off), or
         // with a black arrival and the screen off, straight into the black panel.
