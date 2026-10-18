@@ -303,4 +303,24 @@ class FrameLedTest {
             ms += 4f
         }
     }
+
+    /**
+     * Still on the always-on display for hours, the LED steps by a share of its line: no pixel
+     * under the frame's 12 px line lit at every step, and its hot core on other pixels each step.
+     */
+    @Test
+    fun theStillLedsStepsSpreadItsLightOverMorePixels() {
+        val line = 12f
+        val steps = STILL_SHIFTS.indices.map { stillStepPx(it, line) }
+        for (x in 0 until (2 * line).toInt()) {
+            val lit = steps.count { x >= it && x < it + line }
+            assertTrue("pixel $x lit $lit of ${steps.size}", lit < steps.size)
+        }
+        val core = line * 0.55f
+        for (i in steps.indices) {
+            val a = steps[i] + (line - core) / 2f
+            val b = steps[(i + 1) % steps.size] + (line - core) / 2f
+            assertTrue("step $i: the core moved off its pixels", abs(a - b) >= core * 0.9f)
+        }
+    }
 }

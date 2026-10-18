@@ -78,14 +78,21 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         val density = context.resources.displayMetrics.density
         val size = Size(view.width.toFloat(), view.height.toFloat())
         val form = settings.ledForm
-        val step = ledStepPx(form, cycle)
+        val core = (settings.dotSize.radius.value + if (still != null) AOD_CORE_EXTRA.value else 0f) * density
+        // Still on the always-on display, it steps by a share of its line ([STILL_SHIFTS]).
+        val step = when {
+            still == null -> ledStepPx(form, cycle)
+            form == LedForm.FRAME -> stillStepPx(cycle, settings.edgeWidth.stroke.value * density)
+            form == LedForm.RING -> stillStepPx(cycle, core * LED_RING_STROKE_FACTOR)
+            else -> 0f
+        }
         val light = if (form == LedForm.FRAME) {
             ledFrameLight(settings, size, geometry.frameCornerPx(density), inset = step, dp = density, full = still != null)
         } else {
-            val core = (settings.dotSize.radius.value + if (still != null) AOD_CORE_EXTRA.value else 0f) * density
             ledLight(core, form == LedForm.RING, geometry.lensRadius(density), ringGrowPx = step, ringGap = LED_RING_GAP.value * density)
         }
-        lightAt = ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density) + ledShiftAt(form, cycle)
+        val shift = if (still != null && form == LedForm.DOT) stillShiftAt(cycle, core) else ledShiftAt(form, cycle)
+        lightAt = ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density) + shift
         look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, form, settings, calm, still?.map(::Color))
         setLevel(0f)
         // Neon: once, at its peak; the breath is the alpha. A material that moves: each step.
