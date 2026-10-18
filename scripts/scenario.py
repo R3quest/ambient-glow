@@ -149,6 +149,15 @@ def diary_waiting(text):
     return None
 
 
+def waiting_now(diary, log):
+    """How many messages wait, from the diary's last count and the log's (either may be None).
+    Each can be stale: the log says nothing on a read (its last pending= can be from before it), and
+    the diary nothing when the process restarts (which forgets what waited). Neither undercounts
+    otherwise, so the smaller one."""
+    known = [n for n in (diary, log) if n is not None]
+    return min(known) if known else None
+
+
 def shell_key(listing, tag):
     """The key of adb's test message [tag] in `cmd notification list` (user|pkg|id|tag|uid)."""
     for line in listing.splitlines():
@@ -210,9 +219,7 @@ class Phone:
         pid = self.pid()
         if pid is None:
             raise Fail("Lumement isn't running: open it once (make launch)")
-        waiting = pending_in_log(self.shell("logcat -d -v time -s Lumement"), pid)
-        if waiting is None:
-            waiting = diary_waiting(self.diary())
+        waiting = waiting_now(diary_waiting(self.diary()), pending_in_log(self.shell("logcat -d -v time -s Lumement"), pid))
         if waiting:
             raise Fail(f"{waiting} message(s) waiting for the LED: read them first, so the scenario's streak is its own")
         if "Lumement:led" in self.locks():
@@ -293,7 +300,8 @@ def scenario(phone, variant, arrival_s=15, settle_s=30):
                 raise Fail("Lumement didn't count the second message")
             phone.sleep(arrival_s)
             locks, screen = phone.locks(), phone.screen()
-            phone.read(unread.pop(0))
+            phone.read(unread[0])
+            unread.pop(0)
             if not wait_for(phone, lambda: counted(phone, since_ms, "read", "waiting=1"), 10):
                 problems.append("the LED diary has no 'read waiting=1' after the first read")
             phone.sleep(3)
@@ -302,7 +310,8 @@ def scenario(phone, variant, arrival_s=15, settle_s=30):
             if led_up(locks, screen) and not led_up(locks_after, screen_after):
                 problems.append(f"the LED went away with a message still waiting (display {screen_after}, locks {locks_after or 'none'})")
         read_at = time.monotonic()
-        phone.read(unread.pop(0))
+        phone.read(unread[0])
+        unread.pop(0)
         if not wait_for(phone, lambda: counted(phone, since_ms, "read", "waiting=0"), 10):
             problems.append("the LED diary has no 'read waiting=0' after the last read")
         state = {}
@@ -459,6 +468,10 @@ def selftest():
     assert diary_events(diary, 1792232975000) == [(1792232975911, "read", "waiting=0")]
     assert diary_waiting(diary) == 0 and diary_waiting("1 2 message waiting=3\n1 3 screen-on\n") == 3
     assert diary_waiting("") is None
+    # After a read on the always-on display the log's last count is from before it; after a restart
+    # the diary's is from before it.
+    assert waiting_now(0, 1) == 0 and waiting_now(3, 0) == 0 and waiting_now(2, 2) == 2
+    assert waiting_now(None, 4) == 4 and waiting_now(None, None) is None
 
     listing = "-1|com.android.systemui|2114586824|charging_state|10041\n0|com.android.shell|2020|lumement-scenario-1-1|2000\n"
     assert shell_key(listing, "lumement-scenario-1-1") == "0|com.android.shell|2020|lumement-scenario-1-1|2000"
