@@ -95,6 +95,10 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         timers.removeCallbacks(step)
         timers.removeCallbacks(riseStep)
         onLit = null
+        if (!ready) {
+            onOut() // the surface went while it prerolled: no breath to show
+            return
+        }
         this.onOut = onOut
         breathFrom = SystemClock.uptimeMillis()
         step()
@@ -137,7 +141,11 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         ready = false
+        // A breath under way ends with its callback, so the round goes on and waits for the
+        // surface again ([whenReady]) rather than for a breath that never ends.
+        val out = onOut
         stop()
+        out?.invoke()
     }
 
     private fun step() {
