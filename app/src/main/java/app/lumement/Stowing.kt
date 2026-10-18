@@ -209,7 +209,9 @@ internal class StowWatch(
         override fun onSensorChanged(event: SensorEvent) {
             when (mode) {
                 Mode.LIT -> lookAgain()
-                Mode.STOWED -> checkSoon()
+                // Still covered, a wake-up proximity sensor tells of the uncover itself: a turn in
+                // a pocket would hold the CPU for a check that can't pass.
+                Mode.STOWED -> if (!near || proximity?.isWakeUpSensor != true) checkSoon()
                 Mode.OFF -> Unit
             }
         }
