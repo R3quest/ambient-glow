@@ -209,10 +209,10 @@ class NotificationWakerService : NotificationListenerService() {
             screenReceiverRegistered = true
         }
         GrantReturn.granted(this, GrantReturn.Grant.LISTENER)
-        if (restored) {
-            GlowLog.d { "svc restored ${GlowPending.entries.size} waiting" }
-            relightIfWaiting()
-        }
+        if (restored) GlowLog.d { "svc restored ${GlowPending.entries.size} waiting" }
+        // Restored by a new process, or kept by this one through a rebind, which cancelled the
+        // screen-off's relights ([releaseScreenReceiver]): lit as the screen-off would have had it.
+        if (!GlowPending.isEmpty) relightIfWaiting()
     }
 
     override fun onListenerDisconnected() {
@@ -500,6 +500,9 @@ class NotificationWakerService : NotificationListenerService() {
         mainHandler.removeCallbacks(checkLed)
         mainHandler.removeCallbacks(relightOnceLocked)
         afterCall.cancel()
+        // The waits those were: left set, a rebind's screen-off would think them still under way.
+        lockWait = LockWait.NONE
+        relightAtDoze = false
         if (screenReceiverRegistered) {
             unregisterReceiver(screenEvents)
             screenReceiverRegistered = false
