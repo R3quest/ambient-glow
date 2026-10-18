@@ -232,7 +232,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     /** The longest CPU hold asked for since this was last cleared. */
     var cpuHeldMs = 0L
 
-    /** The system's broadcasts and display changes, for a test's listener: "screen-off", "screen-on", "display". */
+    /** The system's broadcasts and display changes, for a test's listener: "screen-off", "screen-on", "display"; and "going to sleep", as it starts. */
     var onSystem: (String) -> Unit = {}
 
     /** After every step, once the window manager and the collector have had their say. */
@@ -524,6 +524,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         goingToSleep = true
         // A sleep cancelled in its fade is over: its fade and SCREEN_OFF never come in a later one.
         val sleep = ++sleeps
+        onSystem("going to sleep")
         displayChanged()
         later(SLEEP_FADE_MS) {
             if (!goingToSleep || sleep != sleeps) return@later

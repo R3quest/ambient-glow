@@ -94,6 +94,12 @@ class LockFlowFuzzTest {
         /** A glow screen's timers run while the phone is dark, with nothing else happening. */
         private var darkTimerRuns = 0
 
+        /** The last thing that may rightly start a glow screen's timers: a step other than a wait, or a broadcast. */
+        private var eventAt = phone.now
+
+        /** Since [eventAt], a bright phase's end has come long after it, in the dark. */
+        private var lateBrightEnd = false
+
         // ---- The listener, as the lock flow sees it -------------------------------------------------
 
         private var relightAtDoze = false
@@ -107,7 +113,7 @@ class LockFlowFuzzTest {
         fun play(): String? {
             setUp()
             phone.onStep = ::check
-            phone.onTimerFired = { if (!phone.interactive) darkTimerRuns++ }
+            phone.onTimerFired = ::darkTimerCheck
             phone.onSystem = ::systemEvent
             for (i in 0 until EVENTS) {
                 if (failure != null) break
@@ -119,6 +125,8 @@ class LockFlowFuzzTest {
                 log("left alone")
                 phone.advance(20 * MINUTE)
                 darkTimerRunsCheck()
+                // Nothing left to come in the dark: a later poll would not have run yet.
+                if (!phone.interactive && phone.timersOf().isNotEmpty()) fail("left alone in the dark, the glow screen's ${phone.timersOf()} still pending")
             }
             return failure?.let { report(it) }
         }
@@ -160,7 +168,9 @@ class LockFlowFuzzTest {
             // Only a wake with nothing after it is the user's own look at the lock screen.
             val woken = userWokeAt
             userWokeAt = null
-            when (random.nextInt(100)) {
+            val roll = random.nextInt(100)
+            if (roll !in 34..64 && roll < 91) eventHappened()
+            when (roll) {
                 in 0..11 -> post()
                 in 12..15 -> post(update = true)
                 in 16..20 -> readOne()
@@ -394,6 +404,7 @@ class LockFlowFuzzTest {
 
         /** The listener's screen receiver and its sleep watch ([NotificationWakerService.watchSleep]). */
         private fun systemEvent(event: String) {
+            eventHappened()
             when (event) {
                 "screen-off", "screen-on" -> {
                     phone.unpost(RELIGHT)
@@ -551,6 +562,24 @@ class LockFlowFuzzTest {
             phone.cpuHeldMs = 0
         }
 
+        private fun eventHappened() {
+            eventAt = phone.now
+            lateBrightEnd = false
+        }
+
+        /**
+         * No polling in the dark: once [QUIET_MS] have passed since anything happened, a glow
+         * screen's timers are done, but for a bright phase's end that was due, once.
+         */
+        private fun darkTimerCheck(timer: LockTimer) {
+            if (phone.interactive) return
+            darkTimerRuns++
+            val quiet = phone.now - eventAt
+            if (quiet <= QUIET_MS) return
+            if (timer != LockTimer.BRIGHT_END || lateBrightEnd) fail("a glow screen's $timer ran in the dark ${quiet / 1000} s after anything happened")
+            lateBrightEnd = true
+        }
+
         /** No polling in the dark: a run of timers with the phone dark and nothing else happening. */
         private fun darkTimerRunsCheck() {
             if (darkTimerRuns > MAX_DARK_TIMER_RUNS) fail("$darkTimerRuns glow screen timers ran in the dark without an event")
@@ -589,6 +618,9 @@ class LockFlowFuzzTest {
         const val MAX_CPU_HOLD_MS = 10_000L
 
         const val MAX_DARK_TIMER_RUNS = 40
+
+        /** The longest a glow screen's timers may run on in the dark after an event: a put-away's [COVERED_MS] and a breath. */
+        const val QUIET_MS = 30_000L
 
         /** The quickest a press follows the phone going dark: longer than FakePhone's display event lag. */
         const val REACTION_MS = 20L
