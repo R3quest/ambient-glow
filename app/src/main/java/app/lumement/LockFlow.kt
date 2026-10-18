@@ -967,6 +967,8 @@ internal class LockFlow(
         }
         if (port.inCall) {
             port.armAfterCall() // proximity during a call: stay dark, and light the LED once it is over
+            // A black cover the lock screen slept under goes, or a wake in the call shows it black.
+            if (face.value == Face.LOCK_SCREEN) shield.hide()
             return
         }
         if (revealingAfterPower) {

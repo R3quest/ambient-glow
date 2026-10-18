@@ -668,6 +668,31 @@ class LockFlowTest {
         assertFalse("the lock screen, not black", phone.coverUp)
     }
 
+    /**
+     * In a call, the LED slept under the black cover (a message, with no bright phase): the
+     * screen-off, waiting for the call to end, left the cover up, and a wake during the call (the
+     * phone away from the ear, power) showed a black lock screen (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun wokenInACallAfterTheLedSleptShowsTheLockScreen() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY, brightFor = BrightFor.OFF)
+        message()
+        phone.launch(WakeMode.LED, 4_000) // a breath, then asleep
+        assertFalse(phone.interactive)
+        phone.callTurns(true)
+        message("chat-2")
+        phone.then { flow.onNewMessage() }
+        phone.advance(4_000)
+        assertFalse(phone.interactive)
+
+        phone.pressPower()
+        phone.advance(1_000)
+
+        assertTrue(phone.interactive)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertFalse("the lock screen, not black", phone.coverUp)
+    }
+
     @Test
     fun withoutTheShieldTheLedFaceCoversAndPowerOpensTheLockScreen() {
         phone.shieldOn = false
