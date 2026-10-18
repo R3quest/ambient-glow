@@ -70,6 +70,28 @@ class LockFlowTest {
         assertTrue("the screen kept on for the LED", phone.panelLocked)
     }
 
+    /**
+     * The lock screen comes in front under the LED's window only once the window has the focus.
+     * Uncovered as the window went up, One UI started listening for the fingerprint before the
+     * window had it, and showed its icon over the window for 0.1-0.2 s (seen on the S23, 2026-10-18).
+     */
+    @Test
+    fun theLockScreenComesUnderTheLedOnceItsWindowHasTheFocus() {
+        message()
+        phone.launch(WakeMode.WAKE, 0)
+        var waited = 0
+        while (!phone.litShown && waited++ < 10_000) phone.advance(1)
+        assertTrue(phone.litShown)
+        assertTrue("the face still over the lock screen", phone.covering)
+        assertFalse(flow.ledInWindow.value)
+
+        phone.advance(100) // the window has the focus
+
+        assertFalse(phone.covering)
+        assertTrue(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
     @Test
     fun powerOpensTheReadyLockScreenWithoutASleep() {
         readyUnderLed()
@@ -247,6 +269,29 @@ class LockFlowTest {
         logged("system: awake", "aod LED off")
         assertEquals("power wakes straight into the lock screen", Face.LOCK_SCREEN, flow.face.value)
         assertFalse(phone.covering)
+    }
+
+    /** The still LED shows every waiting app's colour: one read elsewhere, it is drawn again without it, still asleep. */
+    @Test
+    fun oneReadOnTheAlwaysOnDisplayDrawsTheLedAgain() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = true
+        message()
+        message("chat-2")
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        logged("aod LED on")
+
+        phone.log.clear()
+        read("chat-1")
+        phone.advance(1_000)
+
+        logged("aod LED on")
+        assertTrue(phone.aodBreathing)
+        assertFalse(phone.interactive)
+        notLogged("wake")
     }
 
     /**

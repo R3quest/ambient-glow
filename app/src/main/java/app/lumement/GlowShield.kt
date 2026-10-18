@@ -169,6 +169,11 @@ class GlowShield : AccessibilityService() {
             }
             true
         }
+        // Shown, it takes the focus from the face under it: the lock screen may come in front ([addLit]).
+        view.viewTreeObserver.addOnWindowFocusChangeListener { focused ->
+            GlowLog.d { "led window focus $focused" }
+            if (focused) endLitWait(true)
+        }
         val params = addOverlay(view, PixelFormat.OPAQUE, "Lumement:led", alpha = 0f) ?: return
         ledWindow = view
         ledParams = params
@@ -219,13 +224,16 @@ class GlowShield : AccessibilityService() {
     /**
      * The lit LED in its window, over everything: the round in [colors] (read before each breath)
      * from breath [round], on and on, the panel kept on by the glow screen. [onTouch] as the first
-     * finger comes down, [onTap] for a tap ([addLedWindow]).
+     * finger comes down, [onTap] for a tap ([addLedWindow]). [onReady] once, posted: true once the
+     * window has the focus (or [LIT_FOCUS_WAIT_MS] on), false if it hides first.
      */
-    private fun addLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit): Boolean {
+    private fun addLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
         hideLedWindow()
         addLedWindow()
         val surface = ledSurface ?: return false
+        litReady = onReady
+        timers.postDelayed(litFocusLate, LIT_FOCUS_WAIT_MS)
         // The service lives for days: the screen's resolution may have changed since the last.
         panelModes.reset()
         ledDowns = 0
@@ -240,6 +248,9 @@ class GlowShield : AccessibilityService() {
         GlowLog.d { "lit LED up" }
         return true
     }
+
+    private var litReady: ((Boolean) -> Unit)? = null
+    private val litFocusLate = Runnable { endLitWait(true) }
 
     private val panelModes = PanelModes({ getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY) }, LED_FADE_HZ)
 
@@ -266,8 +277,18 @@ class GlowShield : AccessibilityService() {
         tap()
     }
 
+    /** The window's wait for the focus is over ([addLit]): [shown], if it still is. */
+    private fun endLitWait(shown: Boolean) {
+        val ready = litReady ?: return
+        litReady = null
+        timers.removeCallbacks(litFocusLate)
+        val now = shown && ledShown
+        timers.post { ready(now) }
+    }
+
     /** The lit LED goes out and its window hides; it stays up, for the next. */
     private fun hideLedWindow() {
+        endLitWait(false)
         timers.removeCallbacks(ledTapNow)
         ledTouch = null
         ledTap = null
@@ -759,6 +780,9 @@ class GlowShield : AccessibilityService() {
         /** The LED's window while hidden: see-through ([setLedShown]'s alpha), and neither touches nor focus. */
         private const val LED_HIDDEN_FLAGS = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 
+        /** The shown LED window took the focus 0.03-0.2 s after it was asked (S23); past this, the lock screen comes in front anyway. */
+        private const val LIT_FOCUS_WAIT_MS = 300L
+
         /** Upper bound for a [blackout]: the lock screen's own timeout and dim run out well within it. */
         private const val MAX_BLACKOUT_MS = 20_000L
 
@@ -801,8 +825,8 @@ class GlowShield : AccessibilityService() {
          * round in [colors] from breath [round], until [hideLit]. [onTouch] as the first finger
          * comes down, a tap ([onTap]). False when the service is off, or below Android 10.
          */
-        fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit): Boolean =
-            instance?.addLit(colors, round, onTouch, onTap) ?: false
+        fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit): Boolean =
+            instance?.addLit(colors, round, onTouch, onTap, onReady) ?: false
 
         /** A finger is down on the lit LED: the lock screen under it gets the focus, and listens for the fingerprint. */
         fun focusLockScreen() {
