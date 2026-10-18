@@ -26,15 +26,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -431,115 +435,125 @@ internal fun SetupFlow(access: AccessState, actions: AccessActions, onDone: () -
     val haptics = LocalHapticFeedback.current
     LaunchedEffect(access.ready) { if (access.ready && !startedReady) haptics.performHapticFeedback(HapticFeedbackType.Confirm) }
     // The header sits exactly where the dashboard's does, so handing over to it moves nothing.
-    Column(modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 20.dp)) {
-        BrandHeader()
-        if (total > 1) {
-            Spacer(Modifier.height(20.dp))
-            SetupProgress(done = done, total = total)
-        }
-        Spacer(Modifier.weight(1f))
-        // A step slides in from the right as the one before it is granted, the way a pager turns.
-        AnimatedContent(
-            targetState = page,
-            transitionSpec = {
-                (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
-            },
-            label = "setup-step",
-        ) { shown ->
-            // Each step is a pane of its own: TalkBack says its title as it slides in.
-            val title = stringResource(shown.title)
-            Column(Modifier.semantics { paneTitle = title }) {
-                StepGlyph(shown, Modifier.size(72.dp))
-                Spacer(Modifier.height(28.dp))
-                if (shown != SetupPage.Done && total > 1) {
+    // The page fills the screen, its spaces spreading it out; with large text it is taller than
+    // the screen instead, the spaces closed up, and scrolls, so the button is never cut off.
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = maxHeight)
+                .padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 20.dp),
+        ) {
+            BrandHeader()
+            if (total > 1) {
+                Spacer(Modifier.height(20.dp))
+                SetupProgress(done = done, total = total)
+            }
+            Spacer(Modifier.weight(1f))
+            // A step slides in from the right as the one before it is granted, the way a pager turns.
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                },
+                label = "setup-step",
+            ) { shown ->
+                // Each step is a pane of its own: TalkBack says its title as it slides in.
+                val title = stringResource(shown.title)
+                Column(Modifier.semantics { paneTitle = title }) {
+                    StepGlyph(shown, Modifier.size(72.dp))
+                    Spacer(Modifier.height(28.dp))
+                    if (shown != SetupPage.Done && total > 1) {
+                        Text(
+                            text = when (shown) {
+                                is SetupPage.Grant -> stringResource(R.string.setup_step, plan.indexOf(shown.step) + 1, total)
+                                SetupPage.Shield -> stringResource(R.string.setup_step_optional, plan.size + 1, total)
+                                else -> stringResource(R.string.setup_step_optional, total, total)
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = GlowPalette.Cyan,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                    }
                     Text(
-                        text = when (shown) {
-                            is SetupPage.Grant -> stringResource(R.string.setup_step, plan.indexOf(shown.step) + 1, total)
-                            SetupPage.Shield -> stringResource(R.string.setup_step_optional, plan.size + 1, total)
-                            else -> stringResource(R.string.setup_step_optional, total, total)
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = GlowPalette.Cyan,
+                        text = title,
+                        style = MaterialTheme.typography.displaySmall,
+                        color = GlowPalette.TextPrimary,
+                        modifier = Modifier.semantics { heading() },
                     )
-                    Spacer(Modifier.height(10.dp))
-                }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.displaySmall,
-                    color = GlowPalette.TextPrimary,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = stringResource(
-                        when (shown) {
-                            is SetupPage.Grant -> shown.step.body
-                            SetupPage.Shield -> R.string.setup_shield_body
-                            SetupPage.Aod -> R.string.setup_aod_body
-                            SetupPage.Done -> if (access.shield) R.string.access_done_body else R.string.access_done_body_no_shield
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GlowPalette.TextMuted,
-                )
-                if (shown == SetupPage.Shield || shown == SetupPage.Aod) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
                     Text(
-                        text = stringResource(if (shown == SetupPage.Aod) R.string.setup_aod_where else R.string.setup_shield_where),
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(
+                            when (shown) {
+                                is SetupPage.Grant -> shown.step.body
+                                SetupPage.Shield -> R.string.setup_shield_body
+                                SetupPage.Aod -> R.string.setup_aod_body
+                                SetupPage.Done -> if (access.shield) R.string.access_done_body else R.string.access_done_body_no_shield
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = GlowPalette.TextMuted,
+                    )
+                    if (shown == SetupPage.Shield || shown == SetupPage.Aod) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(if (shown == SetupPage.Aod) R.string.setup_aod_where else R.string.setup_shield_where),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GlowPalette.TextMuted,
+                        )
+                    }
+                    val needsUnlock = shown == SetupPage.Shield || (shown as? SetupPage.Grant)?.step == AccessStep.LISTENER
+                    if (restricted && needsUnlock) {
+                        Spacer(Modifier.height(18.dp))
+                        NoticeRow(
+                            text = stringResource(R.string.access_restricted_body),
+                            action = stringResource(R.string.access_restricted_action),
+                            onAction = context::openAppInfo,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1.4f))
+            PrimaryButton(
+                text = stringResource(page.action),
+                onClick = {
+                    when (page) {
+                        is SetupPage.Grant -> actions.open(page.step)
+                        SetupPage.Shield -> actions.shield()
+                        SetupPage.Aod -> actions.aod()
+                        SetupPage.Done -> onDone()
+                    }
+                },
+            )
+            // The way past an optional step: quiet, under the button, so taking it stays the lead.
+            Disclosure(visible = page == SetupPage.Shield || page == SetupPage.Aod) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .clip(GlowShapes.Button)
+                        .clickable(role = Role.Button) {
+                            if (page == SetupPage.Aod) {
+                                GlowPrefs.markAodOffered(context)
+                                aodPassed = true
+                            } else {
+                                GlowPrefs.markShieldOffered(context)
+                                shieldPassed = true
+                            }
+                        }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.setup_skip).uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
                         color = GlowPalette.TextMuted,
                     )
                 }
-                val needsUnlock = shown == SetupPage.Shield || (shown as? SetupPage.Grant)?.step == AccessStep.LISTENER
-                if (restricted && needsUnlock) {
-                    Spacer(Modifier.height(18.dp))
-                    NoticeRow(
-                        text = stringResource(R.string.access_restricted_body),
-                        action = stringResource(R.string.access_restricted_action),
-                        onAction = context::openAppInfo,
-                    )
-                }
             }
+            PrivacyNote(Modifier.padding(top = 14.dp))
         }
-        Spacer(Modifier.weight(1.4f))
-        PrimaryButton(
-            text = stringResource(page.action),
-            onClick = {
-                when (page) {
-                    is SetupPage.Grant -> actions.open(page.step)
-                    SetupPage.Shield -> actions.shield()
-                    SetupPage.Aod -> actions.aod()
-                    SetupPage.Done -> onDone()
-                }
-            },
-        )
-        // The way past an optional step: quiet, under the button, so taking it stays the lead.
-        Disclosure(visible = page == SetupPage.Shield || page == SetupPage.Aod) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp)
-                    .clip(GlowShapes.Button)
-                    .clickable(role = Role.Button) {
-                        if (page == SetupPage.Aod) {
-                            GlowPrefs.markAodOffered(context)
-                            aodPassed = true
-                        } else {
-                            GlowPrefs.markShieldOffered(context)
-                            shieldPassed = true
-                        }
-                    }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(R.string.setup_skip).uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = GlowPalette.TextMuted,
-                )
-            }
-        }
-        PrivacyNote(Modifier.padding(top = 14.dp))
     }
 }
 

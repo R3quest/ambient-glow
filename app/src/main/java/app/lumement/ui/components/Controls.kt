@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -83,6 +84,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -372,11 +374,13 @@ internal fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            // Taller only when large text wraps the label.
+            .heightIn(min = 50.dp)
             .clip(GlowShapes.Button)
             .background(if (enabled) GlowPalette.Cyan.copy(alpha = 0.08f) else GlowPalette.Surface)
             .border(1.5.dp, if (enabled) GlowPalette.Cyan else GlowPalette.Outline, GlowShapes.Button)
-            .clickable(role = Role.Button, enabled = enabled, onClick = onClick),
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(
@@ -406,7 +410,8 @@ internal fun GhostButton(text: String, emphasized: Boolean, onClick: () -> Unit,
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text.uppercase(), style = MaterialTheme.typography.labelMedium, color = tint, maxLines = 1)
+        // One line, but at large font sizes it wraps rather than lose its end.
+        Text(text = text.uppercase(), style = MaterialTheme.typography.labelMedium, color = tint, textAlign = TextAlign.Center)
     }
 }
 

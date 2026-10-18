@@ -495,7 +495,6 @@ private fun StylePicker(settings: GlowSettings, accent: Color, onSelect: (GlowSt
                     text = stringResource(style.label),
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                     color = { title.value },
-                    maxLines = 2,
                 )
             }
         }

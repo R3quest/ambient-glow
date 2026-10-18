@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
@@ -785,7 +786,9 @@ private fun FitRow(label: String, valuePx: Int, minus: String, plus: String, onS
             style = MaterialTheme.typography.labelMedium,
             color = GlowPalette.TextPrimary,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(72.dp),
+            // Wider with large text, so the value stays on one line.
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 72.dp),
         )
         StepButton(plus = true, description = plus, onStep = { onStep(1) })
     }

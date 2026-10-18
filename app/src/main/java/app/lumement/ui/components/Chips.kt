@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -163,15 +164,24 @@ private fun chipTextStyle(compact: Boolean): TextStyle = if (compact) {
     MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
 }
 
-/** A chip's label, tinted from muted to primary as [lit] goes 0 → 1; read in draw. */
+/** Least a chip's label shrinks to, at large font sizes, before it is cut short. */
+private val CHIP_LABEL_MIN = 8.sp
+
+/**
+ * A chip's label, tinted from muted to primary as [lit] goes 0 → 1; read in draw. Chips are equal
+ * widths, so where large text no longer fits one the label steps down until it does (never
+ * below [CHIP_LABEL_MIN]) rather than losing its end.
+ */
 @Composable
 internal fun ChipLabel(text: String, lit: () -> Float, compact: Boolean = false) {
+    val style = chipTextStyle(compact)
     BasicText(
         text = text,
-        style = chipTextStyle(compact),
+        style = style,
         color = { lerp(GlowPalette.TextMuted, GlowPalette.TextPrimary, lit()) },
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        autoSize = TextAutoSize.StepBased(minFontSize = CHIP_LABEL_MIN, maxFontSize = style.fontSize),
     )
 }
 

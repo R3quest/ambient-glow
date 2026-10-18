@@ -46,6 +46,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -90,6 +91,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -729,21 +731,27 @@ private fun GlowTabBar(pager: PagerState, tabs: List<DashboardTab>, onSelect: (I
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // The label lights as the blade reaches it, read in draw like the blade.
+                    // The label lights as the blade reaches it, read in draw like the blade. Large
+                    // text steps down to fit the tab rather than run past it.
+                    val style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                     BasicText(
                         text = stringResource(tab.label),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        style = style,
                         color = {
                             val position = pager.currentPage + pager.currentPageOffsetFraction
                             lerp(GlowPalette.TextPrimary, GlowPalette.TextFaint, abs(position - index).coerceIn(0f, 1f))
                         },
                         maxLines = 1,
+                        autoSize = TextAutoSize.StepBased(minFontSize = TAB_LABEL_MIN, maxFontSize = style.fontSize),
                     )
                 }
             }
         }
     }
 }
+
+/** Least a tab's label shrinks to at large font sizes. */
+private val TAB_LABEL_MIN = 9.sp
 
 private const val COUNTDOWN_SECONDS = (GlowLauncher.TEST_DELAY_MS / 1_000L).toInt()
 

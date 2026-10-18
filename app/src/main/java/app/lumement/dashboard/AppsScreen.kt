@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -454,7 +455,8 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, onDone: () -> 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    // Taller only when large text needs it.
+                    .heightIn(min = 44.dp)
                     .clip(GlowShapes.Tile)
                     .background(GlowPalette.Void)
                     .border(1.dp, GlowPalette.OutlineSoft, GlowShapes.Tile)
