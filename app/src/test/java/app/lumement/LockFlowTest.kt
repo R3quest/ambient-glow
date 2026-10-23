@@ -23,6 +23,7 @@ class LockFlowTest {
         GlowSession.resting = false
         GlowSession.screenTakers.clear()
         GlowSession.bright = BrightStreak()
+        GlowSession.aodDue = false
         phone = FakePhone()
     }
 
@@ -38,6 +39,7 @@ class LockFlowTest {
     private fun message(key: String = "chat-1", color: Int = 0xFF25D366.toInt()) {
         GlowPending.put(PendingGlow(key, "chat", color))
         GlowSession.bright = GlowSession.bright.onMessage(phone.now, phone.settings.brightFor.ms)
+        if (!phone.interactive || phone.keyguardLocked) GlowSession.aodDue = true
     }
 
     /** A message lit the lock screen, nobody touched it: the lit LED over the lock screen, ready under it. */
@@ -222,6 +224,44 @@ class LockFlowTest {
         assertFalse(phone.litShown)
         assertFalse(flow.ledInWindow.value)
         assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
+    /**
+     * A message lit the lock screen and the user touched it at once, reading: the LED covered it at
+     * 2.5 s whatever they did, dimming it first. A touch keeps it theirs ([GlowShield.watchTouches]).
+     */
+    @Test
+    fun aTouchOnTheLitLockScreenKeepsTheTakeoverOff() {
+        message()
+        phone.launch(WakeMode.WAKE, 1_000)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        phone.touch()
+        phone.advance(3_000)
+
+        logged("diary: peek touch")
+        assertEquals("no takeover: the lock screen stays the user's", Face.LOCK_SCREEN, flow.face.value)
+        assertFalse(phone.coverUp)
+        assertTrue(phone.interactive)
+    }
+
+    /**
+     * Outside the bright phase a sleep seen in time does nothing, and the watch polled 20 times a
+     * second while the lock screen was lit. A new message brings a phase, and the watch, back.
+     */
+    @Test
+    fun noSleepWatchOutsideTheBrightPhase() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        message()
+        phone.launch(WakeMode.WAKE, 1_000)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertTrue(phone.interactive)
+        assertFalse(LockTimer.SLEEP_WATCH in phone.timersOf())
+
+        phone.settings = GlowSettings()
+        message("chat-2")
+        phone.host { onNewMessage() }
+
+        assertTrue("a bright phase again: a sleep may relight", LockTimer.SLEEP_WATCH in phone.timersOf())
     }
 
     @Test
@@ -463,6 +503,62 @@ class LockFlowTest {
         phone.advance(2_000)
         logged("aod LED on")
         phone.log.clear()
+    }
+
+    /**
+     * The LED's face was in front when a call came, the screen went off at the ear and its bright
+     * phase ran out meanwhile. Once the call was over the lock screen came in front and nothing put
+     * the LED onto the always-on display already showing.
+     */
+    @Test
+    fun aCallOverOnTheAlwaysOnDisplayPutsTheLedOnIt() {
+        phone.settings = GlowSettings(brightFor = BrightFor.FIVE)
+        phone.expectsAod = true
+        phone.dozes = true
+        message()
+        phone.launch(WakeMode.LED, 300) // the face in front, its window not up yet
+        assertEquals(Face.LED, flow.face.value)
+        phone.callTurns(true)
+        phone.pressPower() // the call's proximity
+        phone.advance(6 * 60_000) // past the bright phase, at the ear
+        assertFalse(phone.interactive)
+        phone.log.clear()
+
+        phone.callTurns(false)
+        phone.advance(1_000)
+
+        logged("aod LED on")
+        assertTrue(phone.aodBreathing)
+        assertFalse(phone.interactive)
+    }
+
+    /**
+     * Shown for new notifications, the LED takes only a new message's doze. A relaunch with no new
+     * message (Do Not Disturb ending, a wake's fallback) let it onto a later doze of One UI's own.
+     */
+    @Test
+    fun shownForNewNotificationsARelaunchBringsNoDoze() {
+        phone.settings = GlowSettings(brightFor = BrightFor.OFF)
+        phone.expectsAod = true
+        phone.dozes = true
+        phone.dozesAfterOffMs = 100
+        phone.aodOnly = true
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.pressPower()
+        phone.advance(2_000)
+        logged("aod LED on") // the message's doze
+        phone.aodGoes()
+        phone.advance(1_000)
+
+        phone.startGlowScreen(WakeMode.AOD) // a relaunch, no new message
+        phone.advance(1_000)
+        phone.log.clear()
+        phone.dozeScreen() // One UI's own, a missed fingerprint
+        phone.advance(1_000)
+
+        notLogged("aod LED on")
+        assertFalse(phone.aodBreathing)
     }
 
     /**

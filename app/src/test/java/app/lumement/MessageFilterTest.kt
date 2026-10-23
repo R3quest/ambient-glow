@@ -3,6 +3,7 @@ package app.lumement
 import android.app.Notification
 import android.app.NotificationManager
 import androidx.core.app.NotificationCompat
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,6 +23,31 @@ class MessageFilterTest {
             ),
         )
         assertTrue(isAlert(ongoing = false, flags = 0, category = null, importance = NotificationManager.IMPORTANCE_HIGH))
+    }
+
+    /**
+     * Replying from the notification, the app posts the chat again with the reply added: the
+     * user's own message is no new one, and the update stays quiet.
+     */
+    @Test
+    fun theUsersOwnReplyBringsNoNewMessage() {
+        val incoming = MessageTime(1_000L, mine = false)
+        val reply = MessageTime(5_000L, mine = true)
+        assertEquals(1_000L, newestIncomingAt(listOf(incoming, reply), postedAt = 5_000L))
+        assertTrue(isQuietUpdate(Notification.FLAG_ONLY_ALERT_ONCE, newestIncomingAt(listOf(incoming, reply), 5_000L), waitingNewestAt = 1_000L))
+        assertEquals("a newer one from them is new", 6_000L, newestIncomingAt(listOf(incoming, reply, MessageTime(6_000L, mine = false)), 6_000L))
+        assertEquals("no messages: its when", 7_000L, newestIncomingAt(null, postedAt = 7_000L))
+        assertEquals("only the user's: nothing new", 0L, newestIncomingAt(listOf(reply), postedAt = 5_000L))
+    }
+
+    /** The platform's and SystemUI's posts tell of the phone's state ("Configure physical keyboard", battery low), never a message. */
+    @Test
+    fun thePhonesOwnPostsAreNoMessages() {
+        assertTrue(fromTheSystem("android"))
+        assertTrue(fromTheSystem("com.android.systemui"))
+        assertFalse("adb's test messages", fromTheSystem("com.android.shell"))
+        assertFalse(fromTheSystem("com.google.android.apps.messaging"))
+        assertFalse(fromTheSystem("com.samsung.android.messaging"))
     }
 
     @Test

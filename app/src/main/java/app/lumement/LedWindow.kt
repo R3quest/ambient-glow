@@ -1,5 +1,8 @@
 package app.lumement
 
+import android.content.ContentResolver
+import android.os.Build
+import android.provider.Settings
 import android.view.Display
 import android.view.Window
 import androidx.core.view.WindowCompat
@@ -10,16 +13,30 @@ import kotlin.math.abs
 /**
  * Hides the status and navigation bars over a black LED screen. Their icons and gesture handle
  * are set dark, so the moment the system shows them anyway (One UI does on every wake) they are
- * invisible on black. A swipe still brings them back for a moment.
+ * invisible on black. A swipe still brings them back for a moment. On Android 8-10, until the user
+ * has once confirmed it for any app ([immersiveConfirmed]), hiding the navigation bar this way puts
+ * up the system's "Viewing full screen" banner, bright over the black until tapped (seen on an
+ * Android 8 emulator, 2026-10-23): there the navigation bar stays, its dark buttons on black.
  */
 internal fun Window.hideBarsOnBlack() {
+    val bars = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && !immersiveConfirmed(context.contentResolver)) {
+        WindowInsetsCompat.Type.statusBars()
+    } else {
+        WindowInsetsCompat.Type.systemBars()
+    }
     WindowCompat.getInsetsController(this, decorView).apply {
         isAppearanceLightStatusBars = true
         isAppearanceLightNavigationBars = true
-        hide(WindowInsetsCompat.Type.systemBars())
+        hide(bars)
         systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 }
+
+/** Android 8-10's immersive-mode confirmation is given ("Got it", once for every app): a hidden setting, read only. */
+private fun immersiveConfirmed(resolver: ContentResolver): Boolean =
+    runCatching { Settings.Secure.getString(resolver, IMMERSIVE_MODE_CONFIRMATIONS) }.getOrNull() == "confirmed"
+
+private const val IMMERSIVE_MODE_CONFIRMATIONS = "immersive_mode_confirmations"
 
 /** Undoes [hideBarsOnBlack] for the dashboard's dark theme. */
 internal fun Window.showBars() {

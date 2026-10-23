@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
 import android.view.Display
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -347,6 +348,14 @@ class GlowShield : AccessibilityService() {
         }
         aodDrawn = false
         view.viewTreeObserver.registerFrameCommitCallback { if (aodWindow === view) aodDrawn = true }
+        // Laid out at another size (the phone turned for a video, then upright to sleep): ready only
+        // once drawn at it, and no window draws while dozing. Taken as ready, the LED rose from a
+        // surface still the old shape, or not at all, and the flow took it as lit.
+        view.addOnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left == oldRight - oldLeft && bottom - top == oldBottom - oldTop) return@addOnLayoutChangeListener
+            aodDrawn = false
+            v.viewTreeObserver.registerFrameCommitCallback { if (aodWindow === v) aodDrawn = true }
+        }
         val params = addOverlay(view, PixelFormat.TRANSLUCENT, "Lumement:aod", alpha = 0f) ?: return
         aodParams = params
         aodWindow = view
@@ -404,9 +413,68 @@ class GlowShield : AccessibilityService() {
         GlowLog.d { "aod window down" }
     }
 
+    /**
+     * A 1 px window told of every touch outside it ([MotionEvent.ACTION_OUTSIDE]): that the lit lock
+     * screen under the overlays was touched, nothing of where or what (another app's touch comes
+     * with no position). Up only while a takeover waits ([watchTouches]).
+     */
+    private var touchWatch: View? = null
+    private var onTouched: (() -> Unit)? = null
+    private val touchWatchOver = Runnable { removeTouchWatch() }
+
+    private fun addTouchWatch(onTouch: () -> Unit, maxMs: Long) {
+        onTouched = onTouch
+        timers.removeCallbacks(touchWatchOver)
+        timers.postDelayed(touchWatchOver, maxMs)
+        if (touchWatch != null) return
+        val view = View(this)
+        @SuppressLint("ClickableViewAccessibility")
+        view.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                onTouched?.let {
+                    onTouched = null
+                    // Out of the input dispatch: the window goes, and the flow acts.
+                    timers.post {
+                        removeTouchWatch()
+                        it()
+                    }
+                }
+            }
+            false
+        }
+        val params = WindowManager.LayoutParams(
+            1,
+            1,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            PixelFormat.TRANSPARENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            windowAnimations = 0
+            title = "Lumement:touch"
+        }
+        try {
+            windowManager.addView(view, params)
+            touchWatch = view
+        } catch (e: RuntimeException) {
+            GlowLog.d { "shield refused the touch watch: $e" }
+        }
+    }
+
+    private fun removeTouchWatch() {
+        timers.removeCallbacks(touchWatchOver)
+        onTouched = null
+        val view = touchWatch ?: return
+        touchWatch = null
+        runCatching { windowManager.removeViewImmediate(view) }
+    }
+
     private fun release() {
         val wasOn = instance === this
         if (wasOn) instance = null
+        removeTouchWatch()
         removeLedWindow()
         removeAodWindow()
         removeArrival()
@@ -876,6 +944,18 @@ class GlowShield : AccessibilityService() {
         fun startAodLed(colors: () -> List<Int>, round: Int): Boolean = instance?.startAodBreath(colors, round) ?: false
 
         /**
+         * [onTouch] once, at the first touch anywhere on the screen within [maxMs] (the lit lock
+         * screen under the overlays), as long as it isn't [stopWatchingTouches]. No-op when the service is off.
+         */
+        fun watchTouches(onTouch: () -> Unit, maxMs: Long) {
+            instance?.addTouchWatch(onTouch, maxMs)
+        }
+
+        fun stopWatchingTouches() {
+            instance?.removeTouchWatch()
+        }
+
+        /**
          * The LED on the always-on display drawn again if its colours changed (one read elsewhere),
          * at the same burn-in step, the next step's alarm as it was.
          */
@@ -995,7 +1075,10 @@ private object SemBlur {
                 apply = View::class.java.getMethod("semSetBlurInfo", info),
                 windowMode = info.getField("BLUR_MODE_WINDOW").getInt(null),
             )
-        }.onFailure { GlowLog.d { "no One UI blur: $it" } }.getOrNull()
+        }.onFailure {
+            // Away from One UI the class just isn't there: no failure, and `make scenario` reads an exception's name as one.
+            GlowLog.d { if (it is ClassNotFoundException) "no One UI blur on this phone" else "no One UI blur: $it" }
+        }.getOrNull()
     }
 
     val available: Boolean get() = api != null

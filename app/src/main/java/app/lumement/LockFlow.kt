@@ -178,6 +178,8 @@ internal interface ShieldPort {
     fun prepareLed()
     fun startAodLed(colors: () -> List<Int>, round: Int): Boolean
     fun redrawAodLed()
+    fun watchTouches(onTouch: () -> Unit, maxMs: Long)
+    fun stopWatchingTouches()
     fun stopAodLed()
     fun removeLit()
     fun removeLed()
@@ -199,6 +201,8 @@ internal object RealShield : ShieldPort {
     override fun prepareLed() = GlowShield.prepareLed()
     override fun startAodLed(colors: () -> List<Int>, round: Int) = GlowShield.startAodLed(colors, round)
     override fun redrawAodLed() = GlowShield.redrawAodLed()
+    override fun watchTouches(onTouch: () -> Unit, maxMs: Long) = GlowShield.watchTouches(onTouch, maxMs)
+    override fun stopWatchingTouches() = GlowShield.stopWatchingTouches()
     override fun stopAodLed() = GlowShield.stopAodLed()
     override fun removeLit() = GlowShield.removeLit()
     override fun removeLed() = GlowShield.removeLed()
@@ -308,14 +312,6 @@ internal class LockFlow(
      */
     private var aodDropped = false
 
-    /**
-     * Shown for new notifications only ([LockPort.aodOnly]), One UI shows its always-on display once
-     * for a new message, at the sleep after it arrives; the LED may take that doze, and no other. One
-     * UI dozes the panel for other screens of its own too (a missed fingerprint: DOZE_MOD on the
-     * S23), which to an app look like any doze. Set by a new message (a launch for one, or one while
-     * up), used by the doze the LED goes onto.
-     */
-    private var aodDue = false
 
     /** SCREEN_OFF came with the panel still on, on its way to the always-on display or off: [onScreenOff] once it has gone. */
     private var sleepSettling = false
@@ -449,6 +445,7 @@ internal class LockFlow(
         clearLed()
         finishing = true
         port.cancelTimers()
+        shield.stopWatchingTouches()
         port.cancelAfterCall()
         port.stopStowWatch()
         port.stopWatchingLit()
@@ -505,7 +502,7 @@ internal class LockFlow(
         if (port.interactive) {
             // Stops at a call, as [watchForSleep] won't start in one: the call keeps the phone
             // awake at the ear. The window makes way for a call, so only the slower watch asks.
-            if (ledInWindow.value || !port.inCall) port.schedule(LockTimer.SLEEP_WATCH, sleepWatchMs())
+            if ((ledInWindow.value || !port.inCall) && sleepWatchActs()) port.schedule(LockTimer.SLEEP_WATCH, sleepWatchMs())
         } else {
             onGoingToSleep()
         }
@@ -513,6 +510,7 @@ internal class LockFlow(
 
     private fun takeOver() {
         GlowLog.d { "act takeover interactive=${port.interactive} locked=${port.keyguardLocked}" }
+        shield.stopWatchingTouches()
         if (leaveIfUnlocked()) return
         if (face.value == Face.LOCK_SCREEN && autoTakeover && !ledResting && litAllowed && port.interactive && port.keyguardLocked) {
             autoTakeover = false
@@ -572,7 +570,8 @@ internal class LockFlow(
 
     /** Battery Saver came on or went off: in it the LED doesn't hold the screen on, so a bright phase under way ends now. */
     fun onBatterySaverChanged() {
-        if (!finishing && !litAllowed) brightEnded()
+        if (finishing) return
+        if (!litAllowed) brightEnded() else watchForSleep()
     }
 
     /** The user looked at the lock screen ([how]: a press, a tap, a lift): the bright streak starts over ([BrightStreak.looked]). */
@@ -717,7 +716,9 @@ internal class LockFlow(
                 // The LED was in front when the call came: straight back into it in its bright
                 // phase; after it, the lock screen in front for the next wake.
                 else -> if (!litAllowed) {
+                    // Dozing already, nothing else would put the LED onto the always-on display.
                     showLockScreen()
+                    relightOrAod()
                 } else if (!ledResting && !GlowPending.isEmpty && takeRelightToken()) {
                     showLed()
                     wakeAfter(RELIGHT_DELAY_MS)
@@ -733,9 +734,9 @@ internal class LockFlow(
     override fun onNewMessage() {
         GlowLog.d { "act onNewMessage face=${face.value} interactive=${port.interactive}" }
         if (face.value == Face.AWAY) return
-        aodDue = true
         ending.value = false
         armBrightEnd() // the listener has started the bright phase over
+        if (face.value == Face.LOCK_SCREEN) watchForSleep() // a bright phase again: a sleep may relight now
         if (stowed) return // nobody to show it to: the LED has it once the phone is taken out
         // The message takes the screen; the LED's round starts over after it, newest colour first.
         // Ready under the LED, the lock screen was in front, but nobody was looking at it.
@@ -892,8 +893,7 @@ internal class LockFlow(
             val windowGoingUp = litDue // it has the focus, until clearLed takes it down
             if (ledInWindow.value) sleepFromUnderLed() // no lock screen popping up: dark, as from the LED's face
             clearLed()
-            port.cancel(LockTimer.TAKEOVER)
-            port.cancel(LockTimer.TAKEOVER_DIM)
+            cancelTakeover()
             port.cancel(LockTimer.RELIGHT)
             when {
                 face.value != Face.LED -> Unit // the lock screen times out as it would without us
@@ -913,6 +913,8 @@ internal class LockFlow(
             // it sleeps, as ever.
             port.holdCpu()
             relightOrAod()
+        } else if (face.value == Face.LOCK_SCREEN && port.interactive) {
+            watchForSleep() // looking at the lock screen: the LED takes over when it sleeps, as ever
         }
     }
 
@@ -928,7 +930,6 @@ internal class LockFlow(
         port.dismissBridge()
         port.cancelTimers()
         clearLed()
-        aodDue = true
         settings.value = port.loadSettings()
         if (GlowPending.isEmpty) {
             // Stale launch: everything was read before we came up.
@@ -992,8 +993,7 @@ internal class LockFlow(
         }
         sleepSettling = false
         if (aodLit) return // the LED is on the always-on display
-        port.cancel(LockTimer.TAKEOVER)
-        port.cancel(LockTimer.TAKEOVER_DIM)
+        cancelTakeover()
         // The lock screen handed back has gone dark: woken again (in a call, say), it is the user's.
         autoTakeover = false
         port.cancel(LockTimer.VERIFY_WAKE)
@@ -1182,12 +1182,32 @@ internal class LockFlow(
     }
 
     private fun scheduleTakeover() {
-        port.cancel(LockTimer.TAKEOVER)
-        port.cancel(LockTimer.TAKEOVER_DIM)
+        cancelTakeover()
         if (autoTakeover && port.interactive && !ledResting) {
             port.schedule(LockTimer.TAKEOVER_DIM, TAKEOVER_MS - TAKEOVER_DIM_MS)
             port.schedule(LockTimer.TAKEOVER, TAKEOVER_MS)
+            shield.watchTouches(::lockScreenTouched, TAKEOVER_MS + TAKEOVER_WATCH_MARGIN_MS)
         }
+    }
+
+    private fun cancelTakeover() {
+        port.cancel(LockTimer.TAKEOVER)
+        port.cancel(LockTimer.TAKEOVER_DIM)
+        shield.stopWatchingTouches()
+    }
+
+    /**
+     * The lit lock screen was touched before the takeover ([GlowShield.watchTouches]): someone is
+     * reading it, or unlocking. The LED covered it at 2.5 s whatever they did, dimming it first; now
+     * it stays theirs, its own timeout runs, and the LED takes over when it sleeps, as ever.
+     */
+    private fun lockScreenTouched() {
+        if (!autoTakeover || face.value != Face.LOCK_SCREEN || !port.interactive) return
+        GlowLog.d { "act lock screen touched: no takeover" }
+        autoTakeover = false
+        userLooked("touch")
+        cancelTakeover()
+        shield.hide() // a dim under way gives the lock screen back
     }
 
     /**
@@ -1204,10 +1224,18 @@ internal class LockFlow(
         port.cancel(LockTimer.SLEEP_WATCH)
         // Not during a call: onGoingToSleep would bail anyway, and a screen the call keeps on
         // would be polled for the whole call. Afterwards SCREEN_OFF still brings the LED back.
-        if (face.value == Face.LOCK_SCREEN && port.interactive && !port.inCall) {
+        if (face.value == Face.LOCK_SCREEN && port.interactive && !port.inCall && sleepWatchActs()) {
             port.schedule(LockTimer.SLEEP_WATCH, sleepWatchMs())
         }
     }
+
+    /**
+     * A sleep seen in time does something ([onGoingToSleep]): it opens the lock screen under the LED,
+     * or relights the LED in its bright phase. Outside it (or resting, put away, all read) the watch
+     * polled 20 times a second for as long as the lock screen was lit, to do nothing; a new message,
+     * Battery Saver going off or Do Not Disturb ending asks again ([watchForSleep]).
+     */
+    private fun sleepWatchActs(): Boolean = ledInWindow.value || (litAllowed && !ledResting && !GlowPending.isEmpty)
 
     private fun sleepWatchMs(): Long = if (ledInWindow.value) READY_SLEEP_WATCH_MS else SLEEP_WATCH_MS
 
@@ -1478,12 +1506,12 @@ internal class LockFlow(
             inCall = port.inCall,
             ending = ending.value,
         )
-        if (!allowed || settings.value.afterBright != AfterBright.AOD || (port.aodOnly && !aodDue)) return
+        if (!allowed || settings.value.afterBright != AfterBright.AOD || (port.aodOnly && !GlowSession.aodDue)) return
         if (!shield.startAodLed(GlowPending::colors, 0)) return
         GlowLog.d { "act aod: LED on the always-on display" }
         port.note("aod-on")
         aodLit = true
-        if (port.aodOnly) aodDue = false
+        if (port.aodOnly) GlowSession.aodDue = false
         // A black cover the phone slept under ([sleepUnderCover]) would hide the always-on display
         // and the LED on it: drawn while the screen was on, it stays on the dozing panel.
         shield.hide()
@@ -1551,8 +1579,7 @@ internal class LockFlow(
         GlowLog.d { "act showLed arrival=$arrival pending=${GlowPending.entries.size}" }
         coverSleep = false
         port.cancel(LockTimer.SLEEP_WATCH)
-        port.cancel(LockTimer.TAKEOVER)
-        port.cancel(LockTimer.TAKEOVER_DIM)
+        cancelTakeover()
         // The double tap never reports a release; a resolution change needs new mode ids.
         port.resetPanelRate()
         arrivalDue = false
@@ -1771,6 +1798,9 @@ internal class LockFlow(
 
         /** Lock screen dims to black over this long before [TAKEOVER_MS], so the takeover isn't a cut. */
         const val TAKEOVER_DIM_MS = 300L
+
+        /** The touch watch outlasts the takeover's time by this much, then goes by itself. */
+        const val TAKEOVER_WATCH_MARGIN_MS = 1_000L
 
         /** If focus never arrives after a wake into the LED, show it anyway. */
         const val SETTLE_FALLBACK_MS = 600L

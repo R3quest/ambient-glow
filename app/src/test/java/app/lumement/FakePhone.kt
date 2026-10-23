@@ -314,6 +314,10 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     /** The shown LED window has the focus: no glow screen has it meanwhile. */
     private var litFocused = false
 
+    /** GlowShield's touch watch ([watchTouches]): told of the next touch on the screen. */
+    private var touchWatch: (() -> Unit)? = null
+    private var touchWatches = 0
+
     /** The always-on display's window is up and drawn ([prepareLed]). */
     private var aodReady = false
     private var litTouch: (() -> Unit)? = null
@@ -391,9 +395,15 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         settle()
     }
 
-    /** A touch on the lit phone that isn't the LED: the lock screen's timeout starts over. */
+    /** A touch on the lit phone that isn't the LED: the lock screen's timeout starts over, and GlowShield's touch watch hears it. */
     fun touch() {
-        if (interactive) userActivity()
+        if (!interactive) return
+        userActivity()
+        touchWatch?.let {
+            touchWatch = null
+            later(0) { it() }
+        }
+        settle()
     }
 
     fun touchLed() {
@@ -524,6 +534,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         litReady = null
         litHides++
         litFocused = false
+        touchWatch = null
         GlowSession.bright = BrightStreak()
         proximity()
     }
@@ -810,6 +821,18 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         GlowSession.host?.onAodLedOut()
     }
 
+    override fun watchTouches(onTouch: () -> Unit, maxMs: Long) {
+        if (!shieldOn) return
+        touchWatch = onTouch
+        val watch = ++touchWatches
+        later(maxMs) { if (touchWatches == watch) touchWatch = null }
+    }
+
+    override fun stopWatchingTouches() {
+        touchWatch = null
+        touchWatches++
+    }
+
     override fun stopAodLed() {
         if (!aodBreathing) return
         aodBreathing = false
@@ -868,6 +891,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         endLitWait(false)
         litHides++
         giveFocusBack()
+        touchWatch = null
         shieldOn = false
         litShown = false
         aodBreathing = false

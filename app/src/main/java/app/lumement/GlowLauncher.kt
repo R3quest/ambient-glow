@@ -3,6 +3,7 @@ package app.lumement
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -103,8 +104,20 @@ object GlowLauncher {
         )
     }
 
-    /** True when alerts are allowed and the bridge channel still has heads-up importance. */
-    fun canPostBridge(context: Context): Boolean = canPeek(context, CHANNEL_ID)
+    /**
+     * True when alerts are allowed, the bridge channel still has heads-up importance, and its
+     * full-screen intent may start the glow screen ([canUseFullScreen]). Without that, the bridge
+     * only showed as a plain heads-up for 4 s and no glow screen came.
+     */
+    fun canPostBridge(context: Context): Boolean = canUseFullScreen(context) && canPeek(context, CHANNEL_ID)
+
+    /**
+     * A full-screen intent may start an activity: Android 14+ grants it by hand only, outside calls
+     * and alarms (a Play install has it off); the dashboard asks for it.
+     */
+    fun canUseFullScreen(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
 
     private fun canPeek(context: Context, channelId: String): Boolean {
         if (!canPost(context)) return false

@@ -31,6 +31,14 @@ internal fun isAlert(
 }
 
 /**
+ * The phone's own posts: the platform's ("Configure physical keyboard" as a keyboard connects, USB,
+ * storage) and SystemUI's (battery low, a screenshot). They tell of its state, never a message, and
+ * some stay up as long as the state does: the LED stayed lit for a keyboard (seen on the emulators,
+ * whose keyboard counts as one).
+ */
+internal fun fromTheSystem(pkg: String): Boolean = pkg == "android" || pkg == "com.android.systemui"
+
+/**
  * A post that asks for the whole screen: a ringing call, a ringing alarm, anything with a
  * full-screen intent ([fullScreen]). On an awake phone, which the lit LED keeps it, the system shows
  * it as a pop-up instead (One UI's incoming call: measured on the S23), and the LED's window, an
@@ -56,6 +64,18 @@ internal fun takesScreen(category: String?, fullScreen: Boolean, ongoing: Boolea
  */
 internal fun isQuietUpdate(flags: Int, newestAt: Long, waitingNewestAt: Long?): Boolean =
     flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 && waitingNewestAt != null && newestAt <= waitingNewestAt
+
+/** One message of a MessagingStyle post: when, and whether the phone's user wrote it ([mine]). */
+internal class MessageTime(val at: Long, val mine: Boolean)
+
+/**
+ * When the newest message from someone else came: of a chat's [messages], or [postedAt] (its
+ * `when`) for a post with none. The user's own replies don't count: replying from the notification,
+ * the app posts the chat again with the reply added, and as a new message it played the arrival
+ * effect and started a bright phase for a chat just answered. With only the user's, 0: nothing new.
+ */
+internal fun newestIncomingAt(messages: List<MessageTime>?, postedAt: Long): Long =
+    if (messages.isNullOrEmpty()) postedAt else messages.filterNot { it.mine }.maxOfOrNull { it.at } ?: 0L
 
 /** Categories that report a state rather than bring a message. */
 internal val IGNORED_CATEGORIES = setOf(
