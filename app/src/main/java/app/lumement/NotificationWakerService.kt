@@ -481,19 +481,20 @@ class NotificationWakerService : NotificationListenerService() {
         LedDiary.note(this, "launch", mode.name)
         wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
         // The full-screen intent wakes the panel: the LED lit there, not on the always-on display.
-        // So onto the always-on display only by the dark start; and with no full-screen intent
-        // allowed ([GlowLauncher.canUseFullScreen]), the dark start is the only way in, the glow
-        // screen lighting the panel itself.
+        // So onto the always-on display only by the dark start; and where the bridge can't be
+        // posted ([GlowLauncher.canPostBridge]: no full-screen grant, notifications denied, its
+        // channel turned down), the dark start is the only way in, the glow screen lighting the
+        // panel itself. Notifications denied (Android 13+), no LED came at all (an emulator, 2026-10-23).
         val woken = if (mode == WakeMode.AOD) WakeMode.LED else mode
-        val fullScreen = GlowLauncher.canUseFullScreen(this)
+        val bridge = GlowLauncher.canPostBridge(this)
         // Into the black LED face from a dark screen: straight in, while still dark, so the lock
         // screen never shows first. If it didn't arrive, the full-screen intent as ever.
-        val dark = (mode != WakeMode.WAKE && !power.isInteractive) || !fullScreen
+        val dark = (mode != WakeMode.WAKE && !power.isInteractive) || !bridge
         if (dark && GlowLauncher.startInTheDark(this, mode)) {
             mainHandler.postDelayed({
                 val host = GlowSession.host
                 if (host == null || host.isAway) {
-                    if (mode == WakeMode.AOD || !fullScreen) {
+                    if (mode == WakeMode.AOD || !bridge) {
                         GlowLog.d { "svc dark start didn't arrive: left dark" }
                         wakeLock.release()
                     } else {
