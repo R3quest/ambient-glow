@@ -342,6 +342,9 @@ object GlowSession {
 
         /** [GlowShield] went (turned off, or unbound by the system), and its windows with it. */
         fun onShieldGone()
+
+        /** The LED on the always-on display went out by itself ([LedRound]): nothing left to show, or its surface gone. */
+        fun onAodLedOut()
     }
 
     var host: Host? = null

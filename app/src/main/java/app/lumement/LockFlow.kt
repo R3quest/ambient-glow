@@ -175,6 +175,7 @@ internal interface ShieldPort {
     fun hideLit()
     fun prepareLed()
     fun startAodLed(colors: () -> List<Int>, round: Int): Boolean
+    fun redrawAodLed()
     fun stopAodLed()
     fun removeLit()
     fun removeLed()
@@ -195,6 +196,7 @@ internal object RealShield : ShieldPort {
     override fun hideLit() = GlowShield.hideLit()
     override fun prepareLed() = GlowShield.prepareLed()
     override fun startAodLed(colors: () -> List<Int>, round: Int) = GlowShield.startAodLed(colors, round)
+    override fun redrawAodLed() = GlowShield.redrawAodLed()
     override fun stopAodLed() = GlowShield.stopAodLed()
     override fun removeLit() = GlowShield.removeLit()
     override fun removeLed() = GlowShield.removeLed()
@@ -255,8 +257,16 @@ internal class LockFlow(
     /** The LED was put up during the sleep fade; the SCREEN_OFF / pause that may follow are expected. */
     private var ledArmedForSleep = false
 
-    /** The LED's window is going up over the face, the lock screen to come in front under it ([onLitReady]). */
-    private var litDue = false
+    /**
+     * The LED's window is going up over the face, the lock screen to come in front under it
+     * ([onLitReady]): black, touchable and holding the focus already, so it goes with the face
+     * ([endLedWindow]).
+     */
+    var litDue = false
+        private set
+
+    /** The LED window's showings ([readyLockScreen]): a ready for an earlier one is stale ([onLitReady]). */
+    private var litShows = 0
 
     /**
      * After an automatic wake (a new message lit the lock screen), cover the lock screen with
@@ -648,8 +658,13 @@ internal class LockFlow(
         }
         when {
             // Uncovered with the LED still in front: hold the panel on again, unless the LED's
-            // window has it already, holding it on, with the lock screen ready under it.
-            ledInFront && port.interactive -> if (!ledInWindow.value) showLed()
+            // window has it already, holding it on, with the lock screen ready under it. Its window
+            // going up (unstowing asked for it): the face's locks until the window has the focus.
+            ledInFront && port.interactive -> when {
+                ledInWindow.value -> Unit
+                litDue -> acquireKeepOn()
+                else -> showLed()
+            }
             // Asleep with the LED in front: wake straight into it.
             ledInFront -> {
                 port.holdCpu()
@@ -760,8 +775,9 @@ internal class LockFlow(
 
     override fun onPendingChanged() {
         if (!GlowPending.isEmpty) {
-            // The still LED shows every waiting app's colour at once: drawn again without the one read.
-            if (aodLit) shield.startAodLed(GlowPending::colors, 0)
+            // The still LED shows every waiting app's colour at once: drawn again without the one
+            // read, if that changed them, at its burn-in step.
+            if (aodLit) shield.redrawAodLed()
             return
         }
         if (ledInWindow.value && port.interactive) {
@@ -820,6 +836,17 @@ internal class LockFlow(
             }
         }
         coverWithLed("shield gone")
+    }
+
+    /**
+     * The LED on the always-on display went out by itself: off as far as the flow goes too, so the
+     * listener's check ([ensureLed]) and the next sleep light it again, rather than taking it as on.
+     */
+    override fun onAodLedOut() {
+        if (!aodLit) return
+        GlowLog.d { "act aod: LED out by itself" }
+        port.note("aod-off", "out")
+        aodLit = false
     }
 
     override fun ensureLed() {
@@ -1258,8 +1285,10 @@ internal class LockFlow(
      */
     fun updateLedWindow() {
         if (finishing) return
-        if (!ledInWindow.value) {
-            if (!litDue && ledWindowWantedNow()) readyLockScreen()
+        if (litDue) {
+            if (!ledWindowWantedNow()) endLedWindow()
+        } else if (!ledInWindow.value) {
+            if (ledWindowWantedNow()) readyLockScreen()
         } else if (ledWindowEnds(GlowSession.screenTakers.isNotEmpty(), port.inCall, ending.value)) {
             GlowLog.d { "act LED window making way" }
             endLedWindow()
@@ -1291,7 +1320,8 @@ internal class LockFlow(
      * proximity sensor's panel-off), as while its face was in front.
      */
     private fun readyLockScreen() {
-        if (!shield.showLit({ GlowPending.colors() }, 0, ::onLedWindowTouch, ::onLedWindowTap, ::onLitReady)) return
+        val show = ++litShows
+        if (!shield.showLit({ GlowPending.colors() }, 0, ::onLedWindowTouch, ::onLedWindowTap) { onLitReady(show, it) }) return
         GlowLog.d { "act LED in its window, the lock screen under it once it has the focus" }
         litDue = true
     }
@@ -1303,9 +1333,11 @@ internal class LockFlow(
      * and shows its icon over everything, unless another window has the focus; a listen under way
      * stops only at a check of its own ~0.5 s later. Uncovered as the window went up, before it had
      * the focus (0.03-0.2 s later), the icon showed for 0.1-0.2 s (measured on the S23, 2026-10-18).
+     * The ready of a window hidden and shown again before it came ([show] not the last) is stale:
+     * taken for the new one's, it ended that one's wait and left its window up unclaimed.
      */
-    private fun onLitReady(shown: Boolean) {
-        if (!litDue) return
+    private fun onLitReady(show: Int, shown: Boolean) {
+        if (!litDue || show != litShows) return
         litDue = false
         if (!shown) return
         if (finishing || !ledWindowWantedNow()) {
@@ -1356,8 +1388,15 @@ internal class LockFlow(
     /**
      * The LED's window goes. The lock screen under it, if ready, is the one in front now, on its
      * own timeout: the LED's locks go too, unless the LED's face is in front again (they are its).
+     * Still waiting for the focus ([litDue]), it goes too: left up, black over whatever comes in
+     * front next, it held the focus from the lock screen until the wait was over.
      */
     private fun endLedWindow() {
+        if (litDue) {
+            litDue = false
+            shield.hideLit()
+            return
+        }
         if (!ledInWindow.value) return
         ledInWindow.value = false
         shield.hideLit()
@@ -1370,11 +1409,14 @@ internal class LockFlow(
         shield.focusLockScreen()
     }
 
-    /** A tap on the LED: the lock screen under it, as a tap on the LED's face opens it. */
+    /**
+     * A tap on the LED: the lock screen under it, as a tap on the LED's face opens it. Still
+     * waiting for the focus, the lock screen isn't in front yet: it comes as from the face.
+     */
     private fun onLedWindowTap() {
         if (leaveIfUnlocked()) return
         userLooked("tap")
-        endLedWindow()
+        if (litDue && face.value == Face.LED) showLockScreen() else endLedWindow()
     }
 
     /**

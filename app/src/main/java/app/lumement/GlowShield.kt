@@ -252,6 +252,9 @@ class GlowShield : AccessibilityService() {
     private var litReady: ((Boolean) -> Unit)? = null
     private val litFocusLate = Runnable { endLitWait(true) }
 
+    /** Counts the window's hides: a ready posted before one ([endLitWait]) is for a window gone. */
+    private var litHides = 0
+
     private val panelModes = PanelModes({ getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY) }, LED_FADE_HZ)
 
     /**
@@ -277,18 +280,23 @@ class GlowShield : AccessibilityService() {
         tap()
     }
 
-    /** The window's wait for the focus is over ([addLit]): [shown], if it still is. */
+    /**
+     * The window's wait for the focus is over ([addLit]): [shown], if it still is when the post
+     * runs. Hidden meanwhile (the service unbound, the session over), or shown again for another
+     * glow screen, it is false: the lock screen would come in front with no LED over it.
+     */
     private fun endLitWait(shown: Boolean) {
         val ready = litReady ?: return
         litReady = null
         timers.removeCallbacks(litFocusLate)
-        val now = shown && ledShown
-        timers.post { ready(now) }
+        val hides = litHides
+        timers.post { ready(shown && ledShown && litHides == hides) }
     }
 
     /** The lit LED goes out and its window hides; it stays up, for the next. */
     private fun hideLedWindow() {
         endLitWait(false)
+        litHides++
         timers.removeCallbacks(ledTapNow)
         ledTouch = null
         ledTap = null
@@ -330,7 +338,7 @@ class GlowShield : AccessibilityService() {
      */
     private fun addAodWindow() {
         if (aodWindow != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val breath = LedRound(this, LedSurface(this), dozing = true)
+        val breath = LedRound(this, LedSurface(this), dozing = true, onOut = ::aodOut)
         val view = FrameLayout(this)
         view.addView(breath.surface.view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
@@ -355,6 +363,15 @@ class GlowShield : AccessibilityService() {
         breath.start(settings.forScreen(geometry.value), geometry.value.fitted(settings, resources.displayMetrics.density), colors, round)
         setAodShown(breath.running)
         return breath.running
+    }
+
+    /**
+     * The round over the always-on display went out by itself (nothing left to show, or its surface
+     * gone at a step): the window is skipped again, and the glow screen knows the LED is off.
+     */
+    private fun aodOut() {
+        setAodShown(false)
+        GlowSession.host?.onAodLedOut()
     }
 
     /** The light goes out; the window stays for the next doze, skipped by the compositor. */
@@ -857,6 +874,14 @@ class GlowShield : AccessibilityService() {
          * up and drawn yet ([prepareLed]).
          */
         fun startAodLed(colors: () -> List<Int>, round: Int): Boolean = instance?.startAodBreath(colors, round) ?: false
+
+        /**
+         * The LED on the always-on display drawn again if its colours changed (one read elsewhere),
+         * at the same burn-in step, the next step's alarm as it was.
+         */
+        fun redrawAodLed() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) instance?.aodBreath?.redraw()
+        }
 
         /** The light goes out; the window stays for the next doze. */
         fun stopAodLed() {

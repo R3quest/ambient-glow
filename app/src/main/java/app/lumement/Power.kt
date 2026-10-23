@@ -118,6 +118,13 @@ internal class AfterCall(private val context: Context, private val then: () -> U
     fun arm() {
         if (armed) return
         armed = true
+        listen()
+        // Over before the listeners were in (the caller saw the call, then it hung up): no event
+        // will come, and none reports the mode as it is. Posted: [then] runs after the caller is done.
+        main.post(lookAgain)
+    }
+
+    private fun listen() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val onMode = AudioManager.OnModeChangedListener { mode -> if (mode == AudioManager.MODE_NORMAL) look() }
             modeListener = onMode
