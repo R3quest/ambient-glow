@@ -311,6 +311,9 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     /** The LED window's hides, as GlowShield counts them: a ready posted before one is for a window gone. */
     private var litHides = 0
 
+    /** The shown LED window has the focus: no glow screen has it meanwhile. */
+    private var litFocused = false
+
     /** The always-on display's window is up and drawn ([prepareLed]). */
     private var aodReady = false
     private var litTouch: (() -> Unit)? = null
@@ -520,6 +523,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         litTap = null
         litReady = null
         litHides++
+        litFocused = false
         GlowSession.bright = BrightStreak()
         proximity()
     }
@@ -654,7 +658,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
                 log += "system: resumed"
                 s.flow.onResume()
                 later(FOCUS_MS, s) {
-                    if (s.resumed && !s.windowFocused) {
+                    if (s.resumed && !s.windowFocused && !litFocused) {
                         s.windowFocused = true
                         s.flow.onFocusChanged(true)
                     }
@@ -714,15 +718,27 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
 
     override fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit): Boolean {
         if (!shieldOn) return false
+        hideLit() // as GlowShield's addLit: a window up is hidden first, its wait answered
         litShown = true
         litTouch = onTouch
         litTap = onTap
         litReady = onReady
         log += "lit LED up"
-        // The window takes the focus a moment later, as GlowShield's does; or its wait runs out.
+        // The window takes the focus a moment later, from the glow screen under it; or its wait runs out first.
         val hides = litHides
-        later(litFocusMs.coerceAtMost(LIT_FOCUS_WAIT_MS)) { if (litHides == hides) endLitWait(true) }
+        later(litFocusMs) { if (litHides == hides) litTakesFocus() }
+        if (litFocusMs > LIT_FOCUS_WAIT_MS) later(LIT_FOCUS_WAIT_MS) { if (litHides == hides) endLitWait(true) }
         return true
+    }
+
+    private fun litTakesFocus() {
+        litFocused = true
+        for (s in screens.toList()) {
+            if (!s.windowFocused) continue
+            s.windowFocused = false
+            s.flow.onFocusChanged(false)
+        }
+        endLitWait(true)
     }
 
     /** The lit LED window's wait for the focus is over, as GlowShield posts it: whether it shows is read as the post runs. */
@@ -740,11 +756,25 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     override fun hideLit() {
         endLitWait(false)
         litHides++
+        giveFocusBack()
         if (!litShown) return
         litShown = false
         litTouch = null
         litTap = null
         log += "lit LED down"
+    }
+
+    /** The LED window hidden: the glow screen in front, if resumed, has the focus again a moment later. */
+    private fun giveFocusBack() {
+        if (!litFocused) return
+        litFocused = false
+        val s = screen
+        later(FOCUS_MS, s) {
+            if (s.resumed && !s.windowFocused && !litFocused) {
+                s.windowFocused = true
+                s.flow.onFocusChanged(true)
+            }
+        }
     }
 
     override fun prepareLed() {
@@ -837,6 +867,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         // As GlowShield's release: the LED's window hides first, its wait for the focus over.
         endLitWait(false)
         litHides++
+        giveFocusBack()
         shieldOn = false
         litShown = false
         aodBreathing = false

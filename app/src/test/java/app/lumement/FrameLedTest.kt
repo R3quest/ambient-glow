@@ -352,4 +352,18 @@ class FrameLedTest {
             last = turn
         }
     }
+
+    /**
+     * On the always-on display a read is drawn again only where what is drawn changed: the frame in
+     * Duo or Spectrum takes one colour from the waiting apps, so another app read changes nothing.
+     */
+    @Test
+    fun theStillLedIsDrawnFromTheColoursItShows() {
+        val palette = listOf(0xFF25D366.toInt(), 0xFF2AABEE.toInt(), 0xFFE1306C.toInt())
+        val frame = GlowSettings(ledForm = LedForm.FRAME)
+        assertEquals("the frame in the apps' colours: all", palette, stillColors(frame, palette, 4))
+        assertEquals("Duo: this step's colour", listOf(palette[1]), stillColors(frame.copy(edgeColor = EdgeColor.DUO), palette, 4))
+        assertEquals(listOf(palette[0]), stillColors(frame.copy(edgeColor = EdgeColor.SPECTRUM), palette, 0))
+        assertEquals("the ring: all", palette, stillColors(GlowSettings(ledForm = LedForm.RING, edgeColor = EdgeColor.DUO), palette, 4))
+    }
 }

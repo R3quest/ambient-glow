@@ -135,7 +135,8 @@ class PendingStoreTest {
         GlowPending.put(mail)
         GlowPending.put(chat)
 
-        GlowPending.keepOnly(setOf(chat.key))
+        assertTrue("one went", GlowPending.keepOnly(setOf(chat.key)))
+        assertFalse("none left to go", GlowPending.keepOnly(setOf(chat.key)))
 
         assertEquals(listOf(chat), GlowPending.entries.toList())
         assertEquals(listOf(chat), decodePending(prefs.getString("pending", null)))

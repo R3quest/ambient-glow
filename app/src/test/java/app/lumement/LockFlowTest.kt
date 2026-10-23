@@ -140,6 +140,50 @@ class LockFlowTest {
         assertEquals(Face.LOCK_SCREEN, flow.face.value)
     }
 
+    /**
+     * The bright phase ends just as the window took the focus, its ready not run yet: the glow
+     * screen has no focus then, and the phone was left lit black until the lock screen's timeout
+     * rather than asleep at once. The window's focus is ours as much.
+     */
+    @Test
+    fun theBrightPhaseEndingAsTheWindowTakesTheFocusSleepsAtOnce() {
+        windowWaitsForTheFocus()
+        while (phone.litWaiting) phone.runNext() // the focus is the window's, its ready not run yet
+        assertTrue(flow.litDue)
+        phone.batterySaverTurns(true)
+
+        logged("blackout", "sleep now")
+        phone.advance(2_000)
+        assertFalse(phone.interactive)
+        assertFalse(phone.litShown)
+    }
+
+    /** Picked up while the window waits: the lock screen, as from the LED's face; the lift was ignored. */
+    @Test
+    fun aLiftWhileTheWindowWaitsOpensTheLockScreen() {
+        windowWaitsForTheFocus()
+        phone.pickUp()
+        phone.advance(1_000)
+
+        logged("diary: peek lift")
+        assertFalse(phone.litShown)
+        assertFalse(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
+    /** An alarm clock rings while the window waits: the lock screen in front, the alarm's screen over it, as under the window. */
+    @Test
+    fun anAlarmClockRingingWhileTheWindowWaitsTakesItDown() {
+        phone.nextAlarmAt = phone.now + 1
+        windowWaitsForTheFocus()
+        phone.alarmRings(next = phone.now + 24 * 3_600_000L)
+        phone.advance(1_000)
+
+        assertFalse(phone.litShown)
+        assertFalse(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
     /** A message wanting the lock screen while the window waits: the window goes, or the lock screen lights under its black. */
     @Test
     fun aMessageWhileTheWindowWaitsTakesItDown() {

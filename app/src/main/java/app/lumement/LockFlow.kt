@@ -2,8 +2,10 @@ package app.lumement
 
 import android.service.notification.StatusBarNotification
 import android.view.Display
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /** What the glow screen is doing right now. */
 internal enum class Face {
@@ -260,9 +262,9 @@ internal class LockFlow(
     /**
      * The LED's window is going up over the face, the lock screen to come in front under it
      * ([onLitReady]): black, touchable and holding the focus already, so it goes with the face
-     * ([endLedWindow]).
+     * ([endLedWindow]). The glow screen keeps its own dot out under it, as for [ledInWindow].
      */
-    var litDue = false
+    var litDue by mutableStateOf(false)
         private set
 
     /** The LED window's showings ([readyLockScreen]): a ready for an earlier one is stale ([onLitReady]). */
@@ -887,6 +889,7 @@ internal class LockFlow(
     override fun onRestChanged() {
         GlowLog.d { "act rest=${GlowSession.resting} face=${face.value} interactive=${port.interactive}" }
         if (GlowSession.resting) {
+            val windowGoingUp = litDue // it has the focus, until clearLed takes it down
             if (ledInWindow.value) sleepFromUnderLed() // no lock screen popping up: dark, as from the LED's face
             clearLed()
             port.cancel(LockTimer.TAKEOVER)
@@ -896,7 +899,7 @@ internal class LockFlow(
                 face.value != Face.LED -> Unit // the lock screen times out as it would without us
                 // A black arrival plays out first ([onArrivalDone]).
                 arriving.value -> Unit
-                port.interactive -> sleepUnderCover()
+                port.interactive -> sleepUnderCover(windowGoingUp)
                 // Dark, a relight on its way: call it off and leave the lock screen for the next wake.
                 else -> {
                     port.cancel(LockTimer.WAKE)
@@ -1359,6 +1362,13 @@ internal class LockFlow(
      * [SLEEP_WATCH_MS] (measured on the S23).
      */
     private fun openUnderLed(seenBy: String) {
+        if (litDue) {
+            // The window still waits for the focus: the lock screen isn't in front yet, so it comes as from the face.
+            GlowLog.d { "act opened as the LED's window went up ($seenBy)" }
+            userLooked(if (seenBy == "lift") "lift" else "power")
+            showLockScreen()
+            return
+        }
         if (!ledInWindow.value) return
         GlowLog.d { "act opened under the LED ($seenBy): sleep cancelled, window lifted" }
         userLooked(if (seenBy == "lift") "lift" else "power")
@@ -1428,6 +1438,12 @@ internal class LockFlow(
      * alarm's screen over it. Once that is gone, the lock screen's own timeout runs.
      */
     private fun alarmRings() {
+        if (litDue) {
+            // The window still waits for the focus: the lock screen comes in front, the alarm's screen over it, as below.
+            GlowLog.d { "act alarm rang as the LED's window went up: lock screen" }
+            if (!leaveIfUnlocked()) showLockScreen()
+            return
+        }
         if (!ledInWindow.value) return
         GlowLog.d { "act alarm rang under the LED: window lifted" }
         if (!leaveIfUnlocked()) endLedWindow()
@@ -1608,10 +1624,11 @@ internal class LockFlow(
      * screen back, whose own short timeout then runs, and hold the display black meanwhile with
      * [GlowShield] (without it the lock screen shows until then). [onScreenOff] takes it from there.
      * With [GlowShield] and nothing else in use (the LED has focus: no shade, no pop-up over it),
-     * the phone sleeps at once instead of lit black until that timeout.
+     * the phone sleeps at once instead of lit black until that timeout. [windowGoingUp]: the LED's
+     * window over the face has the focus, which is ours as much ([litDue]).
      */
-    private fun sleepUnderCover() {
-        val unused = port.windowFocused
+    private fun sleepUnderCover(windowGoingUp: Boolean = litDue) {
+        val unused = port.windowFocused || windowGoingUp
         shield.blackout()
         showLockScreen(underCover = true)
         if (unused && shield.sleepNow()) GlowLog.d { "act asleep at once, under the cover" }
