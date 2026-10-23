@@ -17,6 +17,7 @@ import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.view.Display
+import androidx.core.content.edit
 import androidx.core.os.BundleCompat
 import app.lumement.dashboard.GrantReturn
 
@@ -210,6 +211,8 @@ class NotificationWakerService : NotificationListenerService() {
         }
         GrantReturn.granted(this, GrantReturn.Grant.LISTENER)
         if (restored) GlowLog.d { "svc restored ${GlowPending.entries.size} waiting" }
+        // Messages posted while the listener was away arrive as new ones would have: they light it.
+        if (catchUp(active)) return
         // Restored by a new process, or kept by this one through a rebind, which cancelled the
         // screen-off's relights ([releaseScreenReceiver]): lit as the screen-off would have had it.
         if (!GlowPending.isEmpty) relightIfWaiting()
@@ -231,6 +234,7 @@ class NotificationWakerService : NotificationListenerService() {
         noteScreenTaker(sbn)
         val ranked = rankingMap?.getRanking(sbn.key, ranking) == true
         if (!isRealMessage(sbn, if (ranked) ranking else null)) return
+        noteHeard(sbn.postTime)
         // Every message keeps its app on the Apps screen, muted or not; a muted one stops here.
         val auto = brandColors.of(sbn)
         val pkg = sbn.packageName
@@ -470,6 +474,33 @@ class NotificationWakerService : NotificationListenerService() {
         GlowSession.host?.onPendingChanged()
     }
 
+    /** The newest message heard, by its post time, kept with the waiting ones: where a reconnect's [catchUp] starts. */
+    private fun noteHeard(at: Long) {
+        val prefs = getSharedPreferences(PENDING_FILE, MODE_PRIVATE)
+        if (at > prefs.getLong(KEY_HEARD_AT, 0L)) prefs.edit { putLong(KEY_HEARD_AT, at) }
+    }
+
+    /**
+     * Takes the messages posted while the listener was away ([missedWhileAway]) as they would have
+     * been taken; true if any now waits (they light the LED as a new message does). The first
+     * connect only marks where the next one starts.
+     */
+    private fun catchUp(active: Array<StatusBarNotification>?): Boolean {
+        active ?: return false
+        val prefs = getSharedPreferences(PENDING_FILE, MODE_PRIVATE)
+        val heardAt = if (prefs.contains(KEY_HEARD_AT)) prefs.getLong(KEY_HEARD_AT, 0L) else null
+        if (heardAt == null) prefs.edit { putLong(KEY_HEARD_AT, System.currentTimeMillis()) }
+        val waiting = GlowPending.entries.mapTo(HashSet()) { it.key }
+        val missed = missedWhileAway(active.associate { it.key to it.postTime }, heardAt, waiting, System.currentTimeMillis())
+        if (missed.isEmpty()) return false
+        val byKey = active.associateBy { it.key }
+        val rankingMap = currentRanking
+        for (key in missed) byKey[key]?.let { onNotificationPosted(it, rankingMap) }
+        val caught = GlowPending.entries.any { it.key in missed }
+        if (caught) GlowLog.d { "svc caught up with messages posted while away" }
+        return caught
+    }
+
     /** Which of [keys] are still in the shade, or null if the system can't say yet. */
     private fun stillShowing(keys: List<String>): Set<String>? = try {
         getActiveNotifications(keys.toTypedArray())?.mapTo(HashSet()) { it.key }
@@ -567,6 +598,9 @@ class NotificationWakerService : NotificationListenerService() {
 
         /** [GlowPending]'s file, so the waiting messages outlive the process. */
         const val PENDING_FILE = "lumement_pending"
+
+        /** In it: the post time of the newest message heard ([noteHeard]). */
+        const val KEY_HEARD_AT = "heard_at"
 
         /** The watchdog looks this long after the screen went off: past every relight's own delay. */
         const val LED_CHECK_MS = 4_000L

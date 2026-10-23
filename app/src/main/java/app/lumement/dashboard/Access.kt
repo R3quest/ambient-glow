@@ -39,8 +39,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -364,6 +366,22 @@ internal object GrantReturn {
             GlowLog.d { "setup return refused: $e" }
         }
     }
+}
+
+/**
+ * Play's prominent disclosure for the accessibility service, wherever the dashboard offers it
+ * outside setup (the Screen tab's note, the waiting card's always-on display row): what the
+ * service does and an explicit yes before Settings opens, as setup's own page asks.
+ */
+@Composable
+internal fun ShieldDisclosure(onTurnOn: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.setup_shield_title)) },
+        text = { Text(stringResource(R.string.setup_shield_body)) },
+        confirmButton = { TextButton(onClick = onTurnOn) { Text(stringResource(R.string.access_shield_grant)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.setup_skip)) } },
+    )
 }
 
 /** What a setup page asks for: a required grant, the optional shield, or nothing: all set. */

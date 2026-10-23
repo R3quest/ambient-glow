@@ -77,6 +77,22 @@ internal class MessageTime(val at: Long, val mine: Boolean)
 internal fun newestIncomingAt(messages: List<MessageTime>?, postedAt: Long): Long =
     if (messages.isNullOrEmpty()) postedAt else messages.filterNot { it.mine }.maxOfOrNull { it.at } ?: 0L
 
+/**
+ * Posts made while the listener was away (an update, a crash, a permission change: gone 0.5 s on
+ * the S23, seconds on a slow phone), which no [android.service.notification.NotificationListenerService.onNotificationPosted]
+ * brought: of the shade's [posts] (key to post time), those after [heardAt] (the newest message
+ * heard), at most [CATCH_UP_MS] old at [now] and not waiting already, oldest first. None without a
+ * [heardAt]: at the first connect (a new install) the whole shade would count as new.
+ */
+internal fun missedWhileAway(posts: Map<String, Long>, heardAt: Long?, waiting: Set<String>, now: Long): List<String> {
+    heardAt ?: return emptyList()
+    return posts.filter { (key, at) -> at > heardAt && now - at <= CATCH_UP_MS && key !in waiting }
+        .entries.sortedBy { it.value }.map { it.key }
+}
+
+/** How old a post missed while away may be and still light the LED. */
+internal const val CATCH_UP_MS = 10 * 60_000L
+
 /** Categories that report a state rather than bring a message. */
 internal val IGNORED_CATEGORIES = setOf(
     NotificationCompat.CATEGORY_TRANSPORT,

@@ -40,6 +40,20 @@ class MessageFilterTest {
         assertEquals("only the user's: nothing new", 0L, newestIncomingAt(listOf(reply), postedAt = 5_000L))
     }
 
+    /**
+     * The listener away (an update, a crash): what was posted meanwhile, after the newest message
+     * heard and not too old, is taken at the reconnect; nothing at the first connect.
+     */
+    @Test
+    fun postsMissedWhileAwayAreTakenAtTheReconnect() {
+        val now = 100 * 60_000L
+        val posts = mapOf("old" to now - 60_000L, "gap" to now - 2_000L, "gap2" to now - 1_000L, "stale" to now - CATCH_UP_MS - 1, "waits" to now - 500L)
+        val heardAt = now - 30_000L
+        assertEquals(listOf("gap", "gap2"), missedWhileAway(posts, heardAt, waiting = setOf("waits"), now = now))
+        assertEquals("first connect: no mark, nothing", emptyList<String>(), missedWhileAway(posts, null, emptySet(), now))
+        assertEquals("all heard", emptyList<String>(), missedWhileAway(posts, now, emptySet(), now))
+    }
+
     /** The platform's and SystemUI's posts tell of the phone's state ("Configure physical keyboard", battery low), never a message. */
     @Test
     fun thePhonesOwnPostsAreNoMessages() {
