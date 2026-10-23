@@ -13,13 +13,16 @@ import kotlin.math.abs
 /**
  * Hides the status and navigation bars over a black LED screen. Their icons and gesture handle
  * are set dark, so the moment the system shows them anyway (One UI does on every wake) they are
- * invisible on black. A swipe still brings them back for a moment. On Android 8-10, until the user
+ * invisible on black. A swipe still brings them back for a moment. On stock Android, until the user
  * has once confirmed it for any app ([immersiveConfirmed]), hiding the navigation bar this way puts
- * up the system's "Viewing full screen" banner, bright over the black until tapped (seen on an
- * Android 8 emulator, 2026-10-23): there the navigation bar stays, its dark buttons on black.
+ * up the system's "Viewing full screen" banner, bright over the black until tapped, again at every
+ * message (seen on emulators, 2026-10-23: Android 8 at once; Android 14 1.4 s into the LED's face,
+ * without GlowShield's window to take over from it): there the navigation bar stays, its dark
+ * handle or buttons on black. One UI shows no such banner (and so never records it as confirmed).
  */
 internal fun Window.hideBarsOnBlack() {
-    val bars = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && !immersiveConfirmed(context.contentResolver)) {
+    val oneUi = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+    val bars = if (!oneUi && !immersiveConfirmed(context.contentResolver)) {
         WindowInsetsCompat.Type.statusBars()
     } else {
         WindowInsetsCompat.Type.systemBars()
@@ -32,7 +35,7 @@ internal fun Window.hideBarsOnBlack() {
     }
 }
 
-/** Android 8-10's immersive-mode confirmation is given ("Got it", once for every app): a hidden setting, read only. */
+/** Stock Android's immersive-mode confirmation is given ("Got it", once for every app): a hidden setting, read only. */
 private fun immersiveConfirmed(resolver: ContentResolver): Boolean =
     runCatching { Settings.Secure.getString(resolver, IMMERSIVE_MODE_CONFIRMATIONS) }.getOrNull() == "confirmed"
 
