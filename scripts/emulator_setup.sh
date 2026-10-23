@@ -37,6 +37,8 @@ else
 fi
 sh_ settings put secure enabled_accessibility_services "$PKG/$PKG.GlowShield"
 sh_ settings put secure accessibility_enabled 1
+# Emulators stay awake on the charger (a developer option, on in CI's): a phone's lock screen times out.
+sh_ settings put global stay_on_while_plugged_in 0
 if [ "$sdk" -ge 33 ]; then sh_ pm grant $PKG android.permission.POST_NOTIFICATIONS; fi
 if [ "$sdk" -ge 34 ]; then sh_ appops set $PKG USE_FULL_SCREEN_INTENT allow; fi
 
