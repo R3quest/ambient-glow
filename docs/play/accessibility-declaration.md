@@ -32,9 +32,20 @@ in-app disclosure (see the end).
 >    on and draining the battery.
 > 4. **The LED on the always-on display:** where the always-on display is on, the LED shows still
 >    in a see-through overlay over it.
+> 5. **Bringing Lumement's own screen up when a message arrives** on a locked phone: while the
+>    service is on, Android lets the app start that screen from the background, so the LED comes
+>    straight up in the dark, without the lock screen flashing first. Where the full-screen
+>    notification can't be used (its permission not granted, or notifications turned off for
+>    Lumement), this is the only way the LED appears.
+> 6. **Leaving a lock screen that is being read alone:** for the 2.5 seconds after a message lights
+>    the lock screen, before the LED covers it, a 1x1 pixel transparent window is told only that
+>    the screen was touched (Android's "touch outside" signal, which carries no position or content
+>    for another app's window). A touch keeps the lock screen as it is; nothing about the touch is
+>    kept.
 >
 > The service asks for no accessibility events (no `accessibilityEventTypes`), can't read window
-> content (`canRetrieveWindowContent="false"`), and performs no gestures or clicks. It never
+> content (`canRetrieveWindowContent="false"`), and performs no gestures or clicks. The touch
+> signal in (6) is a window flag, not an accessibility event, and says only that a touch happened. It never
 > reads, collects, stores or sends anything on the screen. Lumement has no internet permission.
 > The app works without the service: the effect then plays on Lumement's own screen.
 
@@ -60,16 +71,16 @@ the service on, that says what the service does and gets an explicit yes. Setup'
 does this: `setup_shield_title` / `setup_shield_body` ("Plays your effect over the lock screen
 when a message arrives… Lumement reads nothing on screen.") with **Turn on** and **Not now**.
 
-**To fix before submitting:** the
-dashboard's other ways in, the Screen tab's note (`arrival_needs_shield`,
-`arrival_needs_shield_led`) and the waiting card's always-on display row, go straight to
-Settings from a one-line note. A reviewer can find that path. Each should show the same
-disclosure as setup, with its Turn on / Not now, before opening Settings. The disclosure text
-should also name the API and the screen-off action. A suggested wording:
+The dashboard's other ways in, the Screen tab's note (`arrival_needs_shield`,
+`arrival_needs_shield_led`) and the waiting card's always-on display row, show the same
+disclosure as a dialog (`ShieldDisclosure` in `dashboard/Access.kt`) with Turn on / Not now
+before Settings opens (done 2026-10-23). Setup and the dialog share one text, which names the API,
+everything the service does and the screen-off action:
 
 > **Effects on the lock screen**
 > Lumement uses Android's accessibility service to draw your effect and the LED over the lock
-> screen, and to turn the screen off when no message is left to show. It reads nothing on the
-> screen, collects nothing, and never goes online. Android will warn that it could have full
-> control; it uses only these windows and the screen-off action.
+> screen, to bring its own screen up when a message arrives, to notice that the lit lock screen was
+> touched (nothing of where or what), and to turn the screen off when no message is left to show.
+> It reads nothing on the screen, collects nothing, and never goes online. Android will warn that it
+> could have full control: it uses only these windows and the screen-off action.
 > [Not now] [Turn on]

@@ -37,4 +37,7 @@ Don't claim it as an alarm or calling app. Play can audit that and remove the ap
 channel `glow_wake`, category `REMINDER`, with `setFullScreenIntent(…, true)` and
 `setTimeoutAfter(4 s)`. `WakeScreenActivity` cancels it as it starts. With *Lumement effects*
 (the accessibility service) on, most wakes start the screen directly and don't use the
-full-screen intent (`GlowLauncher.startInTheDark`). The full-screen intent is the fallback.
+full-screen intent (`GlowLauncher.startInTheDark`). The full-screen intent is the fallback. And
+the other way round: where the full-screen intent can't be used (not granted, or notifications
+off for Lumement), the launch takes the direct start alone (`NotificationWakerService.launch`,
+2026-10-23) and posts no bridge notification, which would only show as a plain heads-up.

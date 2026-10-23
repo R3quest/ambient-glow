@@ -567,6 +567,17 @@ private fun ScreenPage(
     actions: AccessActions,
     edit: SettingsEdit,
 ) {
+    // Outside setup, the service is asked for with the same disclosure and consent ([ShieldDisclosure]).
+    var askShield by rememberSaveable { mutableStateOf(false) }
+    if (askShield) {
+        ShieldDisclosure(
+            onTurnOn = {
+                askShield = false
+                actions.shield()
+            },
+            onDismiss = { askShield = false },
+        )
+    }
     SettingsGroup(index = "01", title = R.string.group_screen_title, body = R.string.group_screen_body) {
         ScreenCard(
             settings = settings,
@@ -574,7 +585,7 @@ private fun ScreenPage(
             previewHeld = previewHeld,
             loop = loop,
             shieldOn = access.shield,
-            onShield = actions.shield,
+            onShield = { askShield = true },
             onSelect = { mode -> edit(save = true) { it.copy(arrival = mode) } },
         )
     }
@@ -585,7 +596,7 @@ private fun ScreenPage(
             aod = access.oneUiAod,
             shieldOn = access.shield,
             onAod = actions.aod,
-            onShield = actions.shield,
+            onShield = { askShield = true },
             onBrightFor = { choice -> edit(save = true) { it.copy(brightFor = choice) } },
             onAfterBright = { choice -> edit(save = true) { it.copy(afterBright = choice) } },
         )
