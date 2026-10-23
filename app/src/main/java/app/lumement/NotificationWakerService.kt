@@ -62,15 +62,21 @@ class NotificationWakerService : NotificationListenerService() {
     private var lockLooks: List<Long> = emptyList()
     private var lockLook = 0
     private var lockWaitFrom = 0L
+    private var screenOffAt = 0L
     private val relightOnceLocked = Runnable {
         lockLook++
         if (keyguard.isKeyguardLocked || lockLook >= lockLooks.size) {
             lockWait = LockWait.DONE
-            relightIfWaiting()
+            if (arrivesOnceLocked && keyguard.isKeyguardLocked) arriveOnceLocked() else relightIfWaiting()
+            arrivesOnceLocked = false
         } else {
             nextLockLook()
         }
     }
+
+    // A new message came in the lock delay: once locked, it arrives as it would have then, not as
+    // a relight (which keeps off an always-on display shown for new notifications only).
+    private var arrivesOnceLocked = false
 
     private fun nextLockLook() {
         val wait = lockWaitFrom + lockLooks[lockLook] - SystemClock.elapsedRealtime()
@@ -93,6 +99,7 @@ class NotificationWakerService : NotificationListenerService() {
             mainHandler.removeCallbacks(checkLed)
             mainHandler.removeCallbacks(relightOnceLocked)
             lockWait = LockWait.NONE
+            arrivesOnceLocked = false
             // A glow screen on top of the lock screen handles its own screen-off; with none, the
             // listener relights. With nothing waiting there is no LED: let the CPU sleep at once.
             // Nor while Do Not Disturb rests it.
@@ -105,6 +112,7 @@ class NotificationWakerService : NotificationListenerService() {
             val expectsAod = if (screenOff) GlowSession.expectsAod(context) else null
             relightAtDoze = relights && GlowSession.host?.isAway != false && expectsAod != false
             if (screenOff) {
+                screenOffAt = SystemClock.elapsedRealtime()
                 GlowLog.d { "svc sleep expected: always-on display $expectsAod" }
                 watchSleep()
             } else {
@@ -200,10 +208,12 @@ class NotificationWakerService : NotificationListenerService() {
         val active = activeNow()
         noteScreenTakers(active)
         learnApps(active)
-        GlowPending.keepIn(getSharedPreferences(PENDING_FILE, MODE_PRIVATE))
+        GlowPending.keepIn(getSharedPreferences(PENDING_FILE, MODE_PRIVATE), bootCount())
         // A new process (an app update, or the system had killed it): the messages still unread
-        // wait on the LED again, which then lights as the screen-off would have had it.
+        // wait on the LED again, in the bright phase they had, and it lights as the screen-off
+        // would have had it.
         val restored = GlowPending.restore(::stillShowing)
+        if (restored) GlowSession.bright = GlowPending.keptBright()
         pruneStalePending()
         if (!screenReceiverRegistered) {
             registerScreenEvents(screenEvents)
@@ -289,6 +299,13 @@ class NotificationWakerService : NotificationListenerService() {
         // In a call: dark, the LED comes once the call is over ([relightPlan]'s AFTER_CALL); no
         // glow screen may be left to do it, as one that finished let go of its own call watch.
         if (audio.inCall) {
+            relightIfWaiting()
+            return
+        }
+        // Dark but not locked yet (the lock delay after a screen-off): a wake now would light the
+        // unlocked phone, and the glow screen would only step aside. The LED once it locks.
+        if (!power.isInteractive && !keyguard.isKeyguardLocked) {
+            arrivesOnceLocked = true
             relightIfWaiting()
             return
         }
@@ -420,6 +437,29 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     /**
+     * The message that came in the lock delay, now that the phone has locked: the glow screen as
+     * for a new message (its arrival, then the lit LED in the phase it started), unless something
+     * rightly keeps the LED dark or a glow screen is up already; those go as a relight would.
+     */
+    private fun arriveOnceLocked() {
+        val plan = relightPlan(
+            screenOn = power.isInteractive,
+            waiting = !GlowPending.isEmpty,
+            resting = GlowSession.resting,
+            hostOnTop = GlowSession.host?.isAway == false,
+            inCall = audio.inCall,
+            locked = true,
+        )
+        if (plan != Relight.NOW) {
+            relightIfWaiting()
+            return
+        }
+        GlowLog.d { "svc locked: the message from the lock delay arrives" }
+        val arrival = arrivalFor(GlowPrefs.load(this).arrival, GlowSession.resting)
+        if (launch(wakeModeFor(arrival, power.isInteractive), GlowPending.newestColor)) lastWakeAt = SystemClock.elapsedRealtime()
+    }
+
+    /**
      * The screen went off unlocked: with a lock delay (One UI: 5 s after the screen times out) it
      * locks a little later, with nothing to tell us. Look at the moments [lockChecks] gives, then
      * relight. Once per screen-off: a phone that stays unlocked (Smart Lock) isn't waited on again.
@@ -430,9 +470,17 @@ class NotificationWakerService : NotificationListenerService() {
         lockWait = if (lockLooks.isEmpty()) LockWait.DONE else LockWait.WAITING
         if (lockLooks.isEmpty()) return
         lockLook = 0
-        lockWaitFrom = SystemClock.elapsedRealtime()
+        // [lockChecks] counts from the screen-off; a new process didn't see it: from now.
+        lockWaitFrom = if (screenOffAt > 0L) screenOffAt else SystemClock.elapsedRealtime()
         GlowLog.d { "svc unlocked: relight once it locks, looking at $lockLooks ms" }
         nextLockLook()
+    }
+
+    /** Which boot this is, to tell its elapsed times from an earlier boot's; -1 if unknown. */
+    private fun bootCount(): Int = try {
+        android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.BOOT_COUNT, -1)
+    } catch (_: Exception) {
+        -1
     }
 
     /** How long after the screen goes off the phone locks (a hidden but readable setting), or null. */
@@ -552,6 +600,7 @@ class NotificationWakerService : NotificationListenerService() {
         afterCall.cancel()
         // The waits those were: left set, a rebind's screen-off would think them still under way.
         lockWait = LockWait.NONE
+        arrivesOnceLocked = false
         relightAtDoze = false
         if (screenReceiverRegistered) {
             unregisterReceiver(screenEvents)

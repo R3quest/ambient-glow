@@ -160,4 +160,34 @@ class PendingStoreTest {
         GlowSession.allRead()
         assertEquals(BrightStreak(), GlowSession.bright)
     }
+
+    /** An app update with the LED lit: the new process lights it within the phase the old one had. */
+    @Test
+    fun theBrightPhaseIsKeptForTheBootItCountsFrom() {
+        val prefs = FakePrefs()
+        GlowPending.keepIn(prefs, boot = 12)
+        val streak = BrightStreak().onMessage(now = 60_000L, brightForMs = BrightFor.TEN.ms)
+        GlowSession.bright = streak
+
+        GlowPending.keepIn(prefs, boot = 12) // the new process
+        assertEquals(streak, GlowPending.keptBright())
+
+        GlowPending.keepIn(prefs, boot = 13)
+        assertEquals("rebooted: its times count from the boot before", BrightStreak(), GlowPending.keptBright())
+        GlowPending.keepIn(prefs, boot = -1)
+        assertEquals("the boot unknown", BrightStreak(), GlowPending.keptBright())
+
+        GlowPending.keepIn(prefs, boot = 12)
+        GlowSession.allRead()
+        assertNull("nothing waiting: no phase kept", prefs.getString("bright", null))
+        GlowSession.bright = BrightStreak()
+    }
+
+    @Test
+    fun aBrightPhaseThatDoesNotReadIsNone() {
+        assertEquals(BrightStreak(), decodeBright(null, 3))
+        assertEquals(BrightStreak(), decodeBright("3,1,2,x,4", 3))
+        assertEquals(BrightStreak(), decodeBright("3,1,2", 3))
+        assertEquals(BrightStreak(1, 2, 3, 4), decodeBright(encodeBright(BrightStreak(1, 2, 3, 4), 3), 3))
+    }
 }
