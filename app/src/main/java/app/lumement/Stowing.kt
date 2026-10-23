@@ -198,7 +198,8 @@ internal class StowWatch(
 
     private val nearby = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
-            near = event.values[0] < event.sensor.maximumRange
+            // Android's own threshold: some sensors read "far" below their maximum range, and were near for good.
+            near = event.values[0] < minOf(event.sensor.maximumRange, NEAR_CM)
             if (!near) checkSoon()
         }
 
@@ -320,5 +321,8 @@ internal class StowWatch(
 
         /** How long the sensor has to stay uncovered, or the turn to settle, before it is checked. */
         const val SETTLE_MS = 400L
+
+        /** Near below this many cm, or the sensor's maximum range if less: as Android's own proximity handling has it. */
+        const val NEAR_CM = 5f
     }
 }

@@ -132,7 +132,8 @@ object GlowPending {
         val kept = decodePending(prefs.getString(KEY_PENDING, null))
         if (kept.isEmpty()) return false
         val showing = stillShowing(kept.map { it.key }) ?: return false
-        entries.addAll(kept.filter { it.key in showing })
+        // The phone's own posts were once kept as messages: an update lets them go.
+        entries.addAll(kept.filter { it.key in showing && !fromTheSystem(it.pkg) })
         save()
         return !isEmpty
     }
@@ -378,6 +379,16 @@ object GlowSession {
      * on again only for the next message. Main thread only.
      */
     internal var bright = BrightStreak()
+
+    /**
+     * Shown for new notifications only ([LockPort.aodOnly]), One UI shows its always-on display once
+     * for a new message, at the sleep after it arrives; the LED may take that doze, and no other. One
+     * UI dozes the panel for other screens of its own too (a missed fingerprint: DOZE_MOD on the
+     * S23), which to an app look like any doze. Set by the listener for each new message, cleared by
+     * the doze the LED goes onto. Was the glow screen's, set at every launch: a relight (Do Not
+     * Disturb ending, a wake's fallback) let the LED onto a later doze of One UI's own. Main thread only.
+     */
+    internal var aodDue = false
 
     /** Will the next sleep show the always-on display ([sleepWillDoze])? Null: not known. */
     fun expectsAod(context: Context): Boolean? {

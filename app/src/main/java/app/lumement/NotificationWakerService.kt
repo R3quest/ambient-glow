@@ -260,6 +260,8 @@ class NotificationWakerService : NotificationListenerService() {
         // the phone in use, a new streak ([brightAfterMessage]).
         val inUse = power.isInteractive && !keyguard.isKeyguardLocked
         GlowSession.bright = brightAfterMessage(GlowSession.bright, SystemClock.elapsedRealtime(), settings.brightFor.ms, inUse)
+        // One UI's always-on display for it, at the next sleep; not for one read on the phone in use.
+        if (!inUse) GlowSession.aodDue = true
         LedDiary.note(this, "message", "waiting=${GlowPending.entries.size}")
         val arrival = arrivalFor(settings.arrival, GlowSession.resting)
         // Premium's trial starts with the first message it plays for: its element, or an app's own colour.
@@ -402,6 +404,9 @@ class NotificationWakerService : NotificationListenerService() {
             // ([ledOnAodOnly]): a relight here (after an unlock, Do Not Disturb, the watchdog) is for
             // messages One UI counts as seen, and a doze now may be another screen of One UI's.
             if (GlowPrefs.load(this).afterBright != AfterBright.AOD || ledOnAodOnly(contentResolver)) return
+            // The LED on the always-on display is GlowShield's window: without it there is none, and
+            // the only launch left lit the screen in the always-on display's place.
+            if (!GlowShield.isOn) return
         } else if (!litLedAllowed(SystemClock.elapsedRealtime(), GlowSession.bright, { batterySaver }, { batteryPct() })) {
             // The lit LED only in its bright phase: after it, dark until the next message.
             return
@@ -476,18 +481,32 @@ class NotificationWakerService : NotificationListenerService() {
         LedDiary.note(this, "launch", mode.name)
         wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
         // The full-screen intent wakes the panel: the LED lit there, not on the always-on display.
+        // So onto the always-on display only by the dark start; and with no full-screen intent
+        // allowed ([GlowLauncher.canUseFullScreen]), the dark start is the only way in, the glow
+        // screen lighting the panel itself.
         val woken = if (mode == WakeMode.AOD) WakeMode.LED else mode
+        val fullScreen = GlowLauncher.canUseFullScreen(this)
         // Into the black LED face from a dark screen: straight in, while still dark, so the lock
         // screen never shows first. If it didn't arrive, the full-screen intent as ever.
-        if (mode != WakeMode.WAKE && !power.isInteractive && GlowLauncher.startInTheDark(this, mode)) {
+        val dark = (mode != WakeMode.WAKE && !power.isInteractive) || !fullScreen
+        if (dark && GlowLauncher.startInTheDark(this, mode)) {
             mainHandler.postDelayed({
                 val host = GlowSession.host
                 if (host == null || host.isAway) {
-                    GlowLog.d { "svc dark start didn't arrive: full-screen intent" }
-                    if (!GlowLauncher.launchFromBackground(this, woken, color)) wakeLock.release()
+                    if (mode == WakeMode.AOD || !fullScreen) {
+                        GlowLog.d { "svc dark start didn't arrive: left dark" }
+                        wakeLock.release()
+                    } else {
+                        GlowLog.d { "svc dark start didn't arrive: full-screen intent" }
+                        if (!GlowLauncher.launchFromBackground(this, woken, color)) wakeLock.release()
+                    }
                 }
             }, DARK_START_CHECK_MS)
             return true
+        }
+        if (mode == WakeMode.AOD) {
+            wakeLock.release()
+            return false
         }
         val launched = GlowLauncher.launchFromBackground(this, woken, color)
         if (!launched) wakeLock.release()
@@ -512,6 +531,7 @@ class NotificationWakerService : NotificationListenerService() {
     private fun isRealMessage(sbn: StatusBarNotification, ranking: Ranking?): Boolean {
         val notification = sbn.notification
         if (sbn.packageName == packageName && notification.channelId != GlowLauncher.TEST_CHANNEL_ID) return false
+        if (fromTheSystem(sbn.packageName)) return false
         return isAlert(
             ongoing = sbn.isOngoing,
             flags = notification.flags,
@@ -522,8 +542,9 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     /**
-     * Timestamp of the newest message in a MessagingStyle notification, else its `when`. Reads
-     * the raw message bundles; no MessagingStyle objects are rebuilt.
+     * Timestamp of the newest message from someone else in a MessagingStyle notification, else its
+     * `when` ([newestIncomingAt]). Reads the raw message bundles; no MessagingStyle objects are
+     * rebuilt. The user's own carry no sender: MessagingStyle writes one only for others.
      */
     private fun newestMessageAt(notification: Notification): Long {
         val messages = BundleCompat.getParcelableArray(
@@ -531,11 +552,12 @@ class NotificationWakerService : NotificationListenerService() {
             Notification.EXTRA_MESSAGES,
             Bundle::class.java,
         )
-        var newest = 0L
-        messages?.forEach { message ->
-            if (message is Bundle) newest = maxOf(newest, message.getLong(KEY_MESSAGE_TIME))
+        val times = messages?.mapNotNull { message ->
+            (message as? Bundle)?.let {
+                MessageTime(it.getLong(KEY_MESSAGE_TIME), mine = MESSAGE_SENDER_KEYS.none(it::containsKey))
+            }
         }
-        return if (newest > 0L) newest else notification.`when`
+        return newestIncomingAt(times, notification.`when`)
     }
 
     private companion object {
@@ -561,5 +583,21 @@ class NotificationWakerService : NotificationListenerService() {
 
         /** Notification.MessagingStyle.Message's timestamp key inside each EXTRA_MESSAGES bundle. */
         const val KEY_MESSAGE_TIME = "time"
+
+        /** Its sender's keys (the platform's and NotificationCompat's), written only for a message from someone else. */
+        val MESSAGE_SENDER_KEYS = listOf("sender", "sender_person", "person")
+    }
+}
+
+/**
+ * The app was updated: the system stopped it and dropped its listener. Android 8.0 doesn't always
+ * bind it again (seen on an emulator, 2026-10-23: no message heard, so no LED, until a reboot);
+ * asked here, it does. A listener bound already is left as it is, and one not allowed stays off.
+ */
+class ListenerRebind : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        runCatching { NotificationListenerService.requestRebind(ComponentName(context, NotificationWakerService::class.java)) }
+            .onFailure { GlowLog.d { "svc rebind after the update refused: $it" } }
     }
 }

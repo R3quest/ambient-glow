@@ -78,6 +78,15 @@
                 android:value="ongoing|silent" />
         </service>
 
+        <!-- After an update, asks for the listener to be bound again: Android 8.0 may leave it off. -->
+        <receiver
+            android:name=".ListenerRebind"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Optional: covers the system bars while the LED takes over the screen (GlowShield). -->
         <service
             android:name=".GlowShield"

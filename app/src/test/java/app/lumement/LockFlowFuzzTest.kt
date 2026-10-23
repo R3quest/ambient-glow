@@ -34,6 +34,7 @@ class LockFlowFuzzTest {
         GlowSession.resting = false
         GlowSession.screenTakers.clear()
         GlowSession.bright = BrightStreak()
+        GlowSession.aodDue = false
     }
 
     @Test
@@ -338,6 +339,7 @@ class LockFlowFuzzTest {
             val color = listOf(0xFF25D366.toInt(), 0xFF2AABEE.toInt(), 0xFFE1306C.toInt()).random(random)
             GlowPending.put(PendingGlow(key, "chat", color))
             GlowSession.bright = GlowSession.bright.onMessage(phone.now, phone.settings.brightFor.ms)
+            if (!phone.interactive || phone.keyguardLocked) GlowSession.aodDue = true
             val host = GlowSession.host
             if (host != null && !host.isAway) {
                 glowDueBy = phone.now + GLOW_DUE_MS

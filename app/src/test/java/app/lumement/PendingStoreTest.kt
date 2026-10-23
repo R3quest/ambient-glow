@@ -128,6 +128,17 @@ class PendingStoreTest {
         assertEquals(listOf(mail), decodePending(prefs.getString("pending", null)))
     }
 
+    /** The phone's own posts were kept as messages before (a keyboard's notice kept the LED lit): an update lets them go. */
+    @Test
+    fun aNewProcessLetsTheSystemsOwnPostsGo() {
+        val keyboard = PendingGlow(key = "-1|android|19|null|1000", pkg = "android", color = 0xFF888888.toInt())
+        GlowPending.keepIn(FakePrefs(mapOf("pending" to encodePending(listOf(keyboard, chat)))))
+
+        assertTrue(GlowPending.restore { keys -> keys.toSet() })
+
+        assertEquals(listOf(chat), GlowPending.entries.toList())
+    }
+
     @Test
     fun missedRemovalsAreDroppedAndForgotten() {
         val prefs = FakePrefs()
