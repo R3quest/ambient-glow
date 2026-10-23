@@ -458,12 +458,11 @@ class NotificationWakerService : NotificationListenerService() {
      */
     private fun pruneStalePending() {
         if (GlowPending.isEmpty) return
-        GlowPending.keepOnly(stillShowing(GlowPending.entries.map { it.key }) ?: return)
-        // Every one was read unseen: as if their removals had come.
-        if (GlowPending.isEmpty) {
-            GlowSession.allRead()
-            GlowSession.host?.onPendingChanged()
-        }
+        if (!GlowPending.keepOnly(stillShowing(GlowPending.entries.map { it.key }) ?: return)) return
+        // Read unseen: as if their removals had come. Some left, the still LED on the always-on
+        // display is drawn again without them; it kept their colours until its next step.
+        if (GlowPending.isEmpty) GlowSession.allRead()
+        GlowSession.host?.onPendingChanged()
     }
 
     /** Which of [keys] are still in the shade, or null if the system can't say yet. */

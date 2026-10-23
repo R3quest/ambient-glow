@@ -58,6 +58,9 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
     var ready = false
         private set
 
+    /** Each time the surface goes, after a breath under way has ended ([breathe]'s callback): for its owner ([LedRound]). */
+    var onLost: (() -> Unit)? = null
+
     init {
         view.holder.addCallback(this)
     }
@@ -151,10 +154,12 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         ready = false
         // A breath under way ends with its callback, so the round goes on and waits for the
-        // surface again ([whenReady]) rather than for a breath that never ends.
+        // surface again ([whenReady]) rather than for a breath that never ends. A rise held on
+        // the always-on display has no callback left: its owner hears it ([onLost]).
         val out = onOut
         stop()
         out?.invoke()
+        onLost?.invoke()
     }
 
     private fun step() {

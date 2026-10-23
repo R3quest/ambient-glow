@@ -184,8 +184,8 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
             GlowScreen(
                 face = flow.face.value,
                 ending = flow.ending.value,
-                // The LED's window has the LED: the glow screen keeps its own dot out.
-                settling = flow.settling.value || flow.ledInWindow.value,
+                // The LED's window has the LED, or is going up over the face: the glow screen keeps its own dot out.
+                settling = flow.settling.value || flow.ledInWindow.value || flow.litDue,
                 covered = flow.covered.value,
                 arriving = flow.arriving.value,
                 arrivalSeq = flow.arrivalSeq.intValue,

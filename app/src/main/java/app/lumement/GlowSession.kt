@@ -101,9 +101,11 @@ object GlowPending {
         if (changed) save()
     }
 
-    /** Drops every entry whose notification is no longer [active] (a removal missed, e.g. during a rebind). */
-    fun keepOnly(active: Set<String>) {
-        if (entries.removeAll { it.key !in active }) save()
+    /** Drops every entry whose notification is no longer [active] (a removal missed, e.g. during a rebind); true if any went. */
+    fun keepOnly(active: Set<String>): Boolean {
+        if (!entries.removeAll { it.key !in active }) return false
+        save()
+        return true
     }
 
     /** Distinct colours in arrival order (newest first): one breath each in the LED's round. */

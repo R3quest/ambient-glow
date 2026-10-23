@@ -241,6 +241,14 @@ internal fun frameTint(settings: GlowSettings, color: Color): Brush? =
     }
 
 /**
+ * The colours the still LED on the always-on display is drawn from, out of [palette] at step
+ * [cycle] ([LedLook]): the frame in the Edge Frame's Duo or Spectrum takes only that step's colour,
+ * the rest every waiting app's.
+ */
+internal fun stillColors(settings: GlowSettings, palette: List<Int>, cycle: Int): List<Int> =
+    if (settings.ledForm == LedForm.FRAME && settings.edgeColor != EdgeColor.APP) listOf(palette[cycle % palette.size]) else palette
+
+/**
  * [colors] round a [frame] about the origin, each on an equal length of its edge, the first from
  * the top's middle, clockwise, edge to edge. By equal angles a tall screen's long sides took more
  * than their share: on the S23, of three apps, the one across the bottom had 38 % more edge.
