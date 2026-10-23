@@ -10,7 +10,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 
 /** The frame LED: a line round the screen's edge that never leaves it, and the arrivals that end in it. */
 class FrameLedTest {
@@ -321,6 +323,33 @@ class FrameLedTest {
             val a = steps[i] + (line - core) / 2f
             val b = steps[(i + 1) % steps.size] + (line - core) / 2f
             assertTrue("step $i: the core moved off its pixels", abs(a - b) >= core * 0.9f)
+        }
+    }
+
+    /**
+     * On the always-on display the frame shows every waiting app at once, each on an equal length
+     * of the edge: by equal angles a tall screen gave the top's short edge a sliver and one app
+     * most of a long side.
+     */
+    @Test
+    fun theStillFramesAppsShareItsEdgeInEqualLengths() {
+        val frame = Size(1080f, 2340f)
+        assertEquals(0f, edgeTurnAt(0f, frame), 1e-6f)
+        assertEquals(1f, edgeTurnAt(1f, frame), 1e-6f)
+        // A quarter of the way round is the right side's middle, half way the bottom's.
+        assertEquals(0.25f, edgeTurnAt(0.25f, frame), 1e-5f)
+        assertEquals(0.5f, edgeTurnAt(0.5f, frame), 1e-5f)
+        // Half the top's length round is its right corner, seen from the centre where the corner is.
+        val corner = frame.width / 2f / (2f * (frame.width + frame.height))
+        assertEquals(atan2(frame.width, frame.height) / (2f * PI.toFloat()), edgeTurnAt(corner, frame), 1e-5f)
+        // Three apps: a third of the 6840 px round is 540 along the top and 1740 down the right
+        // side, 570 below its middle; by equal angles it was 312 below, the bottom's part 38 % longer.
+        assertEquals(0.25f + atan2(570f, 540f) / (2f * PI.toFloat()), edgeTurnAt(1f / 3f, frame), 1e-5f)
+        var last = 0f
+        for (i in 1..100) {
+            val turn = edgeTurnAt(i / 100f, frame)
+            assertTrue("clockwise at $i%", turn > last)
+            last = turn
         }
     }
 }

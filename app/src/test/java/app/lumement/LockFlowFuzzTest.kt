@@ -150,10 +150,12 @@ class LockFlowFuzzTest {
             phone.destroyAfterMs = listOf(16L, 120L, 600L).random(random)
             phone.batterySaver = random.nextInt(8) == 0
             phone.batteryPct = if (random.nextInt(8) == 0) LOW_BATTERY_PCT - 1 else 80
+            // The LED's window takes the focus in 0.03-0.2 s on the S23; past 0.3 s GlowShield stops waiting.
+            phone.litFocusMs = listOf(30L, 40L, 120L, 200L, 400L).random(random)
             log(
                 "set up: shield=${phone.shieldOn} dozes=${phone.dozes} afterOff=${phone.dozesAfterOffMs} aodOnly=${phone.aodOnly} " +
                     "expectsAod=${phone.expectsAod} ${phone.settings.arrival} ${phone.settings.brightFor} ${phone.settings.afterBright} " +
-                    "destroyAfter=${phone.destroyAfterMs} saver=${phone.batterySaver} battery=${phone.batteryPct}",
+                    "destroyAfter=${phone.destroyAfterMs} saver=${phone.batterySaver} battery=${phone.batteryPct} litFocus=${phone.litFocusMs}",
             )
             // The phone starts lit and locked, the user looking at something else; the first event is often a message.
             phone.pressPower()
@@ -290,6 +292,9 @@ class LockFlowFuzzTest {
                 90 -> if (random.nextInt(3) == 0) {
                     phone.dozes = !phone.dozes
                     log("always-on display switched ${if (phone.dozes) "on" else "off"}")
+                } else if (dark && phone.aodBreathing) {
+                    log("the LED on the always-on display goes out by itself")
+                    phone.aodGoesOut()
                 }
                 else -> pass(random.nextLong(100, 3_000), woken)
             }

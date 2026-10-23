@@ -173,7 +173,8 @@ internal fun ledOnAod(waiting: Boolean, resting: Boolean, putAway: Boolean, inCa
  * than the always-on display alone (measured on the S23: 130 against 88): a breath needs the CPU
  * held to the next one and the panel taking frames. A draw wake lock lets the panel take the rise's
  * frames. It shows every waiting app's colour at once ([LedLook]). Every [STILL_STEP_MS] it rises
- * again a step over (burn-in), woken by an alarm that may fire while the phone idles.
+ * again a step over (burn-in), woken by an alarm that may fire while the phone idles. [onOut] when
+ * the round stops by itself: nothing left to show, or its surface gone.
  */
 @RequiresApi(Build.VERSION_CODES.Q)
 internal class LedRound(
@@ -181,6 +182,7 @@ internal class LedRound(
     val surface: LedSurface,
     private val dozing: Boolean,
     private val onFade: (fast: Boolean) -> Unit = {},
+    private val onOut: () -> Unit = {},
 ) {
     private val timers = Handler(Looper.getMainLooper())
 
@@ -194,6 +196,9 @@ internal class LedRound(
     private var geometry = ScreenGeometry.Unknown
     private var colors: () -> List<Int> = { emptyList() }
     private var cycle = 0
+
+    /** The colours the still LED shows ([redraw]). */
+    private var drawn: List<Int> = emptyList()
 
     /** The round is on. */
     var running = false
@@ -235,6 +240,17 @@ internal class LedRound(
         light()
     }
 
+    /**
+     * Over the always-on display: drawn again where the colours changed since ([colors]: one read
+     * elsewhere), at the same step, the next step's alarm as it was. Started over instead, each read
+     * put the LED back on its first step for another 10 minutes, and a chat read now and then kept it
+     * on the same pixels all night.
+     */
+    fun redraw() {
+        if (!running || !dozing || colors() == drawn) return
+        light(step = false)
+    }
+
     /** The light goes out at once and the round stops; the surface stays, for the next. */
     fun stop() {
         running = false
@@ -253,19 +269,25 @@ internal class LedRound(
         timers.postDelayed(prerolled, LED_RATE_PREROLL_MS)
     }
 
-    /** This breath's colour, drawn while the light is out, then lit: a breath, or the still LED's rise. */
-    private fun light() {
+    /**
+     * This breath's colour, drawn while the light is out, then lit: a breath, or the still LED's
+     * rise, which [step]s on in [STILL_STEP_MS].
+     */
+    private fun light(step: Boolean = true) {
         val palette = colors()
         if (!running || palette.isEmpty() || !surface.ready) {
+            val out = running
             stop()
+            if (out) onOut()
             return
         }
+        drawn = palette
         // On the always-on display the frame waits at its calmest; over the lit panel it quiets
         // down through the bright phase.
         val calm = if (dozing) 1f else GlowSession.bright.settledAt(SystemClock.elapsedRealtime())
         surface.show(settings, geometry, palette[cycle % palette.size], cycle, calm, still = palette.takeIf { dozing })
         if (dozing) {
-            rise()
+            rise(step)
         } else {
             surface.breathe {
                 val pause = ledPauseAfter(cycle, palette.size)
@@ -280,12 +302,12 @@ internal class LedRound(
      * Over the always-on display: the panel takes frames for the rise (and the CPU stays up for it),
      * then holds the lit LED alone, a few frames after its peak is drawn.
      */
-    private fun rise() {
+    private fun rise(step: Boolean) {
         timers.removeCallbacks(held)
         drawLock.acquire(LED_RISE_MS.toLong() + LOCK_MARGIN_MS)
         DarkHold.acquire(context, LED_RISE_MS.toLong() + LOCK_MARGIN_MS)
         surface.glow { timers.postDelayed(held, HOLD_FRAMES * (1_000L / LED_FADE_HZ.toLong())) }
-        scheduleStep()
+        if (step) scheduleStep()
     }
 
     private fun watchSteps(on: Boolean) {

@@ -35,8 +35,8 @@ class LockFlowTest {
     }
 
     /** A new message, as the listener takes it: waiting on the LED, and its bright phase started over. */
-    private fun message(key: String = "chat-1") {
-        GlowPending.put(PendingGlow(key, "chat", 0xFF25D366.toInt()))
+    private fun message(key: String = "chat-1", color: Int = 0xFF25D366.toInt()) {
+        GlowPending.put(PendingGlow(key, "chat", color))
         GlowSession.bright = GlowSession.bright.onMessage(phone.now, phone.settings.brightFor.ms)
     }
 
@@ -89,6 +89,94 @@ class LockFlowTest {
 
         assertFalse(phone.covering)
         assertTrue(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
+    /** A message lit the lock screen, the LED's window is up over the face and waits for the focus ([FakePhone.litFocusMs]). */
+    private fun windowWaitsForTheFocus(mode: WakeMode = WakeMode.WAKE) {
+        phone.litFocusMs = 250
+        message()
+        phone.launch(mode, 0)
+        var waited = 0
+        while (!phone.litShown && waited++ < 10_000) phone.advance(1)
+        assertTrue("the LED's window", phone.litShown)
+        assertTrue("still waiting for the focus", phone.litWaiting)
+        assertEquals(Face.LED, flow.face.value)
+        phone.log.clear()
+    }
+
+    /**
+     * The window got the focus, its ready was posted, and GlowShield went before it ran: the ready
+     * said the window showed, and the lock screen came in front lit, held on, with no LED over it.
+     */
+    @Test
+    fun theShieldGoingAsTheWindowGetsTheFocusLeavesTheLedsFace() {
+        windowWaitsForTheFocus()
+        while (phone.litWaiting) phone.runNext() // the focus is in: its ready posted, not run yet
+        phone.shieldGoes()
+        phone.advance(1_000)
+
+        assertEquals(Face.LED, flow.face.value)
+        assertTrue("the LED's face covers the lock screen", phone.covering)
+        assertFalse(flow.ledInWindow.value)
+    }
+
+    /**
+     * Read, and a new message in the same moment, while the window waited (fuzz seed 2770): the
+     * window went down and up again before the first one's ready came, and that ready, taken for
+     * the new window's, ended its wait and left it up with nothing to take it down.
+     */
+    @Test
+    fun aReadyForAWindowGoneIsNotTheNextOnes() {
+        phone.settings = GlowSettings(arrival = ArrivalMode.LED_ONLY)
+        windowWaitsForTheFocus(WakeMode.LED)
+        read("chat-1")
+        message("chat-2")
+        phone.host { onNewMessage() }
+        assertTrue("up again for the new message", phone.litShown)
+        phone.advance(1_000)
+
+        assertTrue(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
+    /** A message wanting the lock screen while the window waits: the window goes, or the lock screen lights under its black. */
+    @Test
+    fun aMessageWhileTheWindowWaitsTakesItDown() {
+        windowWaitsForTheFocus()
+        message("chat-2")
+        phone.host { onNewMessage() }
+
+        assertFalse("the window down at once", phone.litShown)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        phone.advance(1_000)
+        assertFalse(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+    }
+
+    /** Power while the window waits: the lock screen, woken without the black window over it. */
+    @Test
+    fun powerWhileTheWindowWaitsOpensTheLockScreen() {
+        windowWaitsForTheFocus()
+        phone.pressPower()
+        phone.advance(2_000)
+
+        assertFalse(phone.litShown)
+        assertFalse(flow.ledInWindow.value)
+        assertEquals(Face.LOCK_SCREEN, flow.face.value)
+        assertTrue(phone.interactive)
+    }
+
+    /** A tap while the window waits: the lock screen, as a tap on the LED's face opens it; it was lost. */
+    @Test
+    fun aTapWhileTheWindowWaitsOpensTheLockScreen() {
+        windowWaitsForTheFocus()
+        phone.tapLed()
+        phone.advance(1_000)
+
+        logged("diary: peek tap", "lit LED down")
+        assertFalse(phone.litShown)
+        assertFalse(flow.ledInWindow.value)
         assertEquals(Face.LOCK_SCREEN, flow.face.value)
     }
 
@@ -274,24 +362,63 @@ class LockFlowTest {
     /** The still LED shows every waiting app's colour: one read elsewhere, it is drawn again without it, still asleep. */
     @Test
     fun oneReadOnTheAlwaysOnDisplayDrawsTheLedAgain() {
+        ledOnTheAlwaysOnDisplay(0xFF25D366.toInt(), 0xFF2AABEE.toInt())
+
+        read("chat-1")
+        phone.advance(1_000)
+
+        logged("aod LED redrawn")
+        assertEquals("only the other app's colour now", listOf(0xFF2AABEE.toInt()), phone.aodDrawn)
+        assertTrue(phone.aodBreathing)
+        assertFalse(phone.interactive)
+        notLogged("wake")
+    }
+
+    /**
+     * Drawn again, the LED stays on its burn-in step: started over at a read, it went back to its
+     * first step for another 10 minutes, and a chat read elsewhere now and then held it on the same
+     * pixels all night. A read that leaves the colours as they were draws nothing.
+     */
+    @Test
+    fun aReadOnTheAlwaysOnDisplayKeepsTheBurnInStep() {
+        ledOnTheAlwaysOnDisplay(0xFF25D366.toInt(), 0xFF25D366.toInt())
+
+        read("chat-1")
+        phone.advance(1_000)
+
+        notLogged("aod LED on")
+        notLogged("aod LED redrawn")
+        assertTrue(phone.aodBreathing)
+    }
+
+    /**
+     * The LED on the always-on display went out by itself (its surface gone at a step): the flow
+     * took it as still on, and nothing lit it again for the rest of the sleep.
+     */
+    @Test
+    fun theLedOutOnTheAlwaysOnDisplayIsLitAgain() {
+        ledOnTheAlwaysOnDisplay(0xFF25D366.toInt(), 0xFF2AABEE.toInt())
+
+        phone.aodGoesOut()
+        phone.host { ensureLed() }
+
+        logged("aod LED out", "aod LED on")
+        assertTrue(phone.aodBreathing)
+        assertFalse(phone.interactive)
+    }
+
+    /** Two messages in [first] and [second], seen, then the phone asleep with the LED on its always-on display. */
+    private fun ledOnTheAlwaysOnDisplay(first: Int, second: Int) {
         phone.settings = GlowSettings(brightFor = BrightFor.OFF)
         phone.expectsAod = true
         phone.dozes = true
-        message()
-        message("chat-2")
+        message(color = first)
+        message("chat-2", second)
         phone.launch(WakeMode.WAKE, 4_000)
         phone.pressPower()
         phone.advance(2_000)
         logged("aod LED on")
-
         phone.log.clear()
-        read("chat-1")
-        phone.advance(1_000)
-
-        logged("aod LED on")
-        assertTrue(phone.aodBreathing)
-        assertFalse(phone.interactive)
-        notLogged("wake")
     }
 
     /**

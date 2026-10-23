@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.exp
@@ -195,7 +196,7 @@ internal class LedLook(
     private val look: MaterialLook = if (form == LedForm.FRAME) {
         val tone = if (still != null) stillTone(color) else color
         val apps = still?.takeIf { it.size > 1 }?.map(::stillTone)
-        FrameLook(tone, light, calm, frameOf?.let { frameTint(it, tone) } ?: apps?.let(::appsSweep), still != null)
+        FrameLook(tone, light, calm, frameOf?.let { frameTint(it, tone) } ?: apps?.let { appsSweep(it, light.frame) }, still != null)
     } else if (still != null) {
         StillLook(still.ifEmpty { listOf(color) }.map(::stillTone), light, form == LedForm.RING)
     } else {
@@ -239,11 +240,44 @@ internal fun frameTint(settings: GlowSettings, color: Color): Brush? =
         movingSweep(Offset.Zero, *stops).apply { rotateTo(edgeTintRestDegrees(settings.edgeColor), Offset.Zero) }
     }
 
-/** [colors] round the origin in equal parts, the first from the top, clockwise, edge to edge. */
-private fun appsSweep(colors: List<Color>): Brush {
-    val part = 1f / colors.size
-    val stops = colors.flatMapIndexed { i, c -> listOf(i * part to c, (i + 1) * part to c) }
+/**
+ * [colors] round a [frame] about the origin, each on an equal length of its edge, the first from
+ * the top's middle, clockwise, edge to edge. By equal angles a tall screen's long sides took more
+ * than their share: on the S23, of three apps, the one across the bottom had 38 % more edge.
+ */
+private fun appsSweep(colors: List<Color>, frame: Size): Brush {
+    val turns = List(colors.size + 1) { edgeTurnAt(it.toFloat() / colors.size, frame) }
+    val stops = colors.flatMapIndexed { i, c -> listOf(turns[i] to c, turns[i + 1] to c) }
     return movingSweep(Offset.Zero, *stops.toTypedArray()).apply { rotateTo(STILL_FROM_DEGREES, Offset.Zero) }
+}
+
+/**
+ * Where [share] of the way round a [frame]'s edge (its corners taken as square), from the top's
+ * middle, clockwise, lies as seen from its centre: a share of a turn from the top, clockwise.
+ */
+internal fun edgeTurnAt(share: Float, frame: Size): Float {
+    val w = frame.width
+    val h = frame.height
+    if (share <= 0f) return 0f
+    if (share >= 1f || w <= 0f || h <= 0f) return share.coerceAtMost(1f)
+    val left = -w / 2f
+    val top = -h / 2f
+    // Walked round from the top's middle, the corners at these lengths: x right, y down, as the screen has them.
+    val s = share * 2f * (w + h)
+    val c1 = w / 2f
+    val c2 = c1 + h
+    val c3 = c2 + w
+    val c4 = c3 + h
+    val (x, y) = when {
+        s <= c1 -> s to top
+        s <= c2 -> -left to top + (s - c1)
+        s <= c3 -> -left - (s - c2) to -top
+        s <= c4 -> left to -top - (s - c3)
+        else -> left + (s - c4) to top
+    }
+    val turn = (atan2(y, x) / (2f * PI.toFloat()) + 0.25f).mod(1f)
+    // The top's middle again, just short of the whole way round.
+    return if (turn == 0f) 1f else turn
 }
 
 /** What every material is built from: the light's size, the app's colour and its tones, and neon's halo. */
@@ -423,7 +457,7 @@ private class FrameLook(color: Color, light: LedLight, calm: Float, private val 
     private val hotWhite = if (still) STILL_HOT_WHITE else FRAME_HOT_WHITE
     private val hotLine = if (still) Stroke(line * STILL_HOT_LINE) else hotStroke
     private val paint: Brush = tint ?: SolidColor(color)
-    private val hot = lerp(color, Color.White, if (still) STILL_HOT_WHITE else 0.45f)
+    private val hot = lerp(color, Color.White, hotWhite)
     private val frame = light.frame
     private val topLeft = Offset(-frame.width / 2f, -frame.height / 2f)
     private val corner = CornerRadius(light.corner)
