@@ -2,7 +2,8 @@
 # user has it, runs `make scenario` (messages through the real flow, nothing left behind) and the
 # edge cases (`make edge`: bursts, Do Not Disturb, unlock and power with the LED lit, the process
 # killed, low battery, Battery Saver, a call over the LED, GlowShield or the listener off, the
-# notifications permission revoked). On pull requests, and by hand.
+# notifications permission revoked, the lock delay, pocket, Doze, force stop, an app update, ...;
+# not the slow ones: the bright cap and a reboot). On pull requests, and by hand.
 name: emulator
 
 on:
@@ -55,7 +56,7 @@ jobs:
             mkdir -p edge-logs
             ADB=adb scripts/emulator_setup.sh
             make scenario SCENARIO=all || { adb logcat -d -v time > edge-logs/scenario-logcat.txt; exit 1; }
-            EDGE_LOGS=edge-logs ADB=adb python3 -I scripts/edge.py --skip monkey,big-text
+            EDGE_LOGS=edge-logs ADB=adb python3 -I scripts/edge.py --skip monkey,big-text,bright-cap,reboot
 
       - name: Edge case logs
         if: failure()

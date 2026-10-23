@@ -50,6 +50,7 @@ object GlowPending {
 
     /** Where the list is kept across a restart of the process; set by the listener ([keepIn]). */
     private var store: SharedPreferences? = null
+    private var boot = -1
 
     /**
      * [entry] as the newest. A [quiet] update ([isQuietUpdate]) brought no new message: it keeps its
@@ -111,10 +112,27 @@ object GlowPending {
     /** Distinct colours in arrival order (newest first): one breath each in the LED's round. */
     fun colors(): List<Int> = entries.map { it.color }.distinct()
 
-    /** From now on every change is written to [prefs] (applied in the background). */
-    fun keepIn(prefs: SharedPreferences) {
+    /**
+     * From now on every change is written to [prefs] (applied in the background), and the bright
+     * phase ([keepBright]) for this [boot] (Settings.Global.BOOT_COUNT; -1 unknown: it isn't kept).
+     */
+    fun keepIn(prefs: SharedPreferences, boot: Int = -1) {
         store = prefs
+        this.boot = boot
     }
+
+    /**
+     * [streak] ([GlowSession.bright]) kept with the list, so an app update or the system killing the
+     * process doesn't put the LED out for what still waits. Its times count from the boot: kept
+     * for this one only.
+     */
+    internal fun keepBright(streak: BrightStreak) {
+        val prefs = store ?: return
+        prefs.edit { if (streak == BrightStreak() || boot < 0) remove(KEY_BRIGHT) else putString(KEY_BRIGHT, encodeBright(streak, boot)) }
+    }
+
+    /** The bright phase [keepBright] kept in this boot, or none. */
+    internal fun keptBright(): BrightStreak = decodeBright(store?.getString(KEY_BRIGHT, null), boot)
 
     /**
      * After a restart of the process, the list as it was kept, less what [stillShowing] no longer
@@ -144,6 +162,18 @@ object GlowPending {
     }
 
     private const val KEY_PENDING = "pending"
+    private const val KEY_BRIGHT = "bright"
+}
+
+/** [streak] for [GlowPending.keepBright], with the [boot] its times count from. */
+internal fun encodeBright(streak: BrightStreak, boot: Int): String =
+    listOf(boot.toLong(), streak.from, streak.until, streak.spentMs, streak.messageAt).joinToString(",")
+
+/** What [encodeBright] wrote, if in this [boot]; otherwise (another boot, unknown, unreadable) no phase. */
+internal fun decodeBright(text: String?, boot: Int): BrightStreak {
+    val fields = text?.split(',')?.map { it.toLongOrNull() ?: return BrightStreak() } ?: return BrightStreak()
+    if (fields.size != 5 || boot < 0 || fields[0] != boot.toLong()) return BrightStreak()
+    return BrightStreak(from = fields[1], until = fields[2], spentMs = fields[3], messageAt = fields[4])
 }
 
 /**
@@ -375,10 +405,15 @@ object GlowSession {
     /**
      * The unread streak's bright phases ([BrightStreak]): started over by the listener with each
      * new message, a new streak when the user looks at the lock screen, empty once nothing waits or
-     * the phone is unlocked. Memory only: after a restart of the process the LED holds the screen
-     * on again only for the next message. Main thread only.
+     * the phone is unlocked. Kept with the waiting list ([GlowPending.keepBright]): a new process
+     * (an app update) lights the LED within the phase as the old one would have. Main thread only.
      */
     internal var bright = BrightStreak()
+        set(value) {
+            if (value == field) return
+            field = value
+            GlowPending.keepBright(value)
+        }
 
     /**
      * Shown for new notifications only ([LockPort.aodOnly]), One UI shows its always-on display once

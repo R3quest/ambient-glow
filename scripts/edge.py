@@ -71,19 +71,24 @@ class Dev:
     def wake(self):
         self.sh("input keyevent KEYCODE_WAKEUP")
 
-    def unlocked(self):
-        return "mInputRestricted=false" in self.sh("dumpsys window | grep -m1 mInputRestricted") or \
-            "isKeyguardLocked=false" in self.sh("dumpsys window | grep -m1 isKeyguardLocked")
+    def keyguard_up(self):
+        """The keyguard showing, occluded (the glow screen over it) or not; False once unlocked."""
+        m = re.search(r"\bshowing=(\w+)", self.sh("dumpsys window policy"))
+        return m is None or m.group(1) == "true"
 
     def unlock(self):
-        # A tap first, as the user does: on the LED (its face or window) it opens the lock screen,
-        # which then takes the PIN; on the lock screen it does nothing.
-        self.sh(f"input keyevent KEYCODE_WAKEUP; sleep 0.8; input tap 540 1300; sleep 1.5; wm dismiss-keyguard; sleep 1; input text {PIN}; input keyevent KEYCODE_ENTER; sleep 1.5")
-        wait(lambda: "isStatusBarKeyguard=false" in self.sh("dumpsys window | grep -m1 isStatusBarKeyguard") or "mShowingLockscreen=false" in self.sh("dumpsys window | grep -m1 mShowingLockscreen") or "KeyguardShowing=false" in self.sh("dumpsys window | grep -m1 -i KeyguardShowing") , 15)
-
-    def locked(self):
-        out = self.sh("dumpsys window | grep -E 'mDreamingLockscreen|isStatusBarKeyguard|mShowingLockscreen|KeyguardShowing'")
-        return "true" in out
+        """Unlocked with the PIN, as the user does: a tap first (on the LED, its face or window, it
+        opens the lock screen, which then takes the PIN; on the lock screen it does nothing). A slow
+        emulator may drop the PIN while its bouncer comes up: tried again, up to three times.
+        Raises if it never unlocks, so a case fails as the test's, not the app's."""
+        for _ in range(3):
+            self.sh(f"input keyevent KEYCODE_WAKEUP; sleep 0.8; input tap 540 1300; sleep 1.5; wm dismiss-keyguard; sleep 2; input text {PIN}; input keyevent KEYCODE_ENTER")
+            if wait(lambda: not self.keyguard_up(), 8):
+                time.sleep(1)
+                return
+            self.sleep_phone()
+            time.sleep(2)
+        raise RuntimeError("the test couldn't unlock the phone")
 
     def post(self, tag, text="edge case"):
         # Unique per post: a key once snoozed (read) snoozes every later post under it.
@@ -266,8 +271,8 @@ def kill_app(d):
 
 
 def c_process_death(d):
-    """The process dies with a message waiting: it comes back, restores the waiting message, and a new message lights the LED.
-    The bright phase lives in memory only, so the LED is lit again only by the next message."""
+    """The process dies with a message waiting: it comes back with the waiting message and its bright phase, so the
+    LED is back at the next sleep; and a new message lights it."""
     f = []
     message_while_locked(d, "death1")
     if not wait(lambda: led_up(d), 15):
@@ -277,6 +282,10 @@ def c_process_death(d):
         f.append(f"process not back within 60 s (pid {d.pid() or 'none'}, was {before})")
     elif not wait(lambda: any("svc restored" in l for l in d.lum(d.log())), 30, step=2):
         f.append("the listener didn't restore the waiting message")
+    else:
+        d.sleep_phone()
+        if not wait(lambda: led_up(d), 15):
+            f.append(f"LED not back in its bright phase after the process died (screen={d.screen()} locks={d.locks()})")
     if not fresh_message_lights(d, "death2"):
         f.append(f"no LED for a new message after the process came back (screen={d.screen()} locks={d.locks()})")
     return f
@@ -304,8 +313,8 @@ def c_battery_saver(d):
     f = []
     # Battery Saver can't come on while charging.
     d.emu("power", "ac", "off")
-    d.sh("cmd power set-mode 1 2>/dev/null; settings put global low_power 1")
-    if "currently: ON" not in d.sh("dumpsys power | grep 'Battery Saver is currently'"):
+    # The unplug takes a moment to reach the system: asked again until it holds.
+    if not wait(lambda: "currently: ON" in d.sh("cmd power set-mode 1 2>/dev/null; settings put global low_power 1; sleep 0.5; dumpsys power | grep 'Battery Saver is currently'"), 10):
         d.emu("power", "ac", "on")
         return ["couldn't turn Battery Saver on"]
     try:
@@ -432,13 +441,323 @@ def c_monkey(d):
     return f
 
 
+def c_lock_screen_awake(d):
+    """A message with the lock screen lit (woken, not unlocked): the glow screen comes over it, then the LED."""
+    f = []
+    d.sleep_phone()
+    time.sleep(1.5)
+    d.wake()
+    time.sleep(1.5)
+    d.post("awake1")
+    if not wait(lambda: led_up(d), 15):
+        f.append(f"LED not lit for a message over the lit lock screen (screen={d.screen()} locks={d.locks()})")
+    return f
+
+
+def c_lock_delay(d):
+    """A message in the lock delay (the screen timed out, the phone locks 5 s later): no wake into the
+    unlocked phone; the LED once it has locked."""
+    f = []
+    timeout = d.sh("settings get system screen_off_timeout").strip()
+    delay = d.sh("settings get secure lock_screen_lock_after_timeout").strip()
+    d.sh("settings put system screen_off_timeout 10000; settings put secure lock_screen_lock_after_timeout 5000")
+    try:
+        d.unlock()
+        if not wait(lambda: d.screen() != "ON", 40):
+            return ["the screen never timed out"]
+        time.sleep(1)
+        if d.keyguard_up():
+            return None  # this Android locked at once: nothing to test
+        d.post("delay1")
+        woke = wait(lambda: d.screen() == "ON" and not d.keyguard_up(), 3, step=0.3)
+        if woke:
+            f.append("woke into the unlocked phone in the lock delay")
+        if not wait(lambda: led_up(d) and d.keyguard_up(), 20):
+            f.append(f"LED not lit once locked (screen={d.screen()} locks={d.locks()} keyguard={d.keyguard_up()})")
+    finally:
+        d.sh(f"settings put system screen_off_timeout {timeout if timeout != 'null' else 60000}")
+        if delay in ("", "null"):
+            d.sh("settings delete secure lock_screen_lock_after_timeout")
+        else:
+            d.sh(f"settings put secure lock_screen_lock_after_timeout {delay}")
+    return f
+
+
+def c_gone_at_once(d):
+    """A message read elsewhere a moment after it came (the glow screen still starting): nothing left lit or held."""
+    d.sleep_phone()
+    time.sleep(1.5)
+    d.post("gone1")
+    time.sleep(0.7)
+    d.read_all()
+    # The common checks after the case say whether everything let go.
+    time.sleep(3)
+    return []
+
+
+def c_lock_cycles(d):
+    """Unlocked and locked again and again with a message waiting: an unlock has seen it (the bright
+    phase over), so nothing is held after the last lock; one glow screen at most; a new message lights it."""
+    f = []
+    message_while_locked(d, "cycle1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    for _ in range(4):
+        d.unlock()
+        time.sleep(1)
+        d.sleep_phone()
+        time.sleep(2.5)
+    if not wait(lambda: "Lumement:led" not in d.locks() and d.screen() != "ON", 20):
+        f.append(f"screen held after the last lock, the message seen (screen={d.screen()} locks={d.locks()})")
+    # The stack's own entries ("Hist #n"): a record is also named elsewhere, finished ones included.
+    live = set(re.findall(r"Hist +#\d+: ActivityRecord\{(\w+) u\d+ app\.lumement/\.WakeScreenActivity", d.sh("dumpsys activity activities")))
+    if len(live) > 1:
+        f.append(f"{len(live)} glow screens alive")
+    d.post("cycle2")
+    if not wait(lambda: led_up(d), 15):
+        f.append(f"LED not lit for a new message after the cycles (screen={d.screen()} locks={d.locks()})")
+    return f
+
+
+def c_config_while_lit(d):
+    """Night mode, font and display size changed with the LED lit: it stays lit, nothing breaks."""
+    f = []
+    message_while_locked(d, "conf1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    try:
+        d.sh("cmd uimode night yes")
+        time.sleep(2)
+        d.sh("settings put system font_scale 1.3")
+        time.sleep(2)
+        d.sh("wm density 480")
+        time.sleep(3)
+        if not led_up(d):
+            f.append(f"LED gone after the configuration changes (screen={d.screen()} locks={d.locks()})")
+    finally:
+        d.sh("cmd uimode night no; settings put system font_scale 1.0; wm density reset")
+    time.sleep(2)
+    return f
+
+
+def c_trim_memory(d):
+    """The system short of memory with the LED lit: it stays lit."""
+    f = []
+    message_while_locked(d, "trim1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    for level in ("RUNNING_CRITICAL", "COMPLETE"):
+        d.sh(f"am send-trim-memory {PKG} {level} 2>&1")
+        time.sleep(2)
+    if not led_up(d):
+        f.append(f"LED gone after trim-memory (screen={d.screen()} locks={d.locks()})")
+    return f
+
+
+def c_pocket(d):
+    """Covered with the LED lit (proximity near): the panel off, then the CPU let go; uncovered: the LED is back."""
+    f = []
+    message_while_locked(d, "pocket1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    time.sleep(6)  # the arrival over
+    try:
+        d.emu("sensor", "set", "proximity", "0")
+        if not wait(lambda: d.screen() != "ON", 6):
+            f.append(f"panel still on with the phone covered (locks={d.locks()})")
+        # COVERED_MS (10 s): put away, the CPU free.
+        if not wait(lambda: "Lumement:led" not in d.locks(), 20):
+            f.append(f"still holding on, covered for 20 s (locks={d.locks()})")
+    finally:
+        d.emu("sensor", "set", "proximity", "5")
+    if not wait(lambda: led_up(d), 10):
+        f.append(f"LED not back when uncovered (screen={d.screen()} locks={d.locks()})")
+    return f
+
+
+def c_face_down(d):
+    """Laid face down with the LED lit: the phone sleeps; turned over: the LED is back. Only where there's
+    a tilt detector (the app watches face down only with one; emulators have none)."""
+    if "tilt_detector" not in d.sh("dumpsys sensorservice | grep -i tilt"):
+        return None
+    f = []
+    message_while_locked(d, "face1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    time.sleep(6)
+    try:
+        d.emu("sensor", "set", "acceleration", "0:0:-9.8")
+        if not wait(lambda: d.screen() != "ON" and "Lumement:led" not in d.locks(), 15):
+            f.append(f"still lit face down (screen={d.screen()} locks={d.locks()})")
+    finally:
+        d.emu("sensor", "set", "acceleration", "0:9.8:0.5")
+    if not wait(lambda: led_up(d), 10):
+        f.append(f"LED not back when turned over (screen={d.screen()} locks={d.locks()})")
+    return f
+
+
+def c_doze(d):
+    """Deep Doze (unplugged, still, dark for a long time): a message still lights the LED."""
+    f = []
+    d.emu("power", "ac", "off")
+    d.sleep_phone()
+    time.sleep(2)
+    out = d.sh("dumpsys deviceidle force-idle deep 2>&1 || dumpsys deviceidle force-idle 2>&1")
+    try:
+        if "IDLE" not in out.upper():
+            return [f"couldn't force Doze: {out.strip()[:120]}"]
+        d.post("doze1")
+        if not wait(lambda: led_up(d), 15):
+            f.append(f"no LED for a message in Doze (screen={d.screen()} locks={d.locks()})")
+    finally:
+        d.sh("dumpsys deviceidle unforce")
+        d.emu("power", "ac", "on")
+    return f
+
+
+def c_background_restricted(d):
+    """Battery set to Restricted for Lumement (and, on 12+, the restricted standby bucket): a message still lights it."""
+    f = []
+    d.sh(f"appops set {PKG} RUN_ANY_IN_BACKGROUND ignore")
+    if d.sdk >= 31:
+        d.sh(f"am set-standby-bucket {PKG} restricted")
+    try:
+        time.sleep(2)
+        message_while_locked(d, "restr1")
+        if not wait(lambda: led_up(d), 15):
+            f.append(f"no LED with the battery Restricted (screen={d.screen()} locks={d.locks()})")
+    finally:
+        d.sh(f"appops set {PKG} RUN_ANY_IN_BACKGROUND allow")
+        if d.sdk >= 31:
+            d.sh(f"am set-standby-bucket {PKG} active")
+    return f
+
+
+def c_force_stop(d):
+    """Force stop (App info) with a message waiting: the listener and GlowShield come back, or say so."""
+    f = []
+    message_while_locked(d, "stop1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    d.sh(f"am force-stop {PKG}")
+    time.sleep(3)
+    if "Lumement:led" in d.locks():
+        f.append("a wake lock outlived the force stop")
+    if not fresh_message_lights(d, "stop2"):
+        bound = f"{PKG}/{PKG}.NotificationWakerService" in d.sh("dumpsys notification | grep -A3 'Live notification listeners'")
+        f.append(f"no LED for a new message after a force stop (listener bound={bound}, pid={d.pid() or 'none'})")
+    return f
+
+
+def c_app_update(d):
+    """The app updated with the LED lit: the listener is back and the waiting message lights the LED again."""
+    f = []
+    message_while_locked(d, "upd1")
+    if not wait(lambda: led_up(d), 15):
+        return ["LED not lit"]
+    apk = os.environ.get("APK", "app/build/outputs/apk/debug/app-debug.apk")
+    r = subprocess.run([ADB, "-s", d.serial, "install", "-r", apk], capture_output=True, text=True, timeout=180)
+    if "Success" not in r.stdout:
+        return [f"install failed: {(r.stdout + r.stderr).strip()[:200]}"]
+    # The old process's window went with it: the lock screen until the phone sleeps, then the LED.
+    wait(lambda: any("svc restored" in l for l in d.lum(d.log())), 30, step=2)
+    d.sleep_phone()
+    if not wait(lambda: led_up(d), 30, step=2):
+        f.append(f"LED not back after the update (screen={d.screen()} locks={d.locks()} pid={d.pid() or 'none'})")
+    return f
+
+
+def set_pref(d, key, value):
+    """One of the app's settings (shared_prefs/lumement.xml) to [value], or out with None; the process
+    killed so it reads them afresh. Returns the old value."""
+    path = "shared_prefs/lumement.xml"
+    xml = d.sh(f"run-as {PKG} cat {path}")
+    if "<map" not in xml:
+        xml = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n</map>\n"
+    m = re.search(rf'\s*<string name="{key}">([^<]*)</string>', xml)
+    old = m.group(1) if m else None
+    if m:
+        xml = xml.replace(m.group(0), "")
+    if value is not None:
+        xml = xml.replace("</map>", f'    <string name="{key}">{value}</string>\n</map>')
+    subprocess.run([ADB, "-s", d.serial, "shell", f"run-as {PKG} sh -c 'cat > {path}'"], input=xml, text=True, capture_output=True, timeout=30)
+    kill_app(d)
+    wait(lambda: d.pid() != "", 60, step=2)
+    wait(lambda: f"{PKG}/{PKG}.NotificationWakerService" in d.sh("dumpsys notification | grep -A3 'Live notification listeners'"), 30, step=2)
+    time.sleep(3)
+    return old
+
+
+def c_bright_off(d):
+    """No bright minutes: a message plays, then the LED makes way at once (no screen held), and the next one plays again."""
+    f = []
+    old = set_pref(d, "bright_for", "OFF")
+    try:
+        message_while_locked(d, "boff1")
+        time.sleep(3)
+        if not wait(lambda: "Lumement:led" not in d.locks() and d.screen() != "ON", 40):
+            f.append(f"screen still held with no bright minutes (screen={d.screen()} locks={d.locks()})")
+        message_while_locked(d, "boff2")
+        if not wait(lambda: d.screen() == "ON", 10):
+            f.append("a second message didn't wake the phone")
+    finally:
+        set_pref(d, "bright_for", old)
+    return f
+
+
+def c_bright_cap(d):
+    """Five bright minutes: past them, the LED lets go of the screen (the battery's guard). Slow: about 6 minutes."""
+    f = []
+    old = set_pref(d, "bright_for", "FIVE")
+    try:
+        message_while_locked(d, "bcap1")
+        if not wait(lambda: led_up(d), 15):
+            return ["LED not lit"]
+        time.sleep(5 * 60 - 15)
+        if not led_up(d):
+            f.append(f"LED out before its five minutes (screen={d.screen()} locks={d.locks()})")
+        if not wait(lambda: "Lumement:led" not in d.locks() and d.screen() != "ON", 60):
+            f.append(f"screen still held a minute past the five (screen={d.screen()} locks={d.locks()})")
+    finally:
+        set_pref(d, "bright_for", old)
+    return f
+
+
+def c_reboot(d):
+    """Rebooted: nothing crashes before the first unlock; once unlocked and locked again, a message lights the LED."""
+    f = []
+    subprocess.run([ADB, "-s", d.serial, "reboot"], capture_output=True, timeout=60)
+    time.sleep(10)
+    subprocess.run([ADB, "-s", d.serial, "wait-for-device"], capture_output=True, timeout=300)
+    wait(lambda: d.sh("getprop sys.boot_completed").strip() == "1", 240, step=3)
+    time.sleep(15)
+    # Not unlocked yet: Lumement's files are locked away; a message now finds no listener (Android's rule).
+    d.post("boot0")
+    time.sleep(8)
+    f += [p + " (before the first unlock)" for p in problems(d.log(), allow_death=True)]
+    d.read_all()
+    d.unlock()
+    time.sleep(3)
+    if not fresh_message_lights(d, "boot1"):
+        f.append(f"no LED for a message after the reboot (screen={d.screen()} locks={d.locks()})")
+    return f
+
+
 CASES = [
     ("burst", c_burst), ("in-use-then-lock", c_in_use_then_lock), ("dnd", c_dnd),
     ("unlock-while-lit", c_unlock_while_lit), ("power-while-lit", c_power_while_lit),
     ("process-death", c_process_death), ("low-battery", c_low_battery), ("battery-saver", c_battery_saver),
     ("call", c_call), ("landscape", c_landscape), ("shield-off", c_shield_off), ("listener-off", c_listener_off),
     ("no-post-permission", c_no_post_permission), ("big-text", c_big_text), ("monkey", c_monkey),
+    ("lock-screen-awake", c_lock_screen_awake), ("lock-delay", c_lock_delay), ("gone-at-once", c_gone_at_once), ("lock-cycles", c_lock_cycles),
+    ("config-while-lit", c_config_while_lit), ("trim-memory", c_trim_memory), ("pocket", c_pocket),
+    ("face-down", c_face_down), ("doze", c_doze), ("background-restricted", c_background_restricted),
+    ("force-stop", c_force_stop), ("app-update", c_app_update), ("bright-off", c_bright_off),
+    ("bright-cap", c_bright_cap), ("reboot", c_reboot),
 ]
+
+# The process dies in these by design (killed, stopped, replaced, rebooted).
+DIES = {"process-death", "force-stop", "app-update", "bright-off", "bright-cap", "reboot"}
 
 
 def end_calls(d):
@@ -476,7 +795,7 @@ def run(d, only, results):
             results.append((d.serial, d.sdk, name, "skip", "not on this Android"))
             continue
         log = d.log()
-        f += problems(log, allow_death=(name == "process-death"))
+        f += problems(log, allow_death=(name in DIES))
         if f:
             with open(os.path.join(LOGS, f"fail-{d.serial}-{name}.log"), "w") as out:
                 out.write(log)
