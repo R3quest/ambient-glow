@@ -49,6 +49,7 @@ internal fun GlowScreen(
     settings: GlowSettings,
     geometry: ScreenGeometry,
     onTap: () -> Unit,
+    onHold: () -> Unit,
     onTouch: (down: Boolean) -> Unit,
     onArrivalDone: () -> Unit,
     onShowMessage: () -> Unit,
@@ -61,6 +62,7 @@ internal fun GlowScreen(
     if (face != Face.LED) return
     val colors = GlowPending.colors().ifEmpty { listOf(DEFAULT_GLOW_COLOR) }
     val tap by rememberUpdatedState(onTap)
+    val hold by rememberUpdatedState(onHold)
     val touch by rememberUpdatedState(onTouch)
     Box(
         modifier = Modifier
@@ -69,12 +71,22 @@ internal fun GlowScreen(
             // Swallow both taps of a double tap, so the second one can't reach the lock screen
             // (where One UI's double-tap-to-sleep would turn the screen off again). Act on the
             // second press, not its release: its lift still comes to this window, and the lock
-            // screen starts showing one press-length sooner.
+            // screen starts showing one press-length sooner. A finger that stays (on the fingerprint
+            // sensor, most likely, mid-effect too) has the lock screen at once, which reads it.
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown().consume()
                     touch(true)
-                    if (waitForUpOrCancellation()?.consume() == null) {
+                    var lifted = false
+                    val stayed = withTimeoutOrNull(FINGER_HOLD_MS) {
+                        lifted = waitForUpOrCancellation()?.consume() != null
+                    } == null
+                    if (stayed) {
+                        hold()
+                        waitForUpOrCancellation()?.consume()
+                        return@awaitEachGesture
+                    }
+                    if (!lifted) {
                         touch(false)
                         return@awaitEachGesture
                     }
@@ -105,6 +117,13 @@ internal fun GlowScreen(
         }
     }
 }
+
+/**
+ * A finger down this long on the black panel is resting, not tapping (a tap lifts within ~0.1 s):
+ * on the under-display fingerprint sensor, most likely. Short enough that the unlock isn't felt to
+ * wait, long enough that a double tap's first press never counts.
+ */
+private const val FINGER_HOLD_MS = 180L
 
 /** How long the black panel holds the system's message pop-up before retracting it. */
 private const val MESSAGE_HOLD_MS = 6_000L

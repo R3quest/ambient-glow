@@ -178,6 +178,9 @@ internal interface ShieldPort {
     fun showLit(colors: () -> List<Int>, round: Int, onTouch: () -> Unit, onTap: () -> Unit, onReady: (shown: Boolean) -> Unit): Boolean
     fun focusLockScreen()
     fun hideLit()
+
+    /** [then] once the lit LED's breath under way is out ([LedRound.whenDark]); at once if it is dark or not up. */
+    fun whenLitDark(then: () -> Unit)
     fun prepareLed()
     fun startAodLed(colors: () -> List<Int>, round: Int): Boolean
     fun redrawAodLed()
@@ -201,6 +204,7 @@ internal object RealShield : ShieldPort {
         GlowShield.showLit(colors, round, onTouch, onTap, onReady)
     override fun focusLockScreen() = GlowShield.focusLockScreen()
     override fun hideLit() = GlowShield.hideLit()
+    override fun whenLitDark(then: () -> Unit) = GlowShield.whenLitDark(then)
     override fun prepareLed() = GlowShield.prepareLed()
     override fun startAodLed(colors: () -> List<Int>, round: Int) = GlowShield.startAodLed(colors, round)
     override fun redrawAodLed() = GlowShield.redrawAodLed()
@@ -562,9 +566,9 @@ internal class LockFlow(
         }
         if (!port.interactive || ending.value || stowed || coverSleep) return
         if (ledInWindow.value) {
-            GlowLog.d { "act bright phase over: asleep from under the LED" }
+            GlowLog.d { "act bright phase over: asleep from under the LED once its breath is out" }
             port.note("bright-end")
-            sleepFromUnderLed()
+            afterLitBreath(::brightOverUnderLed)
         } else if (face.value == Face.LED && !arriving.value) {
             GlowLog.d { "act bright phase over: asleep under cover" }
             port.note("bright-end")
@@ -716,8 +720,11 @@ internal class LockFlow(
         // A message heard in the call arrives now: its bright phase from the hang-up, not spent at the ear ([brightAfterHold]).
         if (!GlowSession.resting && !port.inCall) {
             val inUse = port.interactive && !port.keyguardLocked
-            GlowSession.bright = brightAfterHold(GlowSession.bright, port.elapsedMs, settings.value.brightFor.ms, inUse)
-            if (GlowSession.bright.lit(port.elapsedMs)) armBrightEnd()
+            val was = GlowSession.bright
+            GlowSession.bright = brightAfterHold(was, port.elapsedMs, settings.value.brightFor.ms, inUse)
+            // Only for a phase it started, and not away behind the user's apps: armed for any lit
+            // streak, its end ran in the dark long after (found by [LockFlowFuzzTest]).
+            if (GlowSession.bright != was && face.value != Face.AWAY) armBrightEnd()
         }
         if (!port.interactive && face.value != Face.AWAY) {
             GlowLog.d { "act relight after the call face=${face.value}" }
@@ -795,10 +802,18 @@ internal class LockFlow(
         }
         if (ledInWindow.value && port.interactive) {
             // Read elsewhere while the lock screen waits under the LED: don't pop it up. Black over
-            // it and asleep at once; the glow screen finishes when the screen goes off.
+            // it and asleep once its breath is out, as the LED's face finishes its own; the glow
+            // screen finishes when the screen goes off.
             GlowLog.d { "act read elsewhere under the LED" }
-            ending.value = true
-            sleepFromUnderLed()
+            afterLitBreath {
+                if (!GlowPending.isEmpty) return@afterLitBreath // a new message meanwhile: its own way
+                if (ledInWindow.value && port.interactive) {
+                    ending.value = true
+                    sleepFromUnderLed()
+                } else {
+                    onPendingChanged() // lifted or asleep meanwhile: as it is now
+                }
+            }
             return
         }
         if (face.value == Face.LED && port.interactive) {
@@ -1310,6 +1325,19 @@ internal class LockFlow(
     }
 
     /**
+     * A finger resting on the black panel ([FINGER_HOLD_MS]): on the fingerprint sensor, most likely.
+     * One UI listens for it only while its lock screen is in front, which the LED's face, and an
+     * arrival on it, cover: the finger did nothing until the effect was over and the LED's window
+     * took over (seen on the S23: occluded, not listening). The lock screen comes in front now, its
+     * effect cut short, and reads the finger already there. Not covered or put away: a pocket's press.
+     */
+    fun onFingerHeld() {
+        GlowLog.d { "act finger held face=${face.value} arriving=${arriving.value}" }
+        if (stowed || covered.value) return
+        onUserDismiss()
+    }
+
+    /**
      * The phone stopped being interactive with the LED in front: the user pressed power. Not
      * when we put the LED up ourselves during the sleep fade, not for the proximity sensor
      * during a call, and not while [ending]: with nothing left to show, the screen going off
@@ -1424,6 +1452,30 @@ internal class LockFlow(
         if (!ledInWindow.value) return
         GlowLog.d { "act $why under the LED: its face covers the lock screen again" }
         showLed()
+    }
+
+    /**
+     * [then] once the lit window's breath under way is out ([ShieldPort.whenLitDark]): put out at
+     * once, the LED vanished mid-breath, often near its peak, where its face finishes the breath.
+     * Up to a breath's length (1.86 s) later, so [then] looks again at how things stand; every wait
+     * runs (a bright phase's end and a read in one breath: the newest alone lost the read's end).
+     */
+    private fun afterLitBreath(then: () -> Unit) {
+        shield.whenLitDark { if (!finishing && !destroyed) then() }
+    }
+
+    /**
+     * The bright phase's end, the lit window's breath now out ([brightEnded]): asleep from under
+     * it, unless things moved on meanwhile. A new phase re-arms its own end (left unarmed, the
+     * screen stayed lit past it: found by [LockFlowFuzzTest]); the face in front, as it is now.
+     */
+    private fun brightOverUnderLed() {
+        if (litAllowed || !ledInWindow.value) {
+            brightEnded()
+            return
+        }
+        if (!port.interactive || ending.value || stowed || coverSleep) return
+        sleepFromUnderLed()
     }
 
     /** Nothing more to show over the ready lock screen (read elsewhere, Do Not Disturb): black over it, and asleep at once. */

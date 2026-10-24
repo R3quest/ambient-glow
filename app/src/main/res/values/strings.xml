@@ -167,6 +167,8 @@
     <string name="after_bright_aod">AOD</string>
     <string name="after_bright_off">OFF</string>
     <string name="waiting_then_off_body">The phone sleeps and the LED goes out until a new message.</string>
+    <string name="waiting_then_stock_body">Then the phone sleeps. Where it shows an always-on display, the LED stays on it; otherwise it goes out until a new message.</string>
+    <string name="waiting_then_stock_never_body">With no bright LED, the LED shows only on an always-on display, where the phone shows one.</string>
     <string name="waiting_then_never_body">With no bright LED either, only the new-message effect shows: the LED never lights.</string>
     <string name="then_ready_title">Always-on display ready</string>
     <string name="then_ready_body">It shows for new notifications, with the LED still on it.</string>
@@ -521,6 +523,7 @@
     <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
     <string name="quiet_dnd">Do Not Disturb is on, so Lumement rests: messages wait without an effect, and the LED shows for them once it ends.</string>
     <string name="quiet_saver">Battery Saver is on: after the effect the screen sleeps at once. The LED doesn\'t keep it lit.</string>
+    <string name="test_locked_after">Didn\'t light up? The phone has to be locked when the count ends, with Do Not Disturb off.</string>
     <string name="test_locked_blocked">Alerts are off for Lumement. Allow them, then try again.</string>
 
     <string name="message_channel_name">New message pop-up</string>

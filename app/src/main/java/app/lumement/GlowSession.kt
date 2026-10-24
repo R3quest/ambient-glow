@@ -281,6 +281,15 @@ internal fun lockChecks(delayMs: Long?): List<Long> = when {
  */
 internal fun lockAlarmMs(delayMs: Long?): Long? = delayMs?.takeIf { it > MAX_LOCK_WAIT_MS }?.plus(LOCK_MARGIN_MS + LOCK_GRACE_MS)
 
+/**
+ * Where a wait for the lock counts from ([lockChecks], [lockAlarmMs]): the screen-off, or [now] when
+ * its SCREEN_OFF isn't in yet (the screen went dark ~0.3 s before the broadcast) or a new process
+ * never saw it. Counted from the one before, a message in that moment had its looks run out at
+ * once and arrived as a plain relight.
+ */
+internal fun lockWaitStart(screenOffAt: Long, screenOnAt: Long, now: Long): Long =
+    if (screenOffAt > 0L && screenOffAt >= screenOnAt) screenOffAt else now
+
 /** One UI's lock delay after a screen timeout, when the setting can't be read. */
 internal const val DEFAULT_LOCK_DELAY_MS = 5_000L
 private const val LOCK_MARGIN_MS = 600L

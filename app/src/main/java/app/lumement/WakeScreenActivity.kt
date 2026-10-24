@@ -192,6 +192,7 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
                 settings = flow.settings.value.forScreen(geometry.value),
                 geometry = geometry.value.fitted(flow.settings.value, resources.displayMetrics.density),
                 onTap = flow::onUserDismiss,
+                onHold = flow::onFingerHeld,
                 onTouch = ::onLedTouch,
                 onArrivalDone = flow::onArrivalDone,
                 onShowMessage = flow::showMessage,

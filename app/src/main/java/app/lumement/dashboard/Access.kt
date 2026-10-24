@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -77,6 +78,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import app.lumement.GlowLauncher
@@ -308,11 +310,17 @@ internal class AccessActions(
 @Composable
 internal fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
     val context = LocalContext.current
+    val activity = LocalActivity.current
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         onRefresh()
-        if (!granted || !GlowLauncher.canPeekBridge(context)) context.openBridgeSettings()
+        // Refused once, the page stays: its words say why, and the button asks again. Only once
+        // Android won't ask any more (refused twice) is Settings the way; straight there at the
+        // first "Don't allow" read as the app not taking no for an answer.
+        val mayAskAgain = activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)
+        if ((granted && !GlowLauncher.canPeekBridge(context)) || (!granted && !mayAskAgain)) context.openBridgeSettings()
     }
     return remember(context, notificationPermission) {
         AccessActions(

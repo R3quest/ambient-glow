@@ -805,6 +805,9 @@ private class LockedTest {
     var countdown by mutableIntStateOf(0)
     var blocked by mutableStateOf(false)
     var runs by mutableIntStateOf(0)
+
+    /** The count ran out: back on the dashboard, what to check if nothing lit ([AFTER_TEST_MS]). */
+    var done by mutableStateOf(false)
 }
 
 @Composable
@@ -813,14 +816,27 @@ private fun rememberLockedTest(): LockedTest {
     // Display-only countdown; the message itself is posted by GlowLauncher's single callback.
     LaunchedEffect(test.runs) {
         if (test.runs == 0) return@LaunchedEffect
+        test.done = false
         for (remaining in COUNTDOWN_SECONDS downTo 1) {
             test.countdown = remaining
             delay(1_000L)
         }
         test.countdown = 0
+        test.done = true
+    }
+    // Shown once the user is back (the count runs on while the phone is locked), for a while;
+    // and an "alerts are off" goes once they come back from Settings, where it was put right.
+    val scope = rememberCoroutineScope()
+    LifecycleResumeEffect(test.done) {
+        test.blocked = false
+        val shown = if (test.done) scope.launch { delay(AFTER_TEST_MS); test.done = false } else null
+        onPauseOrDispose { shown?.cancel() }
     }
     return test
 }
+
+/** How long, back on the dashboard after a test, it says what to check if nothing lit. */
+private const val AFTER_TEST_MS = 12_000L
 
 /** A padlock while idle; the count to the messages while they wait, edged in cyan. */
 @Composable
@@ -894,10 +910,16 @@ private fun Padlock() {
 /** What to do now (or why it can't run), unfolding under the header; it carries its own gap. */
 @Composable
 private fun TestHint(test: LockedTest, modifier: Modifier = Modifier) {
-    Disclosure(visible = test.blocked || test.countdown > 0) {
+    Disclosure(visible = test.blocked || test.countdown > 0 || test.done) {
         // Said as it comes, too: with TalkBack the tap gives no other sign of what to do next.
         Text(
-            text = stringResource(if (test.blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
+            text = stringResource(
+                when {
+                    test.blocked -> R.string.test_locked_blocked
+                    test.countdown > 0 -> R.string.test_locked_hint
+                    else -> R.string.test_locked_after
+                },
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = if (test.blocked) GlowPalette.Amber else GlowPalette.TextMuted,
             modifier = modifier

@@ -59,6 +59,9 @@ class RelightTest {
         assertEquals(62_600L, lockAlarmMs(60_000L))
         assertEquals("held awake for instead", null, lockAlarmMs(30_000L))
         assertEquals("unknown: the backing-off looks", null, lockAlarmMs(null))
+        assertEquals("from the screen-off", 5_000L, lockWaitStart(screenOffAt = 5_000L, screenOnAt = 1_000L, now = 6_000L))
+        assertEquals("its SCREEN_OFF not in yet: from now, not the last one", 9_000L, lockWaitStart(screenOffAt = 5_000L, screenOnAt = 7_000L, now = 9_000L))
+        assertEquals("a new process: from now", 9_000L, lockWaitStart(screenOffAt = 0L, screenOnAt = 0L, now = 9_000L))
     }
 
     @Test
