@@ -713,6 +713,12 @@ internal class LockFlow(
 
     /** The screen went off during a call, and the call is over: the LED as the screen-off would have had it. */
     fun callOver() {
+        // A message heard in the call arrives now: its bright phase from the hang-up, not spent at the ear ([brightAfterHold]).
+        if (!GlowSession.resting && !port.inCall) {
+            val inUse = port.interactive && !port.keyguardLocked
+            GlowSession.bright = brightAfterHold(GlowSession.bright, port.elapsedMs, settings.value.brightFor.ms, inUse)
+            if (GlowSession.bright.lit(port.elapsedMs)) armBrightEnd()
+        }
         if (!port.interactive && face.value != Face.AWAY) {
             GlowLog.d { "act relight after the call face=${face.value}" }
             when (face.value) {
@@ -913,10 +919,11 @@ internal class LockFlow(
             }
         } else if (face.value == Face.LOCK_SCREEN && !port.interactive && !GlowPending.isEmpty) {
             // Do Not Disturb is over and messages are still unread: the LED lights again, on the
-            // always-on display if it shows. Looking at the lock screen, the dot takes over when
-            // it sleeps, as ever.
+            // always-on display if it shows; lit in a bright phase (what it held back arrived now,
+            // [brightAfterHold]), as for a new message. Looking at the lock screen, the dot takes
+            // over when it sleeps, as ever.
             port.holdCpu()
-            relightOrAod()
+            if (litAllowed) relightLed(RELIGHT_DELAY_MS) else relightOrAod()
         } else if (face.value == Face.LOCK_SCREEN && port.interactive) {
             watchForSleep() // looking at the lock screen: the LED takes over when it sleeps, as ever
         }

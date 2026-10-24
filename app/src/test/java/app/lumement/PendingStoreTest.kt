@@ -189,5 +189,7 @@ class PendingStoreTest {
         assertEquals(BrightStreak(), decodeBright("3,1,2,x,4", 3))
         assertEquals(BrightStreak(), decodeBright("3,1,2", 3))
         assertEquals(BrightStreak(1, 2, 3, 4), decodeBright(encodeBright(BrightStreak(1, 2, 3, 4), 3), 3))
+        assertEquals("with a hold", BrightStreak(1, 2, 3, 4, heldAt = 5), decodeBright(encodeBright(BrightStreak(1, 2, 3, 4, heldAt = 5), 3), 3))
+        assertEquals("kept before the hold was", BrightStreak(1, 2, 3, 4), decodeBright("3,1,2,3,4", 3))
     }
 }

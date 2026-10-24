@@ -1,12 +1,15 @@
 package app.lumement
 
+import android.app.AlarmManager
 import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.os.Build
@@ -18,6 +21,7 @@ import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.view.Display
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.os.BundleCompat
 import app.lumement.dashboard.GrantReturn
@@ -86,7 +90,11 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     // A relight that bailed out for a call, tried again once it is over.
-    private val afterCall by lazy(LazyThreadSafetyMode.NONE) { AfterCall(this, ::relightIfWaiting) }
+    private val afterCall by lazy(LazyThreadSafetyMode.NONE) {
+        AfterCall(this) {
+            if (releaseHold()) arriveHeld() else relightIfWaiting()
+        }
+    }
 
     // Screen-off → relight the LED while messages are still unread. The short delay lets the
     // keyguard settle first.
@@ -99,6 +107,7 @@ class NotificationWakerService : NotificationListenerService() {
             mainHandler.removeCallbacks(relightLed)
             mainHandler.removeCallbacks(checkLed)
             mainHandler.removeCallbacks(relightOnceLocked)
+            cancelLockAlarm()
             lockWait = LockWait.NONE
             arrivesOnceLocked = false
             // A glow screen on top of the lock screen handles its own screen-off; with none, the
@@ -215,6 +224,7 @@ class NotificationWakerService : NotificationListenerService() {
         // would have had it.
         val restored = GlowPending.restore(::stillShowing)
         if (restored) GlowSession.bright = GlowPending.keptBright()
+        val held = releaseHold() // over while the process was gone
         pruneStalePending()
         if (!screenReceiverRegistered) {
             registerScreenEvents(screenEvents)
@@ -226,7 +236,7 @@ class NotificationWakerService : NotificationListenerService() {
         if (catchUp(active)) return
         // Restored by a new process, or kept by this one through a rebind, which cancelled the
         // screen-off's relights ([releaseScreenReceiver]): lit as the screen-off would have had it.
-        if (!GlowPending.isEmpty) relightIfWaiting()
+        if (held) arriveHeld() else if (!GlowPending.isEmpty) relightIfWaiting()
     }
 
     override fun onListenerDisconnected() {
@@ -245,6 +255,8 @@ class NotificationWakerService : NotificationListenerService() {
         noteScreenTaker(sbn)
         val ranked = rankingMap?.getRanking(sbn.key, ranking) == true
         if (!isRealMessage(sbn, if (ranked) ranking else null)) return
+        // Kept out by Do Not Disturb: it waits, held back, and the LED shows for it once the rest is over.
+        val intercepted = ranked && !ranking.matchesInterruptionFilter()
         noteHeard(sbn.postTime)
         // Every message keeps its app on the Apps screen, muted or not; a muted one stops here.
         val auto = brandColors.of(sbn)
@@ -270,12 +282,19 @@ class NotificationWakerService : NotificationListenerService() {
                 "locked=${keyguard.isKeyguardLocked} host=${host != null} away=${host?.isAway}"
         }
         if (quietUpdate) return
+        if (intercepted) {
+            GlowSession.bright = GlowSession.bright.held(SystemClock.elapsedRealtime())
+            GlowLog.d { "svc held back by Do Not Disturb" }
+            return
+        }
 
         val settings = GlowPrefs.load(this)
         // A new message: the LED's bright phase starts over, within the streak's time ([BrightStreak]);
         // the phone in use, a new streak ([brightAfterMessage]).
         val inUse = power.isInteractive && !keyguard.isKeyguardLocked
         GlowSession.bright = brightAfterMessage(GlowSession.bright, SystemClock.elapsedRealtime(), settings.brightFor.ms, inUse)
+        // In a call, held back too: its bright phase starts again once the call is over ([releaseHold]).
+        if (audio.inCall) GlowSession.bright = GlowSession.bright.held(SystemClock.elapsedRealtime())
         // One UI's always-on display for it, at the next sleep; not for one read on the phone in use.
         if (!inUse) GlowSession.aodDue = true
         LedDiary.note(this, "message", "waiting=${GlowPending.entries.size}")
@@ -325,9 +344,12 @@ class NotificationWakerService : NotificationListenerService() {
         if (resting == GlowSession.resting) return
         GlowSession.resting = resting
         GlowLog.d { "svc ${if (resting) "rest" else "rest over"} (filter $interruptionFilter) pending=${GlowPending.entries.size}" }
+        val held = !resting && releaseHold()
         val host = GlowSession.host
         if (host != null && !host.isAway) {
             host.onRestChanged()
+        } else if (held) {
+            arriveHeld()
         } else if (!resting) {
             relightIfWaiting() // no glow screen on top: back through the full-screen intent
         }
@@ -439,6 +461,46 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     /**
+     * Do Not Disturb and any call over: what they held back arrives now ([brightAfterHold]). True if
+     * anything did: [arriveHeld] lights it, or a glow screen on top does.
+     */
+    private fun releaseHold(): Boolean {
+        if (GlowSession.resting || audio.inCall || GlowPending.isEmpty) return false
+        val was = GlowSession.bright
+        val inUse = power.isInteractive && !keyguard.isKeyguardLocked
+        GlowSession.bright = brightAfterHold(was, SystemClock.elapsedRealtime(), GlowPrefs.load(this).brightFor.ms, inUse)
+        if (GlowSession.bright == was) return false
+        if (!inUse) GlowSession.aodDue = true
+        GlowLog.d { "svc held messages arrive" }
+        LedDiary.note(this, "message", "held, waiting=${GlowPending.entries.size}")
+        return true
+    }
+
+    /**
+     * What a hold kept back, now that it's over: as a new message with no effect would come (Just
+     * the LED), the lit LED for its bright phase; asleep on the always-on display too, where a plain
+     * relight stays off for messages One UI counts as seen. Seen on the S23: the message held by
+     * Do Not Disturb, its rest over on the always-on display, and no LED. With no bright phase to
+     * give (Battery Saver, the battery low), what a relight would do.
+     */
+    private fun arriveHeld() {
+        val plan = relightPlan(
+            screenOn = power.isInteractive,
+            waiting = !GlowPending.isEmpty,
+            resting = GlowSession.resting,
+            hostOnTop = GlowSession.host?.isAway == false,
+            inCall = audio.inCall,
+            locked = keyguard.isKeyguardLocked,
+        )
+        if (plan != Relight.NOW || !litLedAllowed(SystemClock.elapsedRealtime(), GlowSession.bright, { batterySaver }, { batteryPct() })) {
+            relightIfWaiting()
+            return
+        }
+        GlowLog.d { "svc held messages: the LED, no effect" }
+        if (launch(wakeModeFor(ArrivalMode.LED_ONLY, power.isInteractive), GlowPending.newestColor)) lastWakeAt = SystemClock.elapsedRealtime()
+    }
+
+    /**
      * The message that came in the lock delay, now that the phone has locked: the glow screen as
      * for a new message (its arrival, then the lit LED in the phase it started), unless something
      * rightly keeps the LED dark or a glow screen is up already; those go as a relight would.
@@ -468,14 +530,57 @@ class NotificationWakerService : NotificationListenerService() {
      */
     private fun awaitLock() {
         if (lockWait != LockWait.NONE) return
-        lockLooks = lockChecks(lockDelayMs())
+        val delay = lockDelayMs()
+        lockLooks = lockChecks(delay)
         lockWait = if (lockLooks.isEmpty()) LockWait.DONE else LockWait.WAITING
-        if (lockLooks.isEmpty()) return
+        if (lockLooks.isEmpty()) {
+            lockAlarmMs(delay)?.let(::awaitLongLock)
+            return
+        }
         lockLook = 0
         // [lockChecks] counts from the screen-off; a new process didn't see it: from now.
         lockWaitFrom = if (screenOffAt > 0L) screenOffAt else SystemClock.elapsedRealtime()
         GlowLog.d { "svc unlocked: relight once it locks, looking at $lockLooks ms" }
         nextLockLook()
+    }
+
+    /**
+     * A lock delay too long to hold the CPU through ([lockAlarmMs]): an alarm [afterMs] past the
+     * screen-off looks once. What came in the delay is held back ([BrightStreak.held]): by then a
+     * late arrival effect would only puzzle, so the LED shows for it, its bright phase from the lock.
+     */
+    private fun awaitLongLock(afterMs: Long) {
+        lockWait = LockWait.WAITING
+        if (arrivesOnceLocked) GlowSession.bright = GlowSession.bright.held(SystemClock.elapsedRealtime())
+        arrivesOnceLocked = false
+        if (!lockAlarmRegistered) {
+            ContextCompat.registerReceiver(this, lockAlarmFired, IntentFilter(lockAlarmAction), ContextCompat.RECEIVER_NOT_EXPORTED)
+            lockAlarmRegistered = true
+        }
+        val from = if (screenOffAt > 0L) screenOffAt else SystemClock.elapsedRealtime()
+        getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, from + afterMs, lockAlarm)
+        GlowLog.d { "svc unlocked: a long lock delay, looking once at $afterMs ms" }
+    }
+
+    private val lockAlarmAction by lazy(LazyThreadSafetyMode.NONE) { "$packageName.LOCK_LOOK" }
+    private val lockAlarm by lazy(LazyThreadSafetyMode.NONE) {
+        PendingIntent.getBroadcast(this, 0, Intent(lockAlarmAction).setPackage(packageName), PendingIntent.FLAG_IMMUTABLE)
+    }
+    private var lockAlarmRegistered = false
+    private val lockAlarmFired = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (lockWait != LockWait.WAITING) return
+            lockWait = LockWait.DONE
+            GlowLog.d { "svc long lock delay over: locked=${keyguard.isKeyguardLocked}" }
+            if (releaseHold()) arriveHeld() else relightIfWaiting()
+        }
+    }
+
+    private fun cancelLockAlarm() {
+        if (!lockAlarmRegistered) return
+        getSystemService(AlarmManager::class.java).cancel(lockAlarm)
+        unregisterReceiver(lockAlarmFired)
+        lockAlarmRegistered = false
     }
 
     /** Which boot this is, to tell its elapsed times from an earlier boot's; -1 if unknown. */
@@ -599,6 +704,7 @@ class NotificationWakerService : NotificationListenerService() {
         mainHandler.removeCallbacks(relightLed)
         mainHandler.removeCallbacks(checkLed)
         mainHandler.removeCallbacks(relightOnceLocked)
+        cancelLockAlarm()
         afterCall.cancel()
         // The waits those were: left set, a rebind's screen-off would think them still under way.
         lockWait = LockWait.NONE
@@ -622,7 +728,6 @@ class NotificationWakerService : NotificationListenerService() {
             flags = notification.flags,
             category = notification.category,
             importance = ranking?.importance,
-            allowedNow = ranking?.matchesInterruptionFilter() ?: true,
         )
     }
 

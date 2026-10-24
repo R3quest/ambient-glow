@@ -26,9 +26,16 @@ internal const val LOW_BATTERY_PCT = 20
  * The unread streak's bright phases: the one under way started at [from] and ends at [until]
  * (elapsed ms); [spentMs] is the bright time the streak's earlier phases used. [until] 0: none.
  * [messageAt]: when the newest message arrived (elapsed ms), which started the phase under way;
- * a look keeps it.
+ * a look keeps it. [heldAt]: the newest message held back (Do Not Disturb, a call), 0 for none;
+ * those arrive once the hold is over ([brightAfterHold]), unless the user looks first.
  */
-internal data class BrightStreak(val from: Long = 0L, val until: Long = 0L, val spentMs: Long = 0L, val messageAt: Long = 0L) {
+internal data class BrightStreak(
+    val from: Long = 0L,
+    val until: Long = 0L,
+    val spentMs: Long = 0L,
+    val messageAt: Long = 0L,
+    val heldAt: Long = 0L,
+) {
 
     /** In the bright phase at [now] (elapsed ms). */
     fun lit(now: Long): Boolean = now < until
@@ -40,8 +47,11 @@ internal data class BrightStreak(val from: Long = 0L, val until: Long = 0L, val 
     fun onMessage(now: Long, brightForMs: Long, streakMs: Long = BRIGHT_STREAK_MS): BrightStreak {
         val spent = spentMs + (minOf(now, until) - from).coerceAtLeast(0L)
         val left = (streakMs - spent).coerceAtLeast(0L)
-        return BrightStreak(from = now, until = now + minOf(brightForMs, left), spentMs = spent, messageAt = now)
+        return BrightStreak(from = now, until = now + minOf(brightForMs, left), spentMs = spent, messageAt = now, heldAt = heldAt)
     }
+
+    /** A message at [now] held back: no phase for it now; it arrives when the hold is over ([brightAfterHold]). */
+    fun held(now: Long): BrightStreak = copy(heldAt = now)
 
     /**
      * How far the phase under way has run at [now], 0 as its message arrives to 1 as it ends, and 1
@@ -54,7 +64,7 @@ internal data class BrightStreak(val from: Long = 0L, val until: Long = 0L, val 
     /**
      * The user looked at the lock screen (a press, a tap, a lift): a new streak, so the next
      * message has its whole time again. The phase under way runs out as it would have: until then
-     * the LED still comes back when the lock screen sleeps.
+     * the LED still comes back when the lock screen sleeps. What was held back has been seen too.
      */
     fun looked(now: Long): BrightStreak = if (lit(now)) BrightStreak(from = now, until = until, messageAt = messageAt) else BrightStreak()
 }

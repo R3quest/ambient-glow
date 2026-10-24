@@ -100,6 +100,9 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         val placed = if (form == LedForm.DOT) ledDotCenter(settings.dotX, settings.dotY, litCore, size) else ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density)
         lightAt = placed + shift
         look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, form, settings, calm, still?.map(::Color))
+        // Dark before it is painted, whatever the kept level says: the lit window's first breath
+        // flashed its whole peak for a frame (S23 recording) as the surface showed at full alpha.
+        if (level == 0f) level = -1f
         setLevel(0f)
         // Neon: once, at its peak; the breath is the alpha. A material that moves: each step.
         if (look?.moves == false) paint(1f, LED_RISE_MS) else paint(0f, 0f)

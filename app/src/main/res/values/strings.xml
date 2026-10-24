@@ -519,7 +519,7 @@
     <string name="test_locked">Test on the locked phone</string>
     <string name="test_locked_countdown">Lock now: %1$d</string>
     <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
-    <string name="quiet_dnd">Do Not Disturb is on, so Lumement rests: a message let through lights the lock screen as usual, with no effect and no LED.</string>
+    <string name="quiet_dnd">Do Not Disturb is on, so Lumement rests: messages wait without an effect, and the LED shows for them once it ends.</string>
     <string name="quiet_saver">Battery Saver is on: after the effect the screen sleeps at once. The LED doesn\'t keep it lit.</string>
     <string name="test_locked_blocked">Alerts are off for Lumement. Allow them, then try again.</string>
 

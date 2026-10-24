@@ -208,9 +208,14 @@ def c_dnd(d):
     time.sleep(5)
     if d.screen() == "ON" or "Lumement:led" in d.locks():
         f.append(f"woke or lit in Do Not Disturb (screen={d.screen()} locks={d.locks()})")
-    d.sh("cmd notification set_dnd off")
-    time.sleep(1)
+    # What it held back shows once it ends: the LED, no effect.
+    d.sh("logcat -c; cmd notification set_dnd off")
+    if not wait(lambda: led_up(d), 15):
+        f.append(f"a message held back by Do Not Disturb: no LED once it ended (screen={d.screen()} locks={d.locks()})")
+    elif played_arrival(d):
+        f.append("a message held back by Do Not Disturb played an arrival once it ended")
     d.read_all()
+    wait(lambda: "Lumement:led" not in d.locks(), 15)
     message_while_locked(d, "dnd2")
     if not wait(lambda: led_up(d), 15):
         f.append("LED not lit before Do Not Disturb")
@@ -506,6 +511,42 @@ def c_lock_delay(d):
     return f
 
 
+def played_arrival(d):
+    return any("arrival up" in l or "act arrival done" in l for l in d.lum(d.log()))
+
+
+def c_long_lock_delay(d):
+    """A message in a lock delay too long to hold the CPU for (35 s here; a minute or more on phones): once
+    it has locked, the LED for it, no effect (it once stayed dark until the next wake). Its look is an
+    inexact alarm, which Android may run up to 3/4 of its lead late."""
+    f = []
+    timeout = d.sh("settings get system screen_off_timeout").strip()
+    delay = d.sh("settings get secure lock_screen_lock_after_timeout").strip()
+    d.sh("settings put system screen_off_timeout 10000; settings put secure lock_screen_lock_after_timeout 35000")
+    try:
+        d.unlock()
+        if not wait(lambda: d.screen() != "ON", 40):
+            return ["the screen never timed out"]
+        time.sleep(1)
+        if d.keyguard_up():
+            return None  # this Android locked at once: nothing to test
+        d.sh("logcat -c")
+        d.post("longdelay1")
+        if wait(lambda: d.screen() == "ON" and not d.keyguard_up(), 3, step=0.3):
+            f.append("woke into the unlocked phone in the lock delay")
+        if not wait(lambda: led_up(d) and d.keyguard_up(), 90, step=2):
+            f.append(f"LED not lit once locked (screen={d.screen()} locks={d.locks()} keyguard={d.keyguard_up()})")
+        elif played_arrival(d):
+            f.append("an arrival played long after the message")
+    finally:
+        d.sh(f"settings put system screen_off_timeout {timeout if timeout != 'null' else 60000}")
+        if delay in ("", "null"):
+            d.sh("settings delete secure lock_screen_lock_after_timeout")
+        else:
+            d.sh(f"settings put secure lock_screen_lock_after_timeout {delay}")
+    return f
+
+
 def c_gone_at_once(d):
     """A message read elsewhere a moment after it came (the glow screen still starting): nothing left lit or held."""
     d.sleep_phone()
@@ -772,7 +813,7 @@ CASES = [
     ("process-death", c_process_death), ("low-battery", c_low_battery), ("battery-saver", c_battery_saver),
     ("call", c_call), ("landscape", c_landscape), ("shield-off", c_shield_off), ("listener-off", c_listener_off),
     ("no-post-permission", c_no_post_permission), ("no-full-screen", c_no_full_screen), ("big-text", c_big_text), ("monkey", c_monkey),
-    ("lock-screen-awake", c_lock_screen_awake), ("lock-delay", c_lock_delay), ("gone-at-once", c_gone_at_once), ("lock-cycles", c_lock_cycles),
+    ("lock-screen-awake", c_lock_screen_awake), ("lock-delay", c_lock_delay), ("long-lock-delay", c_long_lock_delay), ("gone-at-once", c_gone_at_once), ("lock-cycles", c_lock_cycles),
     ("config-while-lit", c_config_while_lit), ("trim-memory", c_trim_memory), ("pocket", c_pocket),
     ("face-down", c_face_down), ("doze", c_doze), ("background-restricted", c_background_restricted),
     ("force-stop", c_force_stop), ("app-update", c_app_update), ("bright-off", c_bright_off),

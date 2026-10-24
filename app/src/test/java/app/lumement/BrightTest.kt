@@ -133,4 +133,21 @@ class BrightTest {
         litLedAllowed(min, after, { asked++; false }, { asked++; 80 })
         assertEquals("in the phase: both", 2, asked)
     }
+
+    /** Do Not Disturb or a call held messages back: they arrive as it ends, as one new message, unless the user looked first. */
+    @Test
+    fun whatAHoldKeptBackArrivesWhenItEnds() {
+        val night = BrightStreak().held(2 * min)
+        assertFalse("no phase for a held message", night.lit(2 * min))
+        val morning = brightAfterHold(night.held(5 * min), 60 * min, ten, inUse = false)
+        assertTrue("its phase from the hold's end", morning.lit(60 * min))
+        assertFalse(morning.lit(70 * min))
+        assertEquals("once", morning, brightAfterHold(morning, 61 * min, ten, inUse = false))
+        assertEquals("nothing held: nothing", BrightStreak(), brightAfterHold(BrightStreak(), 60 * min, ten, inUse = false))
+        assertEquals("seen meanwhile: nothing", BrightStreak(), brightAfterHold(night.looked(30 * min), 60 * min, ten, inUse = false))
+        // A message let through (or heard in a call: its phase was spent at the ear) keeps the hold.
+        val call = BrightStreak().onMessage(min, ten).held(min)
+        assertTrue(call.onMessage(2 * min, ten).heldAt > 0L)
+        assertTrue("from the hang-up", brightAfterHold(call, 25 * min, ten, inUse = false).lit(30 * min))
+    }
 }
