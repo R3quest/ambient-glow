@@ -393,6 +393,34 @@ class LockFlowTest {
         assertEquals("the lock screen at the next wake, never the LED", Face.LOCK_SCREEN, flow.face.value)
     }
 
+    /**
+     * A message Do Not Disturb kept out, the phone on its always-on display: when the rest is over
+     * it arrives (the listener's [brightAfterHold]) as a new one with no effect would, the lit LED
+     * for its bright phase. The relight put it onto the always-on display, or nowhere (seen on the S23).
+     */
+    @Test
+    fun whatDoNotDisturbHeldBackLightsTheLedWhenItEnds() {
+        phone.expectsAod = true
+        phone.dozes = true
+        readyUnderLed()
+        GlowSession.resting = true
+        phone.host { onRestChanged() }
+        phone.advance(3_000)
+        assertFalse(phone.interactive)
+        message("chat-2") // kept out: held back, as the listener has it
+        GlowSession.bright = GlowSession.bright.held(phone.now)
+        phone.advance(60 * 60_000) // the night
+        phone.log.clear()
+
+        GlowSession.bright = brightAfterHold(GlowSession.bright, phone.now, phone.settings.brightFor.ms, inUse = false)
+        GlowSession.resting = false
+        phone.host { onRestChanged() }
+        phone.advance(2_000)
+
+        assertTrue("lit for it", phone.interactive)
+        assertTrue("the lit LED, in its window", flow.ledInWindow.value)
+    }
+
     @Test
     fun unlockingStepsAwayAndLetsGoOfTheScreen() {
         readyUnderLed()
@@ -530,6 +558,35 @@ class LockFlowTest {
         logged("aod LED on")
         assertTrue(phone.aodBreathing)
         assertFalse(phone.interactive)
+    }
+
+    /**
+     * A message heard in a call longer than its bright phase: the phase ran out at the ear, so at
+     * the hang-up the LED stayed dark (no always-on display here). What the call held back now
+     * arrives at the hang-up: the lit LED, its phase from then.
+     */
+    @Test
+    fun aMessageInALongCallLightsTheLedOnceTheCallIsOver() {
+        phone.settings = GlowSettings(brightFor = BrightFor.FIVE)
+        message()
+        phone.launch(WakeMode.LED, 300)
+        phone.callTurns(true)
+        phone.pressPower() // the call's proximity
+        message("chat-2") // heard in the call: held back, as the listener has it
+        GlowSession.bright = GlowSession.bright.held(phone.now)
+        phone.then { GlowSession.host?.onNewMessage() }
+        phone.advance(20 * 60_000) // a long call, past the bright phase, at the ear
+        assertFalse(phone.interactive)
+        phone.log.clear()
+
+        phone.callTurns(false)
+        phone.advance(2_000)
+
+        assertTrue("its bright phase from the hang-up", GlowSession.bright.lit(phone.now))
+        assertTrue("the LED lit again", phone.interactive)
+        assertTrue("the lit LED, in its window", flow.ledInWindow.value)
+        phone.advance(6 * 60_000)
+        assertFalse("and its phase runs out", phone.panelLocked)
     }
 
     /**

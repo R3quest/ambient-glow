@@ -167,13 +167,14 @@ object GlowPending {
 
 /** [streak] for [GlowPending.keepBright], with the [boot] its times count from. */
 internal fun encodeBright(streak: BrightStreak, boot: Int): String =
-    listOf(boot.toLong(), streak.from, streak.until, streak.spentMs, streak.messageAt).joinToString(",")
+    listOf(boot.toLong(), streak.from, streak.until, streak.spentMs, streak.messageAt, streak.heldAt).joinToString(",")
 
 /** What [encodeBright] wrote, if in this [boot]; otherwise (another boot, unknown, unreadable) no phase. */
 internal fun decodeBright(text: String?, boot: Int): BrightStreak {
     val fields = text?.split(',')?.map { it.toLongOrNull() ?: return BrightStreak() } ?: return BrightStreak()
-    if (fields.size != 5 || boot < 0 || fields[0] != boot.toLong()) return BrightStreak()
-    return BrightStreak(from = fields[1], until = fields[2], spentMs = fields[3], messageAt = fields[4])
+    // Five fields: written before the hold was kept.
+    if (fields.size !in 5..6 || boot < 0 || fields[0] != boot.toLong()) return BrightStreak()
+    return BrightStreak(from = fields[1], until = fields[2], spentMs = fields[3], messageAt = fields[4], heldAt = fields.getOrElse(5) { 0L })
 }
 
 /**
@@ -262,13 +263,23 @@ internal fun relightPlan(screenOn: Boolean, waiting: Boolean, resting: Boolean, 
  * sleeps), so the last look is how long the wait costs. With the lock delay known ([delayMs],
  * from its setting), just after it, and once more in case it ran late. Unknown (a phone may hide or
  * not have the setting), a few looks backing off to [MAX_LOCK_WAIT_MS]. Past that, none: a delay
- * that long isn't waited out, and the next wake brings the LED back.
+ * that long isn't held awake for, but waited out by an alarm ([lockAlarmMs]).
  */
 internal fun lockChecks(delayMs: Long?): List<Long> = when {
     delayMs == null -> listOf(DEFAULT_LOCK_DELAY_MS + LOCK_MARGIN_MS, MAX_LOCK_WAIT_MS / 2, MAX_LOCK_WAIT_MS)
     delayMs > MAX_LOCK_WAIT_MS -> emptyList()
     else -> listOf(delayMs + LOCK_MARGIN_MS, delayMs + LOCK_MARGIN_MS + LOCK_GRACE_MS)
 }
+
+/**
+ * A lock delay too long to hold the CPU through ([lockChecks]: a minute or more, as Samsung's "lock
+ * automatically" and Pixel's offer): one alarm allowed while idle, this long after the screen went
+ * off, looks whether it has locked; null for a shorter or unknown one. Without it a message in that
+ * delay never arrived once the phone locked, its LED dark until the next wake. Inexact (an exact
+ * one needs a permission this app doesn't ask for): Android may run it up to 3/4 of its lead late,
+ * so the LED comes up to that much after the lock (a 1 min delay: by ~1:45; seen on Android 14).
+ */
+internal fun lockAlarmMs(delayMs: Long?): Long? = delayMs?.takeIf { it > MAX_LOCK_WAIT_MS }?.plus(LOCK_MARGIN_MS + LOCK_GRACE_MS)
 
 /** One UI's lock delay after a screen timeout, when the setting can't be read. */
 internal const val DEFAULT_LOCK_DELAY_MS = 5_000L
@@ -346,6 +357,16 @@ internal fun brightAfterMessage(streak: BrightStreak, now: Long, brightForMs: Lo
     (if (inUse) streak.looked(now) else streak).onMessage(now, brightForMs)
 
 /**
+ * The hold over at [now] (Do Not Disturb ended, a call hung up): the messages it held back
+ * ([BrightStreak.heldAt]) arrive now, as one new message ([brightAfterMessage]), the LED shown for
+ * them with no arrival. Before, they waited unseen: a night's messages under Bedtime mode never lit
+ * the LED, and one heard in a call longer than the bright phase found it spent at the hang-up. A
+ * look meanwhile saw them ([BrightStreak.looked]): nothing then.
+ */
+internal fun brightAfterHold(streak: BrightStreak, now: Long, brightForMs: Long, inUse: Boolean): BrightStreak =
+    if (streak.heldAt == 0L) streak else brightAfterMessage(streak.copy(heldAt = 0L), now, brightForMs, inUse)
+
+/**
  * In-process link between the listener and a live glow screen (both on the main thread of
  * one process). While the glow screen is on top of the lock screen it handles every lock-flow
  * change itself; the listener only takes over when there is no glow screen on top.
@@ -385,8 +406,10 @@ object GlowSession {
 
     /**
      * Do Not Disturb is on, so the LED rests: it neither holds the panel on nor relights it, and a
-     * message that breaks through lights the lock screen only ([arrivalFor]). When it goes off, the
-     * LED lights again for whatever is still unread. Set by the listener, main thread only.
+     * message that breaks through lights the lock screen only ([arrivalFor]), one it keeps out waits,
+     * held back. When it goes off, the LED lights again for whatever is still unread, and what it
+     * held back arrives as one new message would, with no effect ([brightAfterHold]). Set by the
+     * listener, main thread only.
      */
     var resting = false
 

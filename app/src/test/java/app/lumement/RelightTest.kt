@@ -55,6 +55,10 @@ class RelightTest {
     fun aKnownLockDelayIsLookedAtJustAfterItAndOnceMore() {
         assertEquals(listOf(5_600L, 7_600L), lockChecks(5_000L))
         assertEquals("locks at once", listOf(600L, 2_600L), lockChecks(0L))
+        assertEquals("a minute: an alarm instead", emptyList<Long>(), lockChecks(60_000L))
+        assertEquals(62_600L, lockAlarmMs(60_000L))
+        assertEquals("held awake for instead", null, lockAlarmMs(30_000L))
+        assertEquals("unknown: the backing-off looks", null, lockAlarmMs(null))
     }
 
     @Test

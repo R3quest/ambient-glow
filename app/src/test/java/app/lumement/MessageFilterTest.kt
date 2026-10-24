@@ -96,13 +96,10 @@ class MessageFilterTest {
     }
 
     @Test
-    fun aQuietChannelOrDoNotDisturbHoldsItBack() {
+    fun aQuietChannelHoldsItBack() {
         assertFalse(isAlert(ongoing = false, flags = 0, category = null, importance = NotificationManager.IMPORTANCE_LOW))
         assertFalse(isAlert(ongoing = false, flags = 0, category = null, importance = NotificationManager.IMPORTANCE_MIN))
-        assertFalse(
-            "filtered by Do Not Disturb",
-            isAlert(ongoing = false, flags = 0, category = null, importance = NotificationManager.IMPORTANCE_HIGH, allowedNow = false),
-        )
+        assertTrue("alerting", isAlert(ongoing = false, flags = 0, category = null, importance = NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     @Test

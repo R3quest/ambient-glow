@@ -12,22 +12,20 @@ import androidx.core.app.NotificationCompat
 /**
  * A new, user-facing alert: not ongoing (media, progress, calls), not a foreground service or a
  * group summary, and not in a category that only reports a state. When the system ranked it, it
- * must also alert ([importance] at least default) and be let through Do Not Disturb ([allowedNow]).
- * Unranked, those two are not known and don't hold it back.
+ * must also alert ([importance] at least default); unranked, that isn't known and doesn't hold it
+ * back. One Do Not Disturb keeps out is still a message: it waits, held back ([BrightStreak.heldAt]).
  */
 internal fun isAlert(
     ongoing: Boolean,
     flags: Int,
     category: String?,
     importance: Int? = null,
-    allowedNow: Boolean = true,
 ): Boolean {
     if (ongoing) return false
     if (flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return false
     if (flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
     if (category in IGNORED_CATEGORIES) return false
-    if (importance != null && importance < NotificationManager.IMPORTANCE_DEFAULT) return false
-    return allowedNow
+    return importance == null || importance >= NotificationManager.IMPORTANCE_DEFAULT
 }
 
 /**
