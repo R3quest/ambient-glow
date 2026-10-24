@@ -68,6 +68,7 @@ class NotificationWakerService : NotificationListenerService() {
     private var lockLook = 0
     private var lockWaitFrom = 0L
     private var screenOffAt = 0L
+    private var screenOnAt = 0L
     private val relightOnceLocked = Runnable {
         lockLook++
         if (keyguard.isKeyguardLocked || lockLook >= lockLooks.size) {
@@ -109,7 +110,9 @@ class NotificationWakerService : NotificationListenerService() {
             mainHandler.removeCallbacks(relightOnceLocked)
             cancelLockAlarm()
             lockWait = LockWait.NONE
-            arrivesOnceLocked = false
+            // A message in the moment between the screen going dark and this SCREEN_OFF (~0.3 s)
+            // still arrives once it locks: the wait starts again from this screen-off.
+            if (intent.action != Intent.ACTION_SCREEN_OFF) arrivesOnceLocked = false
             // A glow screen on top of the lock screen handles its own screen-off; with none, the
             // listener relights. With nothing waiting there is no LED: let the CPU sleep at once.
             // Nor while Do Not Disturb rests it.
@@ -121,6 +124,7 @@ class NotificationWakerService : NotificationListenerService() {
             // wake ([noteSleepState]). If it never dozes, the check below lights the LED as ever.
             val expectsAod = if (screenOff) GlowSession.expectsAod(context) else null
             relightAtDoze = relights && GlowSession.host?.isAway != false && expectsAod != false
+            if (!screenOff) screenOnAt = SystemClock.elapsedRealtime()
             if (screenOff) {
                 screenOffAt = SystemClock.elapsedRealtime()
                 GlowLog.d { "svc sleep expected: always-on display $expectsAod" }
@@ -539,7 +543,7 @@ class NotificationWakerService : NotificationListenerService() {
         }
         lockLook = 0
         // [lockChecks] counts from the screen-off; a new process didn't see it: from now.
-        lockWaitFrom = if (screenOffAt > 0L) screenOffAt else SystemClock.elapsedRealtime()
+        lockWaitFrom = lockWaitStart(screenOffAt, screenOnAt, SystemClock.elapsedRealtime())
         GlowLog.d { "svc unlocked: relight once it locks, looking at $lockLooks ms" }
         nextLockLook()
     }
@@ -557,7 +561,7 @@ class NotificationWakerService : NotificationListenerService() {
             ContextCompat.registerReceiver(this, lockAlarmFired, IntentFilter(lockAlarmAction), ContextCompat.RECEIVER_NOT_EXPORTED)
             lockAlarmRegistered = true
         }
-        val from = if (screenOffAt > 0L) screenOffAt else SystemClock.elapsedRealtime()
+        val from = lockWaitStart(screenOffAt, screenOnAt, SystemClock.elapsedRealtime())
         getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, from + afterMs, lockAlarm)
         GlowLog.d { "svc unlocked: a long lock delay, looking once at $afterMs ms" }
     }

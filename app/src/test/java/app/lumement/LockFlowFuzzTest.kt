@@ -153,10 +153,11 @@ class LockFlowFuzzTest {
             phone.batteryPct = if (random.nextInt(8) == 0) LOW_BATTERY_PCT - 1 else 80
             // The LED's window takes the focus in 0.03-0.2 s on the S23; past 0.3 s GlowShield stops waiting.
             phone.litFocusMs = listOf(30L, 40L, 120L, 200L, 400L).random(random)
+            phone.litDarkMs = listOf(0L, 300L, 1_000L, 1_860L).random(random)
             log(
                 "set up: shield=${phone.shieldOn} dozes=${phone.dozes} afterOff=${phone.dozesAfterOffMs} aodOnly=${phone.aodOnly} " +
                     "expectsAod=${phone.expectsAod} ${phone.settings.arrival} ${phone.settings.brightFor} ${phone.settings.afterBright} " +
-                    "destroyAfter=${phone.destroyAfterMs} saver=${phone.batterySaver} battery=${phone.batteryPct} litFocus=${phone.litFocusMs}",
+                    "destroyAfter=${phone.destroyAfterMs} saver=${phone.batterySaver} battery=${phone.batteryPct} litFocus=${phone.litFocusMs} litDark=${phone.litDarkMs}",
             )
             // The phone starts lit and locked, the user looking at something else; the first event is often a message.
             phone.pressPower()

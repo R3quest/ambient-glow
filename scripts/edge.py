@@ -858,11 +858,7 @@ def run(d, only, results):
         if f is None:
             results.append((d.serial, d.sdk, name, "skip", "not on this Android"))
             continue
-        log = d.log()
-        f += problems(log, allow_death=(name in DIES))
-        if f:
-            with open(os.path.join(LOGS, f"fail-{d.serial}-{name}.log"), "w") as out:
-                out.write(log)
+        f += problems(d.log(), allow_death=(name in DIES))
         d.read_all()
         settled = wait(lambda: "Lumement:led" not in d.locks() and "Lumement:pocket" not in d.locks(), 20)
         if not settled:
@@ -870,6 +866,10 @@ def run(d, only, results):
         d.sleep_phone()
         if not wait(lambda: d.screen() in ("OFF", "DOZE", "DOZE_SUSPEND"), 20):
             f.append(f"display {d.screen()} 20 s after all read and asleep")
+        if f:
+            # Taken after the settling checks too: a failure there is in the log, with what led to it.
+            with open(os.path.join(LOGS, f"fail-{d.serial}-{name}.log"), "w") as out:
+                out.write(d.log())
         results.append((d.serial, d.sdk, name, "FAIL" if f else "ok", "; ".join(f)))
         print(f"{d.serial} (API {d.sdk}) {name}: {'FAIL ' + '; '.join(f) if f else 'ok'}", flush=True)
 

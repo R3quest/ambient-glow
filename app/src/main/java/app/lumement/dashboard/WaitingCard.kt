@@ -95,8 +95,9 @@ internal fun WaitingCard(
             }
         }
         if (aod == null) {
-            // No always-on display the LED is known to go onto: it goes out.
-            OptionNote(stringResource(outNote(noBright)))
+            // Away from One UI the LED goes onto an always-on display where the phone shows one, as
+            // on One UI, but how each phone's behaves is unmeasured: said for either way.
+            OptionNote(stringResource(if (noBright) R.string.waiting_then_stock_never_body else R.string.waiting_then_stock_body))
         } else {
             CardDivider()
             ThenSection(settings.afterBright, noBright, aodReadiness(aod, shieldOn), onAod, onShield, onAfterBright)

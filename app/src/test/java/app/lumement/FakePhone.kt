@@ -309,6 +309,9 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
     /** How long the shown LED window takes to get the focus: 0.03-0.2 s on the S23, GlowShield's wait 0.3 s at most. */
     var litFocusMs = LIT_FOCUS_MS
 
+    /** How long the lit LED's breath under way has left when asked ([whenLitDark]): up to a breath. */
+    var litDarkMs = 700L
+
     /** The LED window's hides, as GlowShield counts them: a ready posted before one is for a window gone. */
     private var litHides = 0
 
@@ -763,6 +766,15 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
 
     override fun focusLockScreen() {
         log += "focus to the lock screen"
+    }
+
+    override fun whenLitDark(then: () -> Unit) {
+        if (!litShown || litDarkMs == 0L) {
+            then()
+            return
+        }
+        log += "lit LED: its breath runs out"
+        later(litDarkMs) { then() }
     }
 
     override fun hideLit() {

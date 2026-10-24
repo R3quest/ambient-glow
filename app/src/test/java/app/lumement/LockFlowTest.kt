@@ -816,6 +816,42 @@ class LockFlowTest {
         assertFalse("the black cover it slept under is gone from the always-on display", phone.coverUp)
     }
 
+    /**
+     * A finger on the fingerprint sensor mid-effect: the LED's face covered the lock screen, so One
+     * UI didn't listen until the effect was over (seen on the S23). Resting there, the finger has
+     * the lock screen at once, which reads it.
+     */
+    @Test
+    fun aFingerRestingMidArrivalHasTheLockScreenAtOnce() {
+        phone.settings = phone.settings.copy(arrival = ArrivalMode.BLACK)
+        message()
+        phone.launch(WakeMode.ARRIVAL, 1_000)
+        assertTrue("mid-effect", flow.arriving.value)
+        assertEquals(Face.LED, flow.face.value)
+
+        phone.then { flow.onFingerHeld() }
+
+        assertEquals("the lock screen in front, listening", Face.LOCK_SCREEN, flow.face.value)
+        assertTrue(phone.interactive)
+    }
+
+    /** Put away, a press on the panel (a pocket's) is no finger on the sensor: the LED's face stays. */
+    @Test
+    fun aPressWhilePutAwayLeavesTheLedsFace() {
+        phone.shieldOn = false // the LED's face, not its window
+        phone.pressPower()
+        phone.advance(1_000)
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.cover(true) // into a pocket
+        phone.advance(COVERED_MS + 1_000)
+        assertTrue("put away", flow.isPutAway)
+
+        phone.then { flow.onFingerHeld() }
+
+        assertEquals(Face.LED, flow.face.value)
+    }
+
     // ---- The bright phase, then the always-on display or dark (2026-10-17) ----------------------
 
     /**
@@ -1043,12 +1079,87 @@ class LockFlowTest {
     }
 
     /**
+     * Read elsewhere mid-breath with the LED in its window: put out at once, it vanished near its
+     * peak, where its face finishes the breath. The breath runs out, then the phone sleeps.
+     */
+    @Test
+    fun readElsewhereUnderTheLedItsBreathRunsOutFirst() {
+        phone.litDarkMs = 1_200
+        readyUnderLed()
+        read("chat-1")
+        phone.advance(1_000)
+        notLogged("blackout")
+        assertTrue("the LED's window, its breath running out", phone.litShown)
+
+        phone.advance(1_500)
+
+        logged("blackout", "sleep now")
+        assertFalse(phone.interactive)
+    }
+
+    /**
+     * The bright phase over with the LED in its window, its breath running out, and a new phase
+     * started meanwhile without the glow screen hearing (the listener's, for what a hold kept
+     * back): it stayed lit past that phase's end, nothing having armed it (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun aPhaseStartedWhileTheBreathRunsOutEndsInItsTime() {
+        phone.settings = GlowSettings(brightFor = BrightFor.FIVE)
+        phone.litDarkMs = 1_500
+        readyUnderLed() // 4 s past the message
+        phone.advance(5 * MINUTE - 4_000 + 500) // the phase over half a second ago: its breath runs out
+        GlowSession.bright = brightAfterHold(GlowSession.bright.held(phone.now), phone.now, BrightFor.FIVE.ms, inUse = false)
+        phone.advance(2_000)
+        assertTrue("lit for the new phase", phone.interactive)
+
+        phone.advance(5 * MINUTE + 3_000)
+
+        assertFalse("asleep at its end", phone.interactive)
+        assertFalse(phone.panelLocked)
+    }
+
+    /**
+     * A call over with the glow screen away behind the user's apps: its bright phase's end was armed
+     * for any lit streak, and ran in the dark long after (found by [LockFlowFuzzTest]).
+     */
+    @Test
+    fun aCallOverWhileAwayArmsNoBrightEnd() {
+        message()
+        phone.launch(WakeMode.WAKE, 4_000)
+        phone.unlock()
+        assertEquals(Face.AWAY, flow.face.value)
+        message("chat-2") // on the phone in use: a phase, lit
+        assertTrue(GlowSession.bright.lit(phone.now))
+        phone.inCall = true
+
+        phone.callTurns(false)
+        flow.callOver()
+
+        assertFalse(LockTimer.BRIGHT_END in phone.timersOf())
+    }
+
+    /** A new message while the read one's breath runs out: no sleep for it, the new one arrives. */
+    @Test
+    fun aMessageWhileTheBreathRunsOutKeepsThePhoneUp() {
+        phone.litDarkMs = 1_200
+        readyUnderLed()
+        read("chat-1")
+        phone.advance(500)
+        messageArrives("chat-2")
+        phone.advance(1_000)
+
+        notLogged("sleep now")
+        assertTrue(phone.interactive)
+    }
+
+    /**
      * Read elsewhere under the LED, the phone put to sleep at once under a black cover, and power
      * pressed in the sleep's fade: the sleep was cancelled, and the lit lock screen stayed black
      * under the cover until its timeout (found by [LockFlowFuzzTest]).
      */
     @Test
     fun powerInTheFadeOfOurOwnSleepShowsTheLockScreen() {
+        phone.litDarkMs = 0 // read between breaths: asleep at once
         readyUnderLed()
         GlowPending.remove("chat-1")
         phone.host { onPendingChanged() }
@@ -1399,6 +1510,7 @@ class LockFlowTest {
     @Test
     fun aFinishedGlowScreenGoingLeavesTheNextOnesLedAlone() {
         phone.destroyAfterMs = 5_000
+        phone.litDarkMs = 0 // read between breaths
         readyUnderLed()
         read("chat-1") // read elsewhere under the LED: asleep at once, finished at the screen-off
         phone.advance(1_000)

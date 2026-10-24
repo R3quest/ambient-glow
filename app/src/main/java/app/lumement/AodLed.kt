@@ -208,6 +208,12 @@ internal class LedRound(
     /** The lit round waits for its surface to come back ([light]). */
     private var waiting = false
 
+    /** A breath of the lit round is lit now ([whenDark]). */
+    private var breathing = false
+
+    /** For [whenDark]: at the breath's end, or as the round stops. */
+    private val onDark = mutableListOf<() -> Unit>()
+
     init {
         surface.onLost = ::surfaceLost
     }
@@ -268,6 +274,26 @@ internal class LedRound(
         light(step = false)
     }
 
+    /**
+     * [then] once the breath under way is out, at once between breaths (or on the always-on
+     * display, still); the round goes on. Every call waiting is answered.
+     */
+    fun whenDark(then: () -> Unit) {
+        if (!running || dozing || !breathing) {
+            then()
+            return
+        }
+        onDark += then
+    }
+
+    private fun dark() {
+        breathing = false
+        if (onDark.isEmpty()) return
+        val waiting = onDark.toList()
+        onDark.clear()
+        for (then in waiting) then()
+    }
+
     /** The light goes out at once and the round stops; the surface stays, for the next. */
     fun stop() {
         running = false
@@ -279,6 +305,7 @@ internal class LedRound(
         if (drawLock.isHeld) drawLock.release()
         surface.stop()
         onFade(false)
+        dark()
     }
 
     /** The next breath's rate first, then the breath once it is in place. */
@@ -319,11 +346,13 @@ internal class LedRound(
         if (dozing) {
             rise(step)
         } else {
+            breathing = true
             surface.breathe {
                 val pause = ledPauseAfter(cycle, palette.size)
                 cycle++
                 onFade(false)
                 timers.postDelayed(nextBreath, pause - LED_RATE_PREROLL_MS)
+                dark()
             }
         }
     }

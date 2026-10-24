@@ -928,6 +928,12 @@ class GlowShield : AccessibilityService() {
             instance?.hideLedWindow()
         }
 
+        /** [then] once the lit LED's breath under way is out, at once with none lit ([LedRound.whenDark]). */
+        fun whenLitDark(then: () -> Unit) {
+            val round = instance?.litRound
+            if (round == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) then() else round.whenDark(then)
+        }
+
         /**
          * Puts up, hidden, the windows the LED breathes in: the lit LED's, and the one over the
          * always-on display (Android 10+). While the screen is on: a window shows only once it
