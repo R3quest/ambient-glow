@@ -60,10 +60,13 @@ internal fun takesScreen(category: String?, fullScreen: Boolean, ongoing: Boolea
  * A silent update to a message the LED already waits on: refresh it, don't re-wake. WhatsApp (and
  * others) set ONLY_ALERT_ONCE on every chat notification and re-post the same key for each new
  * message in that chat, so a newer message ([newestAt] past [waitingNewestAt]) still counts as new.
+ * A [chat] (MessagingStyle: its messages' own times) is quiet without the flag too: with no newer
+ * message from someone else it brings nothing new, as when the user replies from the notification
+ * in an app that re-posts the chat alerting (it played the arrival and a bright phase for it).
  * [waitingNewestAt] is null when nothing under that key is waiting.
  */
-internal fun isQuietUpdate(flags: Int, newestAt: Long, waitingNewestAt: Long?): Boolean =
-    flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 && waitingNewestAt != null && newestAt <= waitingNewestAt
+internal fun isQuietUpdate(flags: Int, newestAt: Long, waitingNewestAt: Long?, chat: Boolean = false): Boolean =
+    (chat || flags and Notification.FLAG_ONLY_ALERT_ONCE != 0) && waitingNewestAt != null && newestAt <= waitingNewestAt
 
 /** One message of a MessagingStyle post: when, and whether the phone's user wrote it ([mine]). */
 internal class MessageTime(val at: Long, val mine: Boolean)

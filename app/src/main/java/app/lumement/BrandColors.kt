@@ -48,7 +48,9 @@ internal class BrandColors(private val context: Context) {
         val icon = applicationInfoFor(sbn)?.let(::loadIcon) ?: return legibleOnBlack(accent ?: DEFAULT_GLOW_COLOR)
 
         // Without a swatch the colour depends on this message's accent, so it isn't remembered.
-        val glow = iconGlow(renderIcon(icon)) ?: return legibleOnBlack(accent ?: DEFAULT_GLOW_COLOR)
+        // An OEM theme's odd drawable (a hardware bitmap can't draw into this canvas) costs the colour, not the message.
+        val glow = (try { iconGlow(renderIcon(icon)) } catch (_: RuntimeException) { null })
+            ?: return legibleOnBlack(accent ?: DEFAULT_GLOW_COLOR)
         if (byPackage.size >= MAX_REMEMBERED) byPackage.clear()
         return glow.also { byPackage[sbn.packageName] = it }
     }
@@ -69,8 +71,10 @@ internal class BrandColors(private val context: Context) {
                 null
             }
 
+    // Its own copy: the icon cache hands out drawables sharing one vector tree, which the Apps
+    // screen may be drawing at another size on another thread.
     private fun loadIcon(appInfo: ApplicationInfo): Drawable? = try {
-        context.packageManager.getApplicationIcon(appInfo)
+        context.packageManager.getApplicationIcon(appInfo).mutate()
     } catch (_: Exception) {
         null
     }

@@ -114,4 +114,11 @@ class MessageFilterTest {
         assertFalse("nothing waiting under its key", isQuietUpdate(once, newestAt = 1_000L, waitingNewestAt = null))
         assertFalse("alerts every time", isQuietUpdate(0, newestAt = 1_000L, waitingNewestAt = 1_000L))
     }
+
+    @Test
+    fun aChatRepostWithNothingNewFromThemIsQuietWhateverItsFlags() {
+        assertTrue("the user's reply added, re-posted alerting", isQuietUpdate(0, newestAt = 1_000L, waitingNewestAt = 1_000L, chat = true))
+        assertFalse("a newer message from them", isQuietUpdate(0, newestAt = 1_001L, waitingNewestAt = 1_000L, chat = true))
+        assertFalse("nothing waiting under its key", isQuietUpdate(0, newestAt = 1_000L, waitingNewestAt = null, chat = true))
+    }
 }

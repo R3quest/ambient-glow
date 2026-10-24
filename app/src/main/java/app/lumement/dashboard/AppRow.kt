@@ -396,12 +396,16 @@ internal fun rememberAppLook(pkg: String): AppLook? {
 }
 
 private fun loadLook(context: Context, pkg: String, px: Int): AppLook {
-    val drawable = try {
-        context.packageManager.getApplicationIcon(pkg)
+    // Its own copy (the listener may draw the same app's icon meanwhile, [BrandColors]); an icon
+    // that can't be drawn shows as none rather than taking the Apps screen down.
+    return try {
+        val drawable = context.packageManager.getApplicationIcon(pkg).mutate()
+        val icon = drawable.toBitmap(px, px)
+        val glow = iconGlow(drawable.toBitmap(BRAND_ICON_PX, BRAND_ICON_PX)) ?: DEFAULT_GLOW_COLOR
+        AppLook(icon.asImageBitmap(), glow, icon.allocationByteCount)
     } catch (_: PackageManager.NameNotFoundException) {
-        return AppLook(icon = null, glow = DEFAULT_GLOW_COLOR, bytes = 1)
+        AppLook(icon = null, glow = DEFAULT_GLOW_COLOR, bytes = 1)
+    } catch (_: RuntimeException) {
+        AppLook(icon = null, glow = DEFAULT_GLOW_COLOR, bytes = 1)
     }
-    val icon = drawable.toBitmap(px, px)
-    val glow = iconGlow(drawable.toBitmap(BRAND_ICON_PX, BRAND_ICON_PX)) ?: DEFAULT_GLOW_COLOR
-    return AppLook(icon.asImageBitmap(), glow, icon.allocationByteCount)
 }

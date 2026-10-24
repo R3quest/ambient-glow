@@ -109,7 +109,15 @@ object GlowLauncher {
      * full-screen intent may start the glow screen ([canUseFullScreen]). Without that, the bridge
      * only showed as a plain heads-up for 4 s and no glow screen came.
      */
-    fun canPostBridge(context: Context): Boolean = canUseFullScreen(context) && canPeek(context, CHANNEL_ID)
+    fun canPostBridge(context: Context): Boolean = canUseFullScreen(context) && canPeekBridge(context)
+
+    /**
+     * Alerts allowed and the bridge channel at heads-up importance: setup's alerts step. The
+     * full-screen grant is a step of its own after it; asked here too, the alerts step never
+     * passed without it and setup never reached the step that grants it (every Play install on
+     * Android 14+).
+     */
+    fun canPeekBridge(context: Context): Boolean = canPeek(context, CHANNEL_ID)
 
     /**
      * A full-screen intent may start an activity: Android 14+ grants it by hand only, outside calls

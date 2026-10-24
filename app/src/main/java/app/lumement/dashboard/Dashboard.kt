@@ -302,6 +302,8 @@ internal fun Dashboard(reported: ScreenGeometry) {
             resolver.registerContentObserver(Settings.Secure.getUriFor(key), false, observer)
         }
         for (uri in aodSwitchUris()) resolver.registerContentObserver(uri, false, observer)
+        // Do Not Disturb and Battery Saver, flipped from quick settings with the dashboard in front ([QuietNote]).
+        for (key in listOf("zen_mode", "low_power")) resolver.registerContentObserver(Settings.Global.getUriFor(key), false, observer)
         onDispose { resolver.unregisterContentObserver(observer) }
     }
 
@@ -338,6 +340,9 @@ internal fun Dashboard(reported: ScreenGeometry) {
     val screenDensity = LocalDensity.current
     LaunchedEffect(geometry.measured, window) {
         if (!geometry.measured || !settings.ledOnCamera || window.width == 0) return@LaunchedEffect
+        // Split screen or a pop-up window: away from the punch-hole it has no cutout, and its spots
+        // are half a screen's. Read from there, the ring was saved as a dot, for good.
+        if (activity?.isInMultiWindowMode == true) return@LaunchedEffect
         val lens = dotSpots(camera, window, settings.dotSize, screenDensity).first { it.atLens }
         if (lens.camera && lens.matches(settings.dotX, settings.dotY)) return@LaunchedEffect
         edit(save = true) { it.copy(ledForm = if (lens.camera) LedForm.RING else LedForm.DOT, dotX = lens.x, dotY = lens.y) }
@@ -423,6 +428,7 @@ internal fun Dashboard(reported: ScreenGeometry) {
                                 }
                             }
                             TestHint(lockedTest, Modifier.padding(horizontal = PageGutter))
+                            QuietNote(access, Modifier.padding(horizontal = PageGutter))
                             Disclosure(visible = overCard) {
                                 PremiumOverCard(premium, Modifier.padding(start = PageGutter, end = PageGutter, bottom = 14.dp))
                             }
@@ -630,7 +636,7 @@ private fun EffectPage(
         onShowcase()
     }
     val effectOn = settings.arrival.playsEffect
-    SettingsGroup(index = "02", title = R.string.group_arrival_title, body = R.string.group_arrival_body) {
+    SettingsGroup(index = "03", title = R.string.group_arrival_title, body = R.string.group_arrival_body) {
         Column {
             Disclosure(visible = !effectOn) { EffectsOffCard(onChooseScreen) }
             Disclosure(visible = effectOn) {
@@ -673,7 +679,7 @@ private fun LedPage(
     onLookRevealed: () -> Unit,
     onLed: (holding: Boolean) -> Unit,
 ) {
-    SettingsGroup(index = "03", title = R.string.group_led_title, body = R.string.group_led_body) {
+    SettingsGroup(index = "04", title = R.string.group_led_title, body = R.string.group_led_body) {
         val settle = {
             edit(save = true) { it }
             onLed(false)
@@ -894,6 +900,32 @@ private fun TestHint(test: LockedTest, modifier: Modifier = Modifier) {
             text = stringResource(if (test.blocked) R.string.test_locked_blocked else R.string.test_locked_hint),
             style = MaterialTheme.typography.bodySmall,
             color = if (test.blocked) GlowPalette.Amber else GlowPalette.TextMuted,
+            modifier = modifier
+                .padding(bottom = 14.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
+}
+
+/**
+ * Do Not Disturb or Battery Saver quiets Lumement, by design: said under the header, so a test or a
+ * message that shows less than expected isn't taken for Lumement not working.
+ */
+@Composable
+private fun QuietNote(access: AccessState, modifier: Modifier = Modifier) {
+    val note = when {
+        access.resting -> R.string.quiet_dnd
+        access.saver -> R.string.quiet_saver
+        else -> null
+    }
+    // Kept as it hides, so the text doesn't go before the disclosure has closed over it.
+    var shown by remember { mutableIntStateOf(R.string.quiet_dnd) }
+    if (note != null) shown = note
+    Disclosure(visible = note != null) {
+        Text(
+            text = stringResource(shown),
+            style = MaterialTheme.typography.bodySmall,
+            color = GlowPalette.TextMuted,
             modifier = modifier
                 .padding(bottom = 14.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite },

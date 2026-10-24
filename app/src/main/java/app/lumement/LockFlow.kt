@@ -94,6 +94,9 @@ interface LockPort {
     /** How long the framework's slide-out of the system bars takes here. */
     val barsHideMs: Long
 
+    /** The dark the LED's next round still waits out after a light just gone ([LedRhythm]). */
+    val ledDarkLeftMs: Long
+
     /** [GlowPrefs.loadPlaying]. */
     fun loadSettings(): GlowSettings
 
@@ -541,7 +544,8 @@ internal class LockFlow(
     private fun armBrightEnd() {
         port.cancel(LockTimer.BRIGHT_END)
         val left = if (litAllowed) GlowSession.bright.until - port.elapsedMs else 0L
-        port.schedule(LockTimer.BRIGHT_END, if (left > 0) left else LED_BREATH_MS.toLong() + SETTLE_FALLBACK_MS)
+        // No bright time: one breath, after whatever dark the round still owes ([LedRhythm]).
+        port.schedule(LockTimer.BRIGHT_END, if (left > 0) left else port.ledDarkLeftMs + LED_BREATH_MS.toLong() + SETTLE_FALLBACK_MS)
     }
 
     /**

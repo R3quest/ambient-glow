@@ -675,7 +675,7 @@ class GlowShield : AccessibilityService() {
         arrivalEffect = effect
         arrivalOwner = owner
         arrivalParams = params
-        timers.postDelayed(stopArrivalNow, MAX_ARRIVAL_MS)
+        timers.postDelayed(stopArrivalNow, arrivalMsFor(settings) + ARRIVAL_STALL_MS)
         GlowLog.d { "arrival up style=${settings.style}" }
     }
 
@@ -871,8 +871,13 @@ class GlowShield : AccessibilityService() {
         /** Upper bound for a [blackout]: the lock screen's own timeout and dim run out well within it. */
         private const val MAX_BLACKOUT_MS = 20_000L
 
-        /** Upper bound for the arrival overlay, in case the effect never reports done. */
-        private const val MAX_ARRIVAL_MS = 5_000L
+        /**
+         * The arrival overlay's bound past its effect's length, in case the effect never reports
+         * done. Its clock starts at its first frame, which a cold shader cache (after an update,
+         * on a slow phone) can hold back a second or more: a fixed 5 s cut the longest arrival
+         * (3.7 s, the frame's run from the camera) in its last exhale.
+         */
+        private const val ARRIVAL_STALL_MS = 2_500L
 
         // Alpha eases out so the remaining light falls about evenly to the eye (perceived lightness
         // is roughly the cube root of luminance); a linear or accelerating alpha holds the screen

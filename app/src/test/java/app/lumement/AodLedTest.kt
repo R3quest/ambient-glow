@@ -104,4 +104,17 @@ class AodLedTest {
         assertEquals("the round's last", LED_DARK_MS, ledPauseAfter(2, 3))
         assertEquals("the next round's first", LED_GAP_MS, ledPauseAfter(3, 3))
     }
+
+    @Test
+    fun aRoundStartingAfterALightJustGoneKeepsTheRoundsDark() {
+        val out = 100_000L
+        assertEquals("straight after the arrival's last exhale: the whole dark", LED_DARK_MS, ledDarkLeft(out, out))
+        assertEquals("the rest of it", LED_DARK_MS - 400, ledDarkLeft(out, out + 400))
+        // The first breath then lights a whole round's dark after the light went, as every later one does.
+        assertEquals(out + LED_DARK_MS, out + 400 + ledDarkLeft(out, out + 400))
+        assertEquals("a whole dark since: no wait", 0L, ledDarkLeft(out, out + LED_DARK_MS))
+        assertEquals("long since (a wake from sleep): no wait", 0L, ledDarkLeft(out, out + 3_600_000L))
+        assertEquals("never more than one dark", LED_DARK_MS, ledDarkLeft(out, out - 5_000L))
+        assertEquals("never marked", 0L, ledDarkLeft(0L, 60_000L))
+    }
 }

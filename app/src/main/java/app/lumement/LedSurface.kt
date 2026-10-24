@@ -81,7 +81,8 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         val density = context.resources.displayMetrics.density
         val size = Size(view.width.toFloat(), view.height.toFloat())
         val form = settings.ledForm
-        val core = (settings.dotSize.radius.value + if (still != null) AOD_CORE_EXTRA.value else 0f) * density
+        val litCore = settings.dotSize.radius.value * density
+        val core = litCore + if (still != null) AOD_CORE_EXTRA.value * density else 0f
         fun lightFor(step: Float) = if (form == LedForm.FRAME) {
             ledFrameLight(settings, size, geometry.frameCornerPx(density), inset = step, dp = density, full = still != null)
         } else {
@@ -95,7 +96,9 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
         }
         val light = lightFor(step)
         val shift = if (still != null && form == LedForm.DOT) stillShiftAt(cycle, core) else ledShiftAt(form, cycle)
-        lightAt = ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density) + shift
+        // Where the lit dot sits: larger on the always-on display, not moved (its edge margin grows with its core).
+        val placed = if (form == LedForm.DOT) ledDotCenter(settings.dotX, settings.dotY, litCore, size) else ledCenter(form, geometry, settings.dotX, settings.dotY, light, size, density)
+        lightAt = placed + shift
         look = LedLook(ledMaterial(settings, elementFramesSupported), Color(color), light, form, settings, calm, still?.map(::Color))
         setLevel(0f)
         // Neon: once, at its peak; the breath is the alpha. A material that moves: each step.
@@ -203,6 +206,7 @@ internal class LedSurface(private val context: Context) : SurfaceHolder.Callback
 
     private fun setLevel(to: Float) {
         if (to == level) return
+        if (to == 0f && level > 0f) LedRhythm.out()
         val control = view.surfaceControl ?: return
         level = to
         alphaChange.setAlpha(control, to).apply()

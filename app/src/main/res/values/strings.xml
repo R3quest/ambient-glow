@@ -16,7 +16,7 @@
     <string name="group_arrival_title">The effect</string>
     <string name="group_arrival_body">What plays the moment a message arrives, in the app\'s colour.</string>
     <string name="group_led_title">Waiting LED</string>
-    <string name="group_led_body">Afterwards the screen goes black and only the LED blinks, one blink per waiting app, until you read or dismiss the messages.</string>
+    <string name="group_led_body">Afterwards the screen goes black and the LED breathes, one breath per waiting app: lit for your Bright LED minutes (Screen tab), then on the always-on display or dark, until you read or dismiss the messages.</string>
     <string name="effect_style">STYLE</string>
     <string name="effect_spawn_title">Lens Bloom</string>
     <string name="effect_spawn_body">A wave of light bursts out of the camera and lights the glow as it passes.</string>
@@ -161,7 +161,7 @@
     <string name="bright_5">5 MIN</string>
     <string name="bright_10">10 MIN</string>
     <string name="bright_15">15 MIN</string>
-    <string name="waiting_bright_body">The screen stays on with the LED this long after a message. A new message starts it again, up to 30 minutes until you look at the phone.</string>
+    <string name="waiting_bright_body" formatted="false">The screen stays on with the LED this long after a message. A new message starts it again, up to 30 minutes until you look at the phone. Not in Battery Saver or below 20% battery.</string>
     <string name="waiting_bright_off_body">The screen isn\'t kept on for the LED: it goes straight to what comes next.</string>
     <string name="waiting_then_label">THEN</string>
     <string name="after_bright_aod">AOD</string>
@@ -334,7 +334,7 @@
     <string name="dot_spot_cam_right">CAM R</string>
     <string name="dot_spot_edge_right">EDGE R</string>
     <string name="dot_spot_centre">CENTRE</string>
-    <string name="dot_preview_label">Dot position preview. Drag to move.</string>
+    <string name="dot_preview_label">Dot position preview. Drag to move, or pick a spot below.</string>
     <string name="dot_horizontal">HORIZONTAL</string>
     <string name="dot_vertical">VERTICAL</string>
     <string name="dot_readout_x">X %1$d%%</string>
@@ -519,6 +519,8 @@
     <string name="test_locked">Test on the locked phone</string>
     <string name="test_locked_countdown">Lock now: %1$d</string>
     <string name="test_locked_hint">Lock the screen now. Two test messages arrive when the count reaches zero.</string>
+    <string name="quiet_dnd">Do Not Disturb is on, so Lumement rests: a message let through lights the lock screen as usual, with no effect and no LED.</string>
+    <string name="quiet_saver">Battery Saver is on: after the effect the screen sleeps at once. The LED doesn\'t keep it lit.</string>
     <string name="test_locked_blocked">Alerts are off for Lumement. Allow them, then try again.</string>
 
     <string name="message_channel_name">New message pop-up</string>
@@ -527,7 +529,7 @@
     <string name="test_channel_description">Sample message sent by the locked-screen test.</string>
     <string name="test_sender">Test 1 · Cyan</string>
     <string name="test_me">You</string>
-    <string name="test_message">Dismiss me and cyan leaves the LED loop.</string>
+    <string name="test_message">Dismiss me and cyan leaves the LED.</string>
     <string name="test_sender_second">Test 2 · Magenta</string>
     <string name="test_message_second">Dismiss me and magenta leaves the loop. Dismiss both and the LED stops.</string>
     <string name="footer_privacy">Nothing leaves your phone.</string>

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -88,6 +89,7 @@ import app.lumement.aodMode
 import app.lumement.MainActivity
 import app.lumement.NotificationWakerService
 import app.lumement.R
+import app.lumement.restsUnder
 import app.lumement.ui.components.Disclosure
 import app.lumement.ui.components.NoticeRow
 import app.lumement.ui.components.PrimaryButton
@@ -111,6 +113,10 @@ internal data class AccessState(
     val aod: AodMode? = null,
     /** One UI's "Show for new notifications" exists here ([aodForNewNotificationsAvailable]). */
     val aodForNew: Boolean = false,
+    /** Do Not Disturb is on: a message lights the lock screen, no effect and no LED ([restsUnder]). */
+    val resting: Boolean = false,
+    /** Battery Saver is on: no bright phase, the LED never holds the screen lit ([litLedAllowed]). */
+    val saver: Boolean = false,
 ) {
     /**
      * The always-on display's mode where the dashboard shows it: on One UI only, where it was
@@ -151,12 +157,14 @@ internal data class AccessState(
             return AccessState(
                 listener = NotificationManagerCompat.getEnabledListenerPackages(context)
                     .contains(context.packageName),
-                bridge = GlowLauncher.canPostBridge(context),
+                bridge = GlowLauncher.canPeekBridge(context),
                 fullScreen = fullScreen,
                 fullScreenApplies = fullScreenApplies,
                 shield = isShieldEnabled(context),
                 aod = aodMode(context.contentResolver),
                 aodForNew = aodForNewNotificationsAvailable(context.contentResolver),
+                resting = restsUnder(context.getSystemService(NotificationManager::class.java).currentInterruptionFilter),
+                saver = context.getSystemService(PowerManager::class.java).isPowerSaveMode,
             )
         }
     }
@@ -304,7 +312,7 @@ internal fun rememberAccessActions(onRefresh: () -> Unit): AccessActions {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         onRefresh()
-        if (!granted || !GlowLauncher.canPostBridge(context)) context.openBridgeSettings()
+        if (!granted || !GlowLauncher.canPeekBridge(context)) context.openBridgeSettings()
     }
     return remember(context, notificationPermission) {
         AccessActions(

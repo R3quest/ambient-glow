@@ -64,6 +64,7 @@ internal class FakePhone(relightLimit: RelightLimiter = RelightLimiter(LockFlow.
         override val batterySaver get() = this@FakePhone.batterySaver
         override val batteryPct get() = this@FakePhone.batteryPct
         override val barsHideMs = 360L
+        override val ledDarkLeftMs = 0L
 
         override fun loadSettings() = settings
 

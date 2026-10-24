@@ -386,6 +386,8 @@ fun ArrivalEffect(
             }
         } finally {
             blur?.haze(0f, 0f)
+            // Its last light on the LED is out (or cut): the LED's round keeps its dark after it.
+            LedRhythm.out()
         }
         done()
     }

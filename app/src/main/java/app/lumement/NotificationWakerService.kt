@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -253,9 +254,10 @@ class NotificationWakerService : NotificationListenerService() {
             if (GlowApps.isMuted(apps, pkg)) return
         }
 
-        val newestAt = newestMessageAt(sbn.notification)
+        val messages = messagesOf(sbn.notification)
+        val newestAt = newestIncomingAt(messages, sbn.notification.`when`)
         val previous = GlowPending.entries.firstOrNull { it.key == sbn.key }
-        val quietUpdate = isQuietUpdate(sbn.notification.flags, newestAt, previous?.newestAt)
+        val quietUpdate = isQuietUpdate(sbn.notification.flags, newestAt, previous?.newestAt, chat = !messages.isNullOrEmpty())
 
         val unlocked = Premium.unlocked(this)
         val color = if (pkg == packageName) auto else GlowApps.glowOf(apps, pkg, auto, own = unlocked)
@@ -613,6 +615,8 @@ class NotificationWakerService : NotificationListenerService() {
         val notification = sbn.notification
         if (sbn.packageName == packageName && notification.channelId != GlowLauncher.TEST_CHANNEL_ID) return false
         if (fromTheSystem(sbn.packageName)) return false
+        // Its app paused (Focus mode, an app timer): the shade hides it, and the LED would light for nothing to see.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ranking?.isSuspended == true) return false
         return isAlert(
             ongoing = sbn.isOngoing,
             flags = notification.flags,
@@ -623,23 +627,17 @@ class NotificationWakerService : NotificationListenerService() {
     }
 
     /**
-     * Timestamp of the newest message from someone else in a MessagingStyle notification, else its
-     * `when` ([newestIncomingAt]). Reads the raw message bundles; no MessagingStyle objects are
-     * rebuilt. The user's own carry no sender: MessagingStyle writes one only for others.
+     * A MessagingStyle notification's messages, each with its time and whether the user wrote it
+     * (for [newestIncomingAt]); null for any other. Reads the raw message bundles; no MessagingStyle
+     * objects are rebuilt. The user's own carry no sender: MessagingStyle writes one only for others.
      */
-    private fun newestMessageAt(notification: Notification): Long {
-        val messages = BundleCompat.getParcelableArray(
-            notification.extras,
-            Notification.EXTRA_MESSAGES,
-            Bundle::class.java,
-        )
-        val times = messages?.mapNotNull { message ->
-            (message as? Bundle)?.let {
-                MessageTime(it.getLong(KEY_MESSAGE_TIME), mine = MESSAGE_SENDER_KEYS.none(it::containsKey))
+    private fun messagesOf(notification: Notification): List<MessageTime>? =
+        BundleCompat.getParcelableArray(notification.extras, Notification.EXTRA_MESSAGES, Bundle::class.java)
+            ?.mapNotNull { message ->
+                (message as? Bundle)?.let {
+                    MessageTime(it.getLong(KEY_MESSAGE_TIME), mine = MESSAGE_SENDER_KEYS.none(it::containsKey))
+                }
             }
-        }
-        return newestIncomingAt(times, notification.`when`)
-    }
 
     private companion object {
         const val WAKE_LOCK_TAG = "Lumement:wake"
