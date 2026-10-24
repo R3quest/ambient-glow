@@ -410,6 +410,29 @@ def c_no_post_permission(d):
     return f
 
 
+def c_no_full_screen(d):
+    """Android 14+: no full-screen grant, as on every Play install. Setup's alerts step passes and it asks
+    for the full-screen wake (it once asked for alerts again and again); a message still brings the LED."""
+    if d.sdk < 34:
+        return None
+    f = []
+    d.sh(f"appops set {PKG} USE_FULL_SCREEN_INTENT deny")
+    try:
+        d.unlock()
+        d.sh(f"am start -n {PKG}/.MainActivity >/dev/null")
+        time.sleep(4)
+        screen = d.sh("uiautomator dump /sdcard/lumement-ui.xml >/dev/null 2>&1; cat /sdcard/lumement-ui.xml; rm -f /sdcard/lumement-ui.xml")
+        if "Full-screen wake" not in screen:
+            f.append("setup without the full-screen grant doesn't ask for it" + (" (asks for alerts)" if "Wake alerts" in screen else ""))
+        d.sh("input keyevent KEYCODE_HOME")
+        message_while_locked(d, "nofsi")
+        if not wait(lambda: led_up(d), 15):
+            f.append(f"no LED without the full-screen grant (screen={d.screen()} locks={d.locks()})")
+    finally:
+        d.sh(f"appops set {PKG} USE_FULL_SCREEN_INTENT allow")
+    return f
+
+
 def c_big_text(d):
     """Font and display size at their largest: the dashboard and the LED still come up."""
     f = []
@@ -748,7 +771,7 @@ CASES = [
     ("unlock-while-lit", c_unlock_while_lit), ("power-while-lit", c_power_while_lit),
     ("process-death", c_process_death), ("low-battery", c_low_battery), ("battery-saver", c_battery_saver),
     ("call", c_call), ("landscape", c_landscape), ("shield-off", c_shield_off), ("listener-off", c_listener_off),
-    ("no-post-permission", c_no_post_permission), ("big-text", c_big_text), ("monkey", c_monkey),
+    ("no-post-permission", c_no_post_permission), ("no-full-screen", c_no_full_screen), ("big-text", c_big_text), ("monkey", c_monkey),
     ("lock-screen-awake", c_lock_screen_awake), ("lock-delay", c_lock_delay), ("gone-at-once", c_gone_at_once), ("lock-cycles", c_lock_cycles),
     ("config-while-lit", c_config_while_lit), ("trim-memory", c_trim_memory), ("pocket", c_pocket),
     ("face-down", c_face_down), ("doze", c_doze), ("background-restricted", c_background_restricted),

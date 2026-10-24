@@ -183,6 +183,7 @@ private fun SurfaceLedLayer(
         }
     }
     LaunchedEffect(Unit) {
+        delay(LedRhythm.darkLeft() - LED_RATE_PREROLL_MS) // a light just gone (the arrival's, the window's): its dark first
         var cycle = 0
         while (true) {
             if (stop) break
@@ -227,11 +228,17 @@ private fun ComposeLedLayer(
     var cycle by remember { mutableIntStateOf(0) }
     // Fixed per breath, so a palette change (or the default once all is read) waits for the dark.
     var shown by remember { mutableIntStateOf(colors.first()) }
-    DisposableEffect(Unit) { onDispose { fade(false) } }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (ledBreathAt(clock.value) > 0f) LedRhythm.out() // cut short mid-breath
+            fade(false)
+        }
+    }
     // The breath is a signal, not decoration: keep its timing even when developer options
     // shorten or disable animations (animator duration scale).
     LaunchedEffect(Unit) {
         withContext(RealTimeMotion) {
+            delay(LedRhythm.darkLeft() - LED_RATE_PREROLL_MS) // a light just gone (the arrival's): its dark first
             while (true) {
                 if (stop) break
                 fade(true)
@@ -243,6 +250,7 @@ private fun ComposeLedLayer(
                 shown = palette[cycle % palette.size]
                 clock.snapTo(0f)
                 clock.animateTo(LED_BREATH_MS, tween(LED_BREATH_MS.toInt(), easing = LinearEasing))
+                LedRhythm.out()
                 fade(false)
                 delay(ledPauseAfter(cycle, palette.size) - LED_RATE_PREROLL_MS)
                 cycle++

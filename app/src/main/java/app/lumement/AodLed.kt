@@ -244,8 +244,14 @@ internal class LedRound(
         this.colors = colors
         cycle = round
         running = true
-        if (dozing) watchSteps(true)
-        light()
+        if (dozing) {
+            watchSteps(true)
+            light()
+        } else {
+            // As every breath after it: the rest of the dark after a light just gone (the arrival's
+            // last exhale, the face's breath under the window), then the breath's rate, then light.
+            timers.postDelayed(nextBreath, (LedRhythm.darkLeft() - LED_RATE_PREROLL_MS).coerceAtLeast(0L))
+        }
     }
 
     /**

@@ -232,8 +232,13 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
         flow.onFocusChanged(hasFocus)
     }
 
+    @SuppressLint("Wakelock") // they outlive onPause on purpose: the LED holds the panel behind the lock screen
     override fun onDestroy() {
         flow.destroy()
+        // Its locks with no timeout go with it, whatever the flow left held: destroyed without a
+        // finish (a relaunch for a theme or navigation change), it kept the panel lit till the GC.
+        if (keepPanelOn.isHeld) keepPanelOn.release()
+        pocketDark?.let { if (it.isHeld) it.release() }
         unregisterReceiver(screenSignals)
         unregisterReceiver(unlockSignal)
         unregisterReceiver(alarmSignal)
@@ -295,6 +300,8 @@ class WakeScreenActivity : ComponentActivity(), LockPort {
     override val aodOnly: Boolean get() = ledOnAodOnly(contentResolver)
     override val batterySaver: Boolean get() = power.isPowerSaveMode
     override val batteryPct: Int? get() = (this as Context).batteryPct()
+
+    override val ledDarkLeftMs: Long get() = LedRhythm.darkLeft()
 
     /** The framework's bar slide-out follows the animator scale, so wait no longer than it takes. */
     override val barsHideMs: Long

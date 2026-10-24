@@ -1,5 +1,6 @@
 package app.lumement
 
+import android.os.SystemClock
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.Composable
@@ -48,6 +49,28 @@ internal const val LED_GAP_MS = 700L
 /** The dark after breath [cycle] of a round of [count] colours: the gap to the next app's, or the round's end. */
 internal fun ledPauseAfter(cycle: Int, count: Int): Long =
     if (count <= 1 || cycle % count == count - 1) LED_DARK_MS else LED_GAP_MS
+
+/**
+ * When the LED's light last went out, wherever it was: a breath's end or a breath cut short on any
+ * of its surfaces, or an arrival's last light on it. A round starting soon after waits out the rest
+ * of [LED_DARK_MS] first ([ledDarkLeft]), so the rhythm holds through a hand-over: the arrival's
+ * last exhale was followed at once by the lit window's first breath (a double flash after every
+ * message), and a breath cut as the window went up by the face's 0.2 s later. Main thread only.
+ */
+internal object LedRhythm {
+    private var outAt = 0L
+
+    /** The light is out now. */
+    fun out() {
+        outAt = SystemClock.elapsedRealtime()
+    }
+
+    /** How long a round starting now waits in the dark before its first breath's preroll. */
+    fun darkLeft(): Long = ledDarkLeft(outAt, SystemClock.elapsedRealtime())
+}
+
+/** The dark a round starting at [now] still owes a light gone out at [outAt]: none once a whole [LED_DARK_MS] has passed. */
+internal fun ledDarkLeft(outAt: Long, now: Long): Long = (outAt + LED_DARK_MS - now).coerceIn(0L, LED_DARK_MS)
 
 /** Burn-in guard: the glow steps through a 2 px square, one corner per breath. */
 internal val PIXEL_SHIFTS = listOf(Offset(0f, 0f), Offset(2f, 0f), Offset(2f, 2f), Offset(0f, 2f))
